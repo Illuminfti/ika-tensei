@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, ReactNode } from "react";
 
 interface StatsCounterProps {
   target: number;
   label: string;
-  icon: string;
+  icon: ReactNode;
   duration?: number;
 }
 
@@ -29,11 +29,11 @@ export function StatsCounter({ target, label, icon, duration = 2000 }: StatsCoun
   }, [target, duration]);
 
   return (
-    <div className="flex items-center gap-2 font-pixel">
-      <span className="text-lg">{icon}</span>
+    <div className="flex items-center gap-3">
+      <div className="opacity-60">{icon}</div>
       <div>
-        <div className="text-ritual-gold text-sm">{count.toLocaleString()}</div>
-        <div className="text-faded-spirit text-[10px]">{label}</div>
+        <div className="font-pixel text-sm text-ritual-gold text-glow-gold">{count.toLocaleString()}</div>
+        <div className="font-silk text-[10px] text-faded-spirit">{label}</div>
       </div>
     </div>
   );

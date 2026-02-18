@@ -21,23 +21,73 @@ html {
 body {
   background-color: #0d0a1a;
   min-height: 100vh;
+  position: relative;
 }
 
-/* NES.css dark overrides */
+/* Film grain overlay - adds texture to flat backgrounds */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Subtle vignette */
+body::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9997;
+  background: radial-gradient(ellipse at center, transparent 50%, #0d0a1a 100%);
+}
+
+/* NES.css dark overrides - strip the white, make it ours */
 .nes-container {
-  background-color: #231832 !important;
-  border-image-source: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect x="2" y="0" width="4" height="1" fill="%233a2850"/><rect x="1" y="1" width="1" height="1" fill="%233a2850"/><rect x="6" y="1" width="1" height="1" fill="%233a2850"/><rect x="0" y="2" width="1" height="4" fill="%233a2850"/><rect x="7" y="2" width="1" height="4" fill="%233a2850"/><rect x="1" y="6" width="1" height="1" fill="%233a2850"/><rect x="6" y="6" width="1" height="1" fill="%233a2850"/><rect x="2" y="7" width="4" height="1" fill="%233a2850"/></svg>') !important;
+  background-color: #1a1025 !important;
   color: #e8e0f0 !important;
+  border-color: #3a2850 !important;
+  position: relative;
+}
+
+.nes-container.is-dark {
+  background-color: #1a1025 !important;
+  border-color: #3a2850 !important;
+}
+
+.nes-container.is-dark::after {
+  color: #e8e0f0 !important;
+}
+
+.nes-container.with-title > .title {
+  background-color: #1a1025 !important;
+  color: #ffd700 !important;
 }
 
 .nes-btn {
   font-family: "Press Start 2P", monospace !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
+  color: #e8e0f0 !important;
 }
 
 .nes-btn.is-primary {
   background-color: #ff3366 !important;
   color: #e8e0f0 !important;
+}
+
+.nes-btn.is-primary:hover {
+  background-color: #ff4477 !important;
 }
 
 .nes-btn.is-warning {
@@ -50,31 +100,35 @@ body {
   color: #0d0a1a !important;
 }
 
+.nes-btn.is-dark {
+  background-color: #231832 !important;
+  color: #8a7a9a !important;
+  border-color: #3a2850 !important;
+}
+
+/* Progress bar override */
 .nes-progress {
   height: 24px !important;
+  background-color: #231832 !important;
+  border-color: #3a2850 !important;
 }
 
 /* Pixel art rendering */
-img, canvas {
+img, canvas, svg {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
 /* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #0d0a1a;
-}
-::-webkit-scrollbar-thumb {
-  background: #3a2850;
-  border: 2px solid #0d0a1a;
-}
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0d0a1a; }
+::-webkit-scrollbar-thumb { background: #3a2850; }
+::-webkit-scrollbar-thumb:hover { background: #4a3860; }
 
-/* JRPG dialogue typewriter cursor */
+/* Typewriter cursor */
 .typewriter-cursor::after {
   content: "▊";
+  color: #ff3366;
   animation: blink 0.7s step-end infinite;
 }
 
@@ -82,7 +136,7 @@ img, canvas {
   50% { opacity: 0; }
 }
 
-/* Scanline overlay (optional, toggle via class) */
+/* Scanline overlay (subtle) */
 .scanlines::after {
   content: "";
   position: fixed;
@@ -93,10 +147,86 @@ img, canvas {
   pointer-events: none;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.03) 0px,
-    rgba(0, 0, 0, 0.03) 1px,
+    rgba(0, 0, 0, 0.02) 0px,
+    rgba(0, 0, 0, 0.02) 1px,
     transparent 1px,
     transparent 2px
   );
   z-index: 9999;
+}
+
+/* Pixel card custom styling */
+.pixel-card {
+  background: linear-gradient(135deg, #1a1025 0%, #231832 100%);
+  border: 2px solid #3a2850;
+  position: relative;
+  overflow: hidden;
+}
+
+.pixel-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #9b59b644, transparent);
+}
+
+.pixel-card:hover {
+  border-color: #9b59b6;
+  box-shadow: 0 0 20px #9b59b622, inset 0 0 20px #9b59b608;
+}
+
+/* Dialogue box JRPG style */
+.dialogue-box {
+  background: linear-gradient(180deg, #1a1025 0%, #12101a 100%);
+  border: 3px solid #3a2850;
+  border-radius: 0;
+  position: relative;
+  padding: 20px;
+  box-shadow: 
+    0 0 0 1px #231832,
+    0 0 30px #0d0a1a88,
+    inset 0 1px 0 #3a285044;
+}
+
+.dialogue-box::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  border: 1px solid #3a285044;
+  pointer-events: none;
+}
+
+/* Glow text */
+.text-glow-pink {
+  text-shadow: 0 0 10px #ff336666, 0 0 20px #ff336633;
+}
+
+.text-glow-gold {
+  text-shadow: 0 0 10px #ffd70066, 0 0 20px #ffd70033;
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 10px #00ccff66, 0 0 20px #00ccff33;
+}
+
+/* Background stars/particles */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.8; }
+}
+
+.bg-stars {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
 }

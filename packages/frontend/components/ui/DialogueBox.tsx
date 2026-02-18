@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { IkaSprite } from "./PixelSprite";
 
 interface DialogueBoxProps {
   text: string;
@@ -9,13 +10,6 @@ interface DialogueBoxProps {
   onComplete?: () => void;
   speed?: number;
 }
-
-const PORTRAITS: Record<string, string> = {
-  excited: "🦑✨",
-  worried: "🦑💦",
-  neutral: "🦑",
-  smug: "🦑💜",
-};
 
 export function DialogueBox({ text, speaker = "Ika", portrait = "neutral", onComplete, speed = 30 }: DialogueBoxProps) {
   const [displayedText, setDisplayedText] = useState("");
@@ -39,17 +33,34 @@ export function DialogueBox({ text, speaker = "Ika", portrait = "neutral", onCom
   }, [text, speed, onComplete]);
 
   return (
-    <div className="nes-container is-dark with-title max-w-2xl mx-auto">
-      <p className="title font-pixel text-ritual-gold text-xs">{speaker}</p>
-      <div className="flex gap-4 items-start">
-        <div className="text-4xl flex-shrink-0 animate-float">
-          {PORTRAITS[portrait]}
+    <div className="dialogue-box max-w-2xl mx-auto">
+      {/* Speaker name tag */}
+      <div className="absolute -top-3 left-4 bg-ritual-dark px-3 py-1 border border-sigil-border">
+        <span className="font-pixel text-[10px] text-ritual-gold">{speaker}</span>
+      </div>
+      
+      <div className="flex gap-5 items-start pt-2">
+        {/* Pixel art portrait */}
+        <div className="flex-shrink-0 bg-card-purple border border-sigil-border p-2 relative">
+          <IkaSprite size={48} expression={portrait} />
+          {/* Portrait frame corners */}
+          <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-ritual-gold" />
+          <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-ritual-gold" />
+          <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-ritual-gold" />
+          <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-ritual-gold" />
         </div>
-        <div className="flex-1">
+        
+        {/* Text area */}
+        <div className="flex-1 min-h-[60px]">
           <p className="font-silk text-sm leading-relaxed text-ghost-white">
             {displayedText}
             {!isComplete && <span className="typewriter-cursor" />}
           </p>
+          {isComplete && (
+            <div className="mt-2 text-right">
+              <span className="font-pixel text-[8px] text-faded-spirit animate-pulse">▼</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
