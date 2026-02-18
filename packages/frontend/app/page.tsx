@@ -133,7 +133,7 @@ export default function Home() {
           className="text-center mb-10 relative z-10"
         >
           <p className="font-silk text-base text-ghost-white">
-            Seal your NFTs on Ethereum & Sui / Reborn them on Solana
+            Seal your NFTs from any chain. Reborn them on Solana.
           </p>
         </motion.div>
 
