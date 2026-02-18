@@ -201,10 +201,99 @@ The frontend simplifies dramatically:
 - [ ] Rate limiting, abuse prevention
 - [ ] Audit prep
 
-## Open Questions
+## Decisions
 
-1. **Pre-creation pool:** Should we pre-create a pool of dWallets to avoid DKG latency at seal time? How many? Illumi mentioned other IKA builders do this.
-2. **Same EVM address, all chains:** One secp256k1 dWallet gives the same address on all EVM chains. Should we let users deposit from ANY EVM chain to the same address, or restrict to one chain per seal?
-3. **Auto-detection vs manual input:** Should user tell us which NFT they're sending, or do we auto-detect any NFT that arrives at the deposit address?
-4. **Fee model:** Flat fee per seal? Tiered by source chain? Free for launch?
-5. **Expiry:** Should deposit addresses expire after X days if no deposit detected?
+1. **Pre-creation pool: YES.** Pre-create dWallets in batches so users don't wait for DKG. Pool replenishes automatically. Separate pools for secp256k1 (EVM) and Ed25519 (non-EVM).
+
+2. **Same EVM address, all chains: YES, per-seal.** One secp256k1 dWallet = one address across all EVM chains. User can deposit from any EVM chain. But the NEXT seal gets a NEW dWallet/address. 1 dWallet = 1 NFT, always.
+
+3. **Auto-detection + manual hint.** Auto-detect any NFT arriving at the deposit address. User CAN optionally specify contract+tokenID upfront (helps us start metadata fetch early and triggers detection if auto-detect is slow). We NEVER trust the user's word alone — always verify on-chain.
+
+4. **Fee model: Flat fee in SOL per seal.** Simple, predictable. Paid from connected Solana wallet before or after deposit.
+
+5. **Expiry: No expiry.** Deposit addresses persist indefinitely. No compelling reason to expire them — the dWallet exists on IKA regardless.
+
+## Critical Technical Challenge: Cross-Chain NFT Metadata
+
+To mint a proper reborn NFT on Solana, we need the original NFT's metadata (name, description, image, attributes/traits) from the source chain. This is a MASSIVE consideration because every chain and every NFT standard stores metadata differently.
+
+### Metadata Standards by Chain
+
+**EVM (ERC-721 / ERC-1155):**
+- `tokenURI(tokenId)` returns a URI (HTTP, IPFS, Arweave, on-chain base64)
+- URI points to JSON: `{ name, description, image, attributes: [{trait_type, value}] }`
+- Image can be: IPFS hash, HTTP URL, on-chain SVG (base64), Arweave
+- Some collections use centralized APIs that may go down
+- ERC-1155 uses `uri(tokenId)` with `{id}` substitution
+
+**Solana (Metaplex):**
+- Token Metadata program: on-chain name + symbol + URI
+- URI → JSON with same structure as EVM but Metaplex-specific fields
+- Metaplex Core (newer): different account structure
+
+**Sui:**
+- Objects with `display` standard (Display<T>)
+- Fields defined per collection — no universal tokenURI equivalent
+- Need to know the Move type to read display fields
+- Kiosk-locked NFTs add complexity
+
+**Aptos:**
+- Token v1: `TokenDataId { creator, collection, name }` → on-chain metadata
+- Token v2 (Digital Asset Standard): objects with URI property
+- Two incompatible standards active
+
+**NEAR (NEP-171/177):**
+- `nft_metadata()` for collection, `nft_token(token_id)` for token
+- Returns JSON with `media` (image URL) and `reference` (metadata URL)
+
+### Metadata Fetching Strategy
+
+```
+1. Detect NFT at deposit address → get contract + tokenID + chain
+2. Call chain-specific metadata resolver:
+   - EVM: call tokenURI(), fetch JSON, resolve image
+   - Solana: read Metaplex account, fetch JSON
+   - Sui: read Display<T> fields
+   - Aptos: read token data (v1 or v2)
+   - NEAR: call nft_token() view function
+3. Normalize to universal schema:
+   {
+     name: string,
+     description: string,
+     image: string (IPFS/HTTP URL),
+     attributes: [{trait_type, value}][],
+     source_chain: string,
+     source_contract: string,
+     source_token_id: string,
+     original_metadata_uri: string
+   }
+4. Upload image + metadata to Walrus (decentralized storage on Sui)
+5. Mint reborn NFT on Solana with Walrus URI
+```
+
+### Edge Cases
+- **On-chain SVGs:** Decode base64, re-upload as PNG or keep as SVG
+- **IPFS gateway failures:** Try multiple gateways (ipfs.io, cloudflare-ipfs, pinata, nftstorage)
+- **Dead metadata:** Some old collections have dead HTTP URLs. Cache aggressively.
+- **Dynamic NFTs:** Metadata changes over time. We snapshot at seal time.
+- **No metadata:** Some NFTs are purely on-chain with no URI. Extract what we can.
+- **Large media:** Video NFTs, music NFTs. Size limits on Walrus?
+
+### Implementation: Modular Metadata Resolver
+
+Build a chain-agnostic metadata resolver with per-chain adapters:
+
+```typescript
+interface MetadataResolver {
+  resolve(chain: Chain, contract: string, tokenId: string): Promise<NormalizedMetadata>;
+}
+
+// Per-chain implementations
+class EVMResolver implements MetadataResolver { ... }
+class SolanaResolver implements MetadataResolver { ... }
+class SuiResolver implements MetadataResolver { ... }
+class AptosResolver implements MetadataResolver { ... }
+class NEARResolver implements MetadataResolver { ... }
+```
+
+This is one of the hardest parts of the whole system — reliable cross-chain metadata resolution at scale.
