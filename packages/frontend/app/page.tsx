@@ -513,6 +513,7 @@ export default function Home() {
               { name: "Sui", color: "#6fb8ff" },
               { name: "Aptos", color: "#00d4c2" },
               { name: "NEAR", color: "#00c08b" },
+              { name: "Solana", color: "#9945ff" },
             ].map((chain, i) => (
               <motion.div
                 key={chain.name}

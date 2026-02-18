@@ -251,6 +251,17 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     category: "other",
     explorerUrl: "https://nearblocks.io",
   },
+  {
+    id: "solana",
+    name: "Solana",
+    abbreviation: "SOL",
+    color: "#9945ff",
+    textColor: "#ffffff",
+    chainType: "solana",
+    wormholeChainId: 1,
+    category: "other",
+    explorerUrl: "https://explorer.solana.com",
+  },
 ];
 
 export const EVM_CHAINS = SUPPORTED_CHAINS.filter((c) => c.category === "evm");

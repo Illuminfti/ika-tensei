@@ -1,7 +1,7 @@
 # 🦑 Ika Tensei (イカ転生)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Chains-17+-6FB49C?style=flat" alt="17+ Chains" />
+  <img src="https://img.shields.io/badge/Chains-18+-6FB49C?style=flat" alt="18+ Chains" />
   <img src="https://img.shields.io/badge/Solana-Devnet-9945FF?style=flat&logo=solana" alt="Solana Devnet" />
   <img src="https://img.shields.io/badge/IKA-dWallet%202PC--MPC-00CCFF?style=flat" alt="IKA dWallet" />
   <img src="https://img.shields.io/badge/Storage-Arweave-222222?style=flat" alt="Arweave" />
@@ -66,6 +66,7 @@ The original NFT is permanently locked. The `DWalletCap` (the key) is transferre
 | Sui | 21 | ✅ |
 | Aptos | 22 | ✅ |
 | NEAR | 15 | ✅ |
+| Solana | 1 | ✅ |
 
 ### Destination
 
