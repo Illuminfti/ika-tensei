@@ -9,7 +9,7 @@
  */
 
 import { loadConfig, type RelayerConfig } from './config.js';
-import { createLogger, type Logger, sanitize } from './logger';
+import { createLogger, type Logger, sanitize } from './logger.js';
 import { createDB, type DB, type SealStatus } from './db.js';
 import { ProcessingQueue, type NFTSealedEvent } from './queue.js';
 import { createSuiListener } from './services/sui-listener.js';
@@ -28,7 +28,7 @@ export interface Relayer {
 
 export async function createRelayer(): Promise<Relayer> {
   // Load configuration
-  const config = loadConfig();
+  const config = await loadConfig();
   
   // Create logger
   const logger = createLogger(config.logLevel);

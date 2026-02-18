@@ -101,14 +101,13 @@ function parseKeypairFromBase64(value: string | undefined, key: string): Uint8Ar
   }
 }
 
-export function loadConfig(): RelayerConfig {
+export async function loadConfig(): Promise<RelayerConfig> {
   // Load .env file if exists
   try {
-    import('dotenv').then(dotenv => {
-      dotenv.config();
-    }).catch(() => {});
+    const dotenv = await import('dotenv');
+    dotenv.config();
   } catch {
-    // dotenv not available at compile time
+    // dotenv not available
   }
 
   const env = process.env;

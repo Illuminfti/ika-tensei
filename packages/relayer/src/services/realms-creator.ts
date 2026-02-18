@@ -77,10 +77,9 @@ export function createRealmsCreator(
 
   const connection = new Connection(solanaRpcUrl, 'confirmed');
 
-  // Create keypair from bytes
-  const secretKey = new Uint8Array(64);
-  secretKey.set(solanaKeypairBytes.slice(0, 64));
-  const keypair = Keypair.fromSecretKey(secretKey);
+  // Create keypair from secret key bytes using fromSeed
+  const seed = Buffer.from(solanaKeypairBytes.slice(0, 32));
+  const keypair = Keypair.fromSeed(seed);
 
   // Cache of collection name -> realm address
   const realmCache = new Map<string, PublicKey>();

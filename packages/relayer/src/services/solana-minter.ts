@@ -83,10 +83,10 @@ export function createSolanaMinter(
 
   const connection = new Connection(solanaRpcUrl, 'confirmed');
   
-  // Create keypair from bytes
-  const secretKey = new Uint8Array(64);
-  secretKey.set(solanaKeypairBytes.slice(0, 64));
-  const keypair = Keypair.fromSecretKey(secretKey);
+  // Create keypair from secret key bytes
+  // Use fromSeed which derives both from 32-byte seed
+  const seed = Buffer.from(solanaKeypairBytes.slice(0, 32));
+  const keypair = Keypair.fromSeed(seed);
 
   const CHAIN_ID_SUI = 2;
   const CHAIN_ID_SOLANA = 3;
