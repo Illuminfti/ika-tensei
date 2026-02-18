@@ -283,21 +283,21 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-b from-void-purple/40 via-transparent to-void-purple" />
         </motion.div>
 
-        {/* Summoning Circle - centered, slightly above middle - INTERACTIVE with CTA hover */}
-        <motion.div 
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1]"
-          style={{ y: yBackground }}
-          animate={isCtaHovered ? {
-            scale: [1, 1.05, 1.03],
-            filter: ['drop-shadow(0 0 20px #ff3366)', 'drop-shadow(0 0 35px #ff3366)', 'drop-shadow(0 0 25px #ff3366)'],
-          } : {}}
-          transition={{ duration: 1, repeat: isCtaHovered ? Infinity : 0 }}
-        >
-          <SummoningCircle 
-            size={500} 
-            phase={isCtaHovered ? "active" : mounted ? "charging" : "idle"} 
-          />
-        </motion.div>
+        {/* Summoning Circle - dead center, no parallax drift */}
+        <div className="absolute inset-0 flex items-center justify-center z-[1] pointer-events-none">
+          <motion.div
+            animate={isCtaHovered ? {
+              scale: [1, 1.05, 1.03],
+              filter: ['drop-shadow(0 0 20px #ff3366)', 'drop-shadow(0 0 35px #ff3366)', 'drop-shadow(0 0 25px #ff3366)'],
+            } : {}}
+            transition={{ duration: 1, repeat: isCtaHovered ? Infinity : 0 }}
+          >
+            <SummoningCircle 
+              size={500} 
+              phase={isCtaHovered ? "active" : mounted ? "charging" : "idle"} 
+            />
+          </motion.div>
+        </div>
 
         {/* Mascot - pixel art goddess with bobbing animation + parallax */}
         <motion.div
