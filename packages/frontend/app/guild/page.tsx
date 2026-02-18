@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { PixelProgress } from "@/components/ui/PixelProgress";
 
@@ -122,13 +123,22 @@ export default function GuildPage() {
       </div>
 
       <div className="max-w-4xl mx-auto relative z-10">
-        {/* Header */}
+        {/* Header with Guild Banner */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="text-center mb-8"
         >
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.6 }}
+            className="mx-auto mb-4 w-32 h-32 relative"
+            style={{ filter: "drop-shadow(0 4px 12px rgba(255, 215, 0, 0.3))" }}
+          >
+            <Image src="/art/guild-banner.png" alt="Guild Banner" fill className="object-contain pixelated" style={{ imageRendering: "pixelated" }} />
+          </motion.div>
           <h1 className="font-pixel text-3xl md:text-4xl text-ritual-gold mb-2 tracking-wider">
             ADVENTURER&apos;S GUILD
           </h1>

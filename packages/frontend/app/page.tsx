@@ -2,7 +2,8 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { IkaSprite, SealIcon, SoulOrb, ShieldIcon, SwordIcon, ChainBadge } from "@/components/ui/PixelSprite";
+import Image from "next/image";
+import { IkaSprite, SealIcon, SoulOrb, ShieldIcon, ChainBadge } from "@/components/ui/PixelSprite";
 import { SummoningCircle } from "@/components/ui/SummoningCircle";
 import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 import { DialogueBox } from "@/components/ui/DialogueBox";
@@ -40,24 +41,44 @@ export default function Home() {
 
       {/* SECTION 1 - HERO */}
       <section className="relative flex flex-col items-center justify-center min-h-[100vh] px-4 overflow-hidden">
+        {/* Hero background art */}
+        <div className="absolute inset-0 z-0 opacity-30">
+          <Image
+            src="/art/hero-wide.png"
+            alt=""
+            fill
+            className="object-cover object-center"
+            priority
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-void-purple/60 via-transparent to-void-purple" />
+        </div>
+
         {/* Summoning Circle - centered, slightly above middle */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] z-0">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] z-[1]">
           <SummoningCircle size={500} phase="idle" />
         </div>
 
-        {/* IkaSprite with bobbing animation and drop shadow */}
+        {/* Mascot - pixel art goddess with bobbing animation */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative z-10 mb-6"
-          style={{ filter: "drop-shadow(0 8px 16px rgba(155, 89, 182, 0.4))" }}
+          style={{ filter: "drop-shadow(0 8px 24px rgba(255, 51, 102, 0.3))" }}
         >
           <motion.div
-            animate={{ y: [0, -8, 0] }}
+            animate={{ y: [0, -10, 0] }}
             transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
           >
-            <IkaSprite size={96} expression="smug" />
+            <Image
+              src="/art/ika-chibi.png"
+              alt="Ika - Squid Goddess"
+              width={200}
+              height={200}
+              className="pixelated"
+              style={{ imageRendering: "pixelated" }}
+              priority
+            />
           </motion.div>
         </motion.div>
 
@@ -133,7 +154,7 @@ export default function Home() {
         >
           <StatsCounter target={12847} label="Sealed" icon={<SealIcon size={20} />} />
           <StatsCounter target={10234} label="Reborn" icon={<SoulOrb size={20} />} />
-          <StatsCounter target={3} label="Chains" icon={<SwordIcon size={20} />} />
+          <StatsCounter target={3} label="Chains" icon={<ChainBadge chain="ethereum" size={20} />} />
         </motion.div>
 
         {/* Scroll indicator */}
