@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 
 // ============================================
 // Utility functions
@@ -24,7 +25,7 @@ function darkenColor(hex: string, percent: number): string {
 }
 
 // ============================================
-// IkaSprite - 16x16 pixel squid with expressions
+// IkaSprite - renders the actual pixel art mascot
 // ============================================
 export type IkaExpression = "neutral" | "excited" | "worried" | "smug" | "angry" | "sleeping";
 
@@ -45,7 +46,22 @@ const IKA_COLORS = {
   sleep: "#6b5a7a",
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function IkaSprite({ size = 32, expression = "neutral" }: IkaSpriteProps) {
+  return (
+    <Image
+      src="/art/ika-mascot-v2.png"
+      alt="Ika"
+      width={size}
+      height={size}
+      className="pixelated"
+      style={{ imageRendering: "pixelated", objectFit: "contain" }}
+    />
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyIkaSprite({ size = 32, expression = "neutral" }: IkaSpriteProps) {
   const renderEyes = () => {
     if (expression === "sleeping") {
       return (
