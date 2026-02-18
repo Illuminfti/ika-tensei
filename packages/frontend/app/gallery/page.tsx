@@ -2,18 +2,16 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PixelCard } from "@/components/ui/PixelCard";
+import { NFTCard, Chain } from "@/components/ui/NFTCard";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { DialogueBox } from "@/components/ui/DialogueBox";
 
 interface RebornNFT {
   id: string;
   name: string;
-  emoji: string;
-  bgColor: string;
-  originalChain: "Ethereum" | "Sui";
+  chain: "Ethereum" | "Sui";
+  tokenId: string;
   originalContract: string;
-  originalTokenId: string;
   rebornMintAddress: string;
   rebornSolanaAddress: string;
   date: string;
@@ -23,11 +21,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "1",
     name: "Cryptopunk #7842",
-    emoji: "🦋",
-    bgColor: "from-purple-500 to-pink-500",
-    originalChain: "Ethereum",
+    chain: "Ethereum",
+    tokenId: "7842",
     originalContract: "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB",
-    originalTokenId: "7842",
     rebornMintAddress: "CXwpmrmqF7DqMX5Zk3mLp5XqG7Uf8xJkYzPYjRqRqRqR",
     rebornSolanaAddress: "5W9FLZBmCqhoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZqZ",
     date: "2024-01-15",
@@ -35,11 +31,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "2",
     name: "Sui Frens #1024",
-    emoji: "🐙",
-    bgColor: "from-blue-500 to-cyan-500",
-    originalChain: "Sui",
-    originalContract: "0x8474a6e7d5f6b6b6b6b6b6b6b6b6b6b6b6b6b6b6",
-    originalTokenId: "1024",
+    chain: "Sui",
+    tokenId: "1024",
+    originalContract: "0x8474a6e7d5f6b6b6b6b6b6b6b6b6b6b6b6b6b6",
     rebornMintAddress: "8XqLbP8kTqHoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZq",
     rebornSolanaAddress: "3R8FFZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZ",
     date: "2024-01-18",
@@ -47,11 +41,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "3",
     name: "BoredApe #3399",
-    emoji: "🐒",
-    bgColor: "from-yellow-500 to-orange-500",
-    originalChain: "Ethereum",
+    chain: "Ethereum",
+    tokenId: "3399",
     originalContract: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
-    originalTokenId: "3399",
     rebornMintAddress: "9YmNbP9kTqHoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZq",
     rebornSolanaAddress: "7K9GEZmqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZq",
     date: "2024-01-20",
@@ -59,11 +51,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "4",
     name: "Sui Capys #777",
-    emoji: "🦦",
-    bgColor: "from-teal-500 to-green-500",
-    originalChain: "Sui",
-    originalContract: "0x9586b6e7d5f6b6b6b6b6b6b6b6b6b6b6b6b6b6b6",
-    originalTokenId: "777",
+    chain: "Sui",
+    tokenId: "777",
+    originalContract: "0x9586b6e7d5f6b6b6b6b6b6b6b6b6b6b6b6b6b6",
     rebornMintAddress: "2AnOcP8kTqHoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZ",
     rebornSolanaAddress: "4L7DEZlqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZ",
     date: "2024-01-22",
@@ -71,11 +61,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "5",
     name: "Azuki #8821",
-    emoji: "🏮",
-    bgColor: "from-red-500 to-purple-500",
-    originalChain: "Ethereum",
+    chain: "Ethereum",
+    tokenId: "8821",
     originalContract: "0xED5AF388653567Af2F388E6224dC7C4b3241C544",
-    originalTokenId: "8821",
     rebornMintAddress: "5BoPdP8kTqHoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZ",
     rebornSolanaAddress: "6C8FEamqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZ",
     date: "2024-01-25",
@@ -83,11 +71,9 @@ const MOCK_NFTS: RebornNFT[] = [
   {
     id: "6",
     name: "Sui Doods #256",
-    emoji: "👻",
-    bgColor: "from-indigo-500 to-purple-500",
-    originalChain: "Sui",
+    chain: "Sui",
+    tokenId: "256",
     originalContract: "0xa1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-    originalTokenId: "256",
     rebornMintAddress: "7CpPeP8kTqHoqLnqP7qKqZqZqZqZqZqZqZqZqZqZqZ",
     rebornSolanaAddress: "8D9GFbmqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZqZ",
     date: "2024-01-28",
@@ -104,11 +90,11 @@ export default function GalleryPage() {
 
   const filteredNFTs = MOCK_NFTS.filter((nft) => {
     if (filter === "All") return true;
-    return nft.originalChain === filter;
+    return nft.chain === filter;
   });
 
   const handleShare = (nft: RebornNFT) => {
-    const text = `🎨 Just reborn ${nft.name} from ${nft.originalChain} to Solana via @IkaTensei!\n\n🆔 Reborn: ${nft.rebornMintAddress}\n\n#NFT #IkaTensei #Web3`;
+    const text = `🎨 Just reborn ${nft.name}!\n\nOriginal: ${nft.originalContract}\nReborn: ${nft.rebornMintAddress}\n\n#IkaTensei #NFTReborn`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
   };
@@ -137,19 +123,27 @@ export default function GalleryPage() {
           transition={{ delay: 0.1 }}
           className="flex gap-3 mb-8"
         >
-          {(["All", "Ethereum", "Sui"] as const).map((f) => (
-            <PixelButton
-              key={f}
-              variant={filter === f ? "primary" : "dark"}
-              size="sm"
-              onClick={() => setFilter(f)}
-            >
-              {f === "All" && "🌐 "}
-              {f === "Ethereum" && "⟐ "}
-              {f === "Sui" && "◎ "}
-              {f}
-            </PixelButton>
-          ))}
+          <PixelButton
+            variant={filter === "All" ? "primary" : "dark"}
+            size="sm"
+            onClick={() => setFilter("All")}
+          >
+            🌐 All
+          </PixelButton>
+          <PixelButton
+            variant={filter === "Ethereum" ? "primary" : "dark"}
+            size="sm"
+            onClick={() => setFilter("Ethereum")}
+          >
+            ⟐ ETH
+          </PixelButton>
+          <PixelButton
+            variant={filter === "Sui" ? "primary" : "dark"}
+            size="sm"
+            onClick={() => setFilter("Sui")}
+          >
+            ◎ SUI
+          </PixelButton>
         </motion.div>
 
         {/* NFT Grid or Empty State */}
@@ -160,7 +154,7 @@ export default function GalleryPage() {
             transition={{ delay: 0.2 }}
           >
             <DialogueBox
-              text="No reborn NFTs here... try another filter?"
+              text="No reborn NFTs here..."
               speaker="Ika"
               portrait="worried"
             />
@@ -174,67 +168,13 @@ export default function GalleryPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <PixelCard
-                  hover
+                <NFTCard
+                  name={nft.name}
+                  tokenId={nft.tokenId}
+                  chain={nft.chain.toLowerCase() as Chain}
+                  status="reborn"
                   onClick={() => setSelectedNFT(nft)}
-                  className="group relative overflow-hidden"
-                >
-                  {/* NFT Image Placeholder */}
-                  <div
-                    className={`h-40 w-full bg-gradient-to-br ${nft.bgColor} flex items-center justify-center text-6xl mb-4 relative`}
-                  >
-                    {nft.emoji}
-                    {/* Before Overlay */}
-                    <div className="absolute inset-0 bg-void-purple/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <div className="text-center">
-                        <p className="font-pixel text-ritual-gold text-xs mb-2">BEFORE</p>
-                        <p className="font-silk text-faded-spirit text-xs">
-                          {nft.originalChain}
-                        </p>
-                        <p className="font-mono text-soul-cyan text-[10px] mt-1">
-                          {truncateAddress(nft.originalContract, 8)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* NFT Info */}
-                  <div className="space-y-2">
-                    <h3 className="font-pixel text-ghost-white text-xs truncate">
-                      {nft.name}
-                    </h3>
-
-                    <div className="flex items-center justify-between">
-                      {/* Chain Badge */}
-                      <span
-                        className={`nes-btn is-small ${
-                          nft.originalChain === "Ethereum"
-                            ? "!bg-blue-600"
-                            : "!bg-violet-600"
-                        } !text-white !text-[8px] !py-1 !px-2`}
-                      >
-                        {nft.originalChain === "Ethereum" ? "⟐ ETH" : "◎ SUI"}
-                      </span>
-
-                      {/* Truncated Solana Address */}
-                      <span className="font-mono text-faded-spirit text-[10px]">
-                        {truncateAddress(nft.rebornSolanaAddress)}
-                      </span>
-                    </div>
-
-                    {/* Share Button */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <PixelButton
-                        variant="dark"
-                        size="sm"
-                        className="w-full mt-3"
-                        onClick={() => handleShare(nft)}
-                      >
-                        🐦 Share on Twitter
-                      </PixelButton>
-                    </div>
-                  </div>
-                </PixelCard>
+                />
               </motion.div>
             ))}
           </div>
@@ -255,82 +195,71 @@ export default function GalleryPage() {
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 20 }}
                 onClick={(e) => e.stopPropagation()}
-                className="nes-container is-dark max-w-lg w-full"
+                className="bg-[#0a0a14] border-2 border-ritual-gold/30 p-6 max-w-lg w-full"
               >
-                {/* Modal Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="font-pixel text-blood-pink text-sm">
-                    NFT Details
+                {/* NFT Image Area - taller */}
+                <div className="h-56 flex items-center justify-center bg-black/30 mb-6 rounded-lg border border-faded-spirit/10">
+                  <NFTCard
+                    name={selectedNFT.name}
+                    tokenId={selectedNFT.tokenId}
+                    chain={selectedNFT.chain.toLowerCase() as Chain}
+                    status="reborn"
+                  />
+                </div>
+
+                {/* Name, Chain Badge, Date */}
+                <div className="mb-6">
+                  <h2 className="font-pixel text-ghost-white text-lg mb-3">
+                    {selectedNFT.name}
                   </h2>
-                  <button
-                    onClick={() => setSelectedNFT(null)}
-                    className="text-faded-spirit hover:text-ghost-white transition-colors"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`nes-btn is-small ${
+                        selectedNFT.chain === "Ethereum"
+                          ? "!bg-blue-600"
+                          : "!bg-violet-600"
+                      } !text-white !text-[8px] !py-1 !px-2`}
+                    >
+                      {selectedNFT.chain === "Ethereum" ? "⟐ ETH" : "◎ SUI"}
+                    </span>
+                    <span className="font-mono text-faded-spirit text-xs">
+                      {selectedNFT.date}
+                    </span>
+                  </div>
                 </div>
 
-                {/* NFT Image */}
-                <div
-                  className={`h-48 w-full bg-gradient-to-br ${selectedNFT.bgColor} flex items-center justify-center text-7xl mb-6 rounded`}
-                >
-                  {selectedNFT.emoji}
+                {/* Original Contract */}
+                <div className="mb-4">
+                  <p className="font-pixel text-ritual-gold text-[10px] mb-1">
+                    ORIGINAL CONTRACT
+                  </p>
+                  <p className="font-mono text-soul-cyan text-xs break-all">
+                    {truncateAddress(selectedNFT.originalContract, 8)}
+                  </p>
                 </div>
 
-                {/* Details */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="font-pixel text-ritual-gold text-[10px] mb-1">NAME</p>
-                    <p className="font-silk text-ghost-white text-sm">
-                      {selectedNFT.name}
-                    </p>
-                  </div>
+                {/* Token ID */}
+                <div className="mb-4">
+                  <p className="font-pixel text-ritual-gold text-[10px] mb-1">
+                    TOKEN ID
+                  </p>
+                  <p className="font-mono text-faded-spirit text-xs">
+                    #{selectedNFT.tokenId}
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="font-pixel text-ritual-gold text-[10px] mb-1">ORIGINAL CHAIN</p>
-                      <span
-                        className={`nes-btn is-small ${
-                          selectedNFT.originalChain === "Ethereum"
-                            ? "!bg-blue-600"
-                            : "!bg-violet-600"
-                        } !text-white !text-[8px] !py-1 !px-2`}
-                      >
-                        {selectedNFT.originalChain}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-pixel text-ritual-gold text-[10px] mb-1">DATE</p>
-                      <p className="font-mono text-faded-spirit text-xs">
-                        {selectedNFT.date}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="font-pixel text-ritual-gold text-[10px] mb-1">ORIGINAL CONTRACT</p>
-                    <p className="font-mono text-soul-cyan text-xs break-all">
-                      {selectedNFT.originalContract}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="font-pixel text-ritual-gold text-[10px] mb-1">TOKEN ID</p>
-                    <p className="font-mono text-faded-spirit text-xs">
-                      {selectedNFT.originalTokenId}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="font-pixel text-ritual-gold text-[10px] mb-1">REBORN MINT ADDRESS</p>
-                    <p className="font-mono text-spectral-green text-xs break-all">
-                      {selectedNFT.rebornMintAddress}
-                    </p>
-                  </div>
+                {/* Reborn Mint Address */}
+                <div className="mb-6">
+                  <p className="font-pixel text-ritual-gold text-[10px] mb-1">
+                    REBORN MINT ADDRESS
+                  </p>
+                  <p className="font-mono text-spectral-green text-xs break-all">
+                    {truncateAddress(selectedNFT.rebornMintAddress, 8)}
+                  </p>
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3 mt-6">
+                <div className="flex gap-3">
                   <PixelButton
                     variant="primary"
                     className="flex-1"

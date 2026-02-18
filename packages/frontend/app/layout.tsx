@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/wallet/Providers";
-import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { ToastProvider } from "@/components/ui/ToastSystem";
+import { NavigationBar } from "@/components/ui/NavigationBar";
 
 export const metadata: Metadata = {
   title: "イカ転生 | Ika Tensei - NFT Reincarnation Protocol",
@@ -24,21 +25,12 @@ export default function RootLayout({
       </head>
       <body className="bg-void-purple text-ghost-white min-h-screen">
         <Providers>
-          <nav className="fixed top-0 w-full z-50 bg-void-purple/90 backdrop-blur-sm border-b-2 border-sigil-border px-4 py-3 flex items-center justify-between">
-            <a href="/" className="flex items-center gap-3">
-              <span className="font-pixel text-blood-pink text-sm">🦑 イカ転生</span>
-            </a>
-            <div className="flex items-center gap-4">
-              <a href="/seal" className="font-silk text-xs text-faded-spirit hover:text-ghost-white transition-colors">Seal</a>
-              <a href="/gallery" className="font-silk text-xs text-faded-spirit hover:text-ghost-white transition-colors">Gallery</a>
-              <a href="/guild" className="font-silk text-xs text-faded-spirit hover:text-ghost-white transition-colors">Guild</a>
-              <a href="/profile" className="font-silk text-xs text-faded-spirit hover:text-ghost-white transition-colors">Profile</a>
-              <ConnectButton />
-            </div>
-          </nav>
-          <main className="pt-16">
-            {children}
-          </main>
+          <ToastProvider>
+            <NavigationBar />
+            <main className="pt-16">
+              {children}
+            </main>
+          </ToastProvider>
         </Providers>
       </body>
     </html>

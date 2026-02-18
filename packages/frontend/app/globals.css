@@ -2,29 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Override NES.css for occult theme */
 :root {
-  --color-primary: #ff3366;
-  --color-success: #00ff88;
-  --color-warning: #ffd700;
-  --color-error: #ff4444;
-  --color-disabled: #3a2850;
+  --void-black: #050308;
+  --abyssal-black: #0a0812;
+  --void-purple: #0d0a1a;
+  --deep-void: #0f0b1a;
+  --ritual-dark: #1a1025;
+  --card-purple: #231832;
+  --crypt-shadow: #2a1d3d;
+  --sigil-border: #3a2850;
+  --rune-purple: #4a3860;
+  --cursed-violet: #5a4890;
+  --ghost-white: #e8e0f0;
+  --spirit-silver: #c8c0d8;
+  --faded-spirit: #8a7a9a;
+  --blood-pink: #ff3366;
+  --blood-dark: #cc1144;
+  --ritual-gold: #ffd700;
+  --unholy-amber: #ffaa00;
+  --blessed-white: #fffaf0;
+  --mystic-purple: #9b59b6;
+  --void-indigo: #6c5ce7;
+  --spectral-green: #00ff88;
+  --soul-cyan: #00ccff;
+  --demon-red: #ff4444;
 }
 
 html {
-  background-color: #0d0a1a;
-  color: #e8e0f0;
+  background-color: var(--void-black);
+  color: var(--ghost-white);
   font-family: "Silkscreen", monospace;
   image-rendering: pixelated;
+  font-size: 12px;
 }
 
-body {
-  background-color: #0d0a1a;
-  min-height: 100vh;
-  position: relative;
+html, body {
+  background-color: var(--void-black) !important;
+  color: var(--ghost-white) !important;
 }
 
-/* Film grain overlay - adds texture to flat backgrounds */
+::selection {
+  background-color: var(--blood-pink);
+  color: var(--void-black);
+}
+
+::-moz-selection {
+  background-color: var(--blood-pink);
+  color: var(--void-black);
+}
+
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--mystic-purple);
+  outline-offset: 4px;
+  box-shadow: 0 0 15px var(--mystic-purple), 0 0 30px var(--cursed-violet);
+}
+
+body, a, button, input, select, textarea {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ff3366' d='M12 2v4m0 12v4M2 12h4m12 0h4M6.34 6.34l2.83 2.83m5.66 5.66l2.83 2.83M6.34 17.66l2.83-2.83m5.66-5.66l2.83-2.83'/%3E%3Ccircle cx='12' cy='12' r='3' fill='none' stroke='%23ff3366' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -40,7 +80,6 @@ body::before {
   background-size: 256px 256px;
 }
 
-/* Subtle vignette */
 body::after {
   content: "";
   position: fixed;
@@ -50,93 +89,9 @@ body::after {
   height: 100%;
   pointer-events: none;
   z-index: 9997;
-  background: radial-gradient(ellipse at center, transparent 50%, #0d0a1a 100%);
+  background: radial-gradient(ellipse at center, transparent 40%, var(--void-black) 100%);
 }
 
-/* NES.css dark overrides - strip the white, make it ours */
-.nes-container {
-  background-color: #1a1025 !important;
-  color: #e8e0f0 !important;
-  border-color: #3a2850 !important;
-  position: relative;
-}
-
-.nes-container.is-dark {
-  background-color: #1a1025 !important;
-  border-color: #3a2850 !important;
-}
-
-.nes-container.is-dark::after {
-  color: #e8e0f0 !important;
-}
-
-.nes-container.with-title > .title {
-  background-color: #1a1025 !important;
-  color: #ffd700 !important;
-}
-
-.nes-btn {
-  font-family: "Press Start 2P", monospace !important;
-  font-size: 11px !important;
-  color: #e8e0f0 !important;
-}
-
-.nes-btn.is-primary {
-  background-color: #ff3366 !important;
-  color: #e8e0f0 !important;
-}
-
-.nes-btn.is-primary:hover {
-  background-color: #ff4477 !important;
-}
-
-.nes-btn.is-warning {
-  background-color: #ffd700 !important;
-  color: #0d0a1a !important;
-}
-
-.nes-btn.is-success {
-  background-color: #00ff88 !important;
-  color: #0d0a1a !important;
-}
-
-.nes-btn.is-dark {
-  background-color: #231832 !important;
-  color: #8a7a9a !important;
-  border-color: #3a2850 !important;
-}
-
-/* Progress bar override */
-.nes-progress {
-  height: 24px !important;
-  background-color: #231832 !important;
-  border-color: #3a2850 !important;
-}
-
-/* Pixel art rendering */
-img, canvas, svg {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #0d0a1a; }
-::-webkit-scrollbar-thumb { background: #3a2850; }
-::-webkit-scrollbar-thumb:hover { background: #4a3860; }
-
-/* Typewriter cursor */
-.typewriter-cursor::after {
-  content: "▊";
-  color: #ff3366;
-  animation: blink 0.7s step-end infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0; }
-}
-
-/* Scanline overlay (subtle) */
 .scanlines::after {
   content: "";
   position: fixed;
@@ -155,12 +110,433 @@ img, canvas, svg {
   z-index: 9999;
 }
 
-/* Pixel card custom styling */
+.nes-container {
+  background-color: var(--ritual-dark) !important;
+  color: var(--ghost-white) !important;
+  border-color: var(--sigil-border) !important;
+  position: relative;
+}
+
+.nes-container.is-dark {
+  background-color: var(--ritual-dark) !important;
+  border-color: var(--sigil-border) !important;
+}
+
+.nes-container.is-dark::after {
+  color: var(--ghost-white) !important;
+}
+
+.nes-container.with-title > .title {
+  background-color: var(--ritual-dark) !important;
+  color: var(--ritual-gold) !important;
+}
+
+.nes-btn {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 11px !important;
+  color: var(--ghost-white) !important;
+}
+
+.nes-btn.is-primary {
+  background-color: var(--blood-pink) !important;
+  color: var(--ghost-white) !important;
+}
+
+.nes-btn.is-primary:hover {
+  background-color: #ff4477 !important;
+}
+
+.nes-btn.is-warning {
+  background-color: var(--ritual-gold) !important;
+  color: var(--void-black) !important;
+}
+
+.nes-btn.is-success {
+  background-color: var(--spectral-green) !important;
+  color: var(--void-black) !important;
+}
+
+.nes-btn.is-dark {
+  background-color: var(--card-purple) !important;
+  color: var(--faded-spirit) !important;
+  border-color: var(--sigil-border) !important;
+}
+
+.nes-progress {
+  height: 24px !important;
+  background-color: var(--card-purple) !important;
+  border-color: var(--sigil-border) !important;
+}
+
+.nes-input, .nes-textarea {
+  background-color: var(--card-purple) !important;
+  color: var(--ghost-white) !important;
+  border-color: var(--sigil-border) !important;
+}
+
+.nes-input:focus, .nes-textarea:focus {
+  border-color: var(--mystic-purple) !important;
+  box-shadow: 0 0 10px var(--mystic-purple) !important;
+}
+
+.nes-select {
+  background-color: var(--card-purple) !important;
+  color: var(--ghost-white) !important;
+  border-color: var(--sigil-border) !important;
+}
+
+img, canvas, svg {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--void-purple);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sigil-border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--rune-purple);
+}
+
+.typewriter-cursor::after {
+  content: "▊";
+  color: var(--blood-pink);
+  animation: blink 0.7s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes soul-float {
+  0%, 100% { 
+    transform: translateY(0) scale(1);
+    opacity: 0.3;
+  }
+  25% { 
+    transform: translateY(-15px) scale(1.05);
+    opacity: 0.7;
+  }
+  50% { 
+    transform: translateY(-30px) scale(1.1);
+    opacity: 0.5;
+  }
+  75% { 
+    transform: translateY(-45px) scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes rune-pulse {
+  0%, 100% { 
+    text-shadow: 0 0 5px #a855f7, 0 0 10px #a855f766;
+    transform: scale(1);
+  }
+  50% { 
+    text-shadow: 0 0 15px #a855f7, 0 0 30px #a855f7aa, 0 0 50px #a855f766;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes glitch-text {
+  0%, 100% { 
+    transform: translate(0);
+    text-shadow: 2px 0 #ff3366, -2px 0 #00ccff;
+  }
+  20% { 
+    transform: translate(-2px, 1px);
+    text-shadow: -2px 0 #ff3366, 2px 0 #00ccff;
+  }
+  40% { 
+    transform: translate(2px, -1px);
+    text-shadow: 2px 0 #ff3366, -2px 0 #00ccff;
+  }
+  60% { 
+    transform: translate(-1px, 2px);
+    text-shadow: -2px 0 #ff3366, 2px 0 #00ccff;
+  }
+  80% { 
+    transform: translate(1px, -2px);
+    text-shadow: 2px 0 #ff3366, -2px 0 #00ccff;
+  }
+}
+
+@keyframes portal-swirl {
+  0% { 
+    transform: rotate(0deg) scale(1);
+    opacity: 0.8;
+  }
+  50% { 
+    transform: rotate(180deg) scale(1.1);
+    opacity: 1;
+  }
+  100% { 
+    transform: rotate(360deg) scale(1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes blood-drip {
+  0% { 
+    clipPath: polygon(50% 0%, 60% 0%, 55% 30%, 65% 100%, 35% 100%, 45% 30%, 40% 0%);
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+  50% { 
+    clipPath: polygon(50% 0%, 60% 0%, 55% 30%, 65% 100%, 35% 100%, 45% 30%, 40% 0%);
+    opacity: 1;
+    transform: translateY(20px) scaleY(1.2);
+  }
+  100% { 
+    clipPath: polygon(50% 0%, 60% 0%, 55% 30%, 65% 100%, 35% 100%, 45% 30%, 40% 0%);
+    opacity: 0;
+    transform: translateY(60px) scaleY(0.3);
+  }
+}
+
+@keyframes energy-arc {
+  0%, 100% { 
+    box-shadow: 0 0 5px #00ccff, 0 0 10px #00ccff, 0 0 20px #00ccff66;
+    transform: translateY(0);
+  }
+  25% { 
+    box-shadow: 0 0 10px #00ccff, 0 0 20px #00ccff, 0 0 40px #00ccffaa, 0 0 60px #00ccff66;
+    transform: translateY(-3px);
+  }
+  50% { 
+    box-shadow: 0 0 5px #00ccff, 0 0 10px #00ccff, 0 0 20px #00ccff66;
+    transform: translateY(0);
+  }
+  75% { 
+    box-shadow: 0 0 15px #a855f7, 0 0 30px #a855f7, 0 0 50px #a855f7aa;
+    transform: translateY(3px);
+  }
+}
+
+@keyframes spirit-fade {
+  0% { 
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  50% { 
+    opacity: 0.5;
+    transform: scale(0.95);
+    filter: blur(2px);
+  }
+  100% { 
+    opacity: 0;
+    transform: scale(0.8);
+    filter: blur(8px);
+  }
+}
+
+.page-enter {
+  animation: page-enter 0.4s ease-out forwards;
+}
+
+.page-exit {
+  animation: page-exit 0.3s ease-in forwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+.ritual-appear {
+  opacity: 0;
+  transform: scale(0.8) rotateX(90deg);
+  filter: blur(10px);
+  transition: all 0.6s ease-out;
+}
+
+.ritual-appear.visible {
+  opacity: 1;
+  transform: scale(1) rotateX(0deg);
+  filter: blur(0px);
+}
+
+.ritual-rise {
+  opacity: 0;
+  transform: translateY(50px);
+  transition: all 0.8s ease-out;
+}
+
+.ritual-rise.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ritual-stagger-1 { transition-delay: 0.1s; }
+.ritual-stagger-2 { transition-delay: 0.2s; }
+.ritual-stagger-3 { transition-delay: 0.3s; }
+.ritual-stagger-4 { transition-delay: 0.4s; }
+.ritual-stagger-5 { transition-delay: 0.5s; }
+
+.grimoire-border {
+  position: relative;
+  border: 2px solid var(--sigil-border);
+  background: var(--ritual-dark);
+}
+
+.grimoire-border::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  border: 1px solid var(--rune-purple);
+  pointer-events: none;
+}
+
+.grimoire-border::after {
+  content: "✧";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--ritual-gold);
+  font-size: 14px;
+  background: var(--ritual-dark);
+  padding: 0 8px;
+}
+
+.grimoire-border .corner-rune {
+  position: absolute;
+  color: var(--ritual-gold);
+  font-size: 16px;
+}
+
+.grimoire-border .corner-rune.top-left { top: -8px; left: -8px; }
+.grimoire-border .corner-rune.top-right { top: -8px; right: -8px; }
+.grimoire-border .corner-rune.bottom-left { bottom: -8px; left: -8px; }
+.grimoire-border .corner-rune.bottom-right { bottom: -8px; right: -8px; }
+
+.parchment-bg {
+  background-color: #1a1520;
+  background-image: 
+    url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paper'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%232a2035' surfaceScale='2'%3E%3CfeDistantLight azimuth='45' elevation='60'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paper)'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #1a1520 0%, #15101a 100%);
+  position: relative;
+}
+
+.parchment-bg::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.4) 100%);
+  pointer-events: none;
+}
+
+.void-gradient {
+  background: linear-gradient(180deg, var(--void-black) 0%, var(--abyssal-black) 50%, var(--void-purple) 100%);
+  position: relative;
+}
+
+.void-gradient::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(1px 1px at 20px 30px, var(--ghost-white), transparent),
+    radial-gradient(1px 1px at 40px 70px, var(--spirit-silver), transparent),
+    radial-gradient(1px 1px at 50px 160px, var(--ghost-white), transparent),
+    radial-gradient(1px 1px at 90px 40px, var(--spirit-silver), transparent),
+    radial-gradient(1px 1px at 130px 80px, var(--ghost-white), transparent),
+    radial-gradient(1px 1px at 160px 120px, var(--spirit-silver), transparent);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  animation: twinkle 4s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+.blood-text {
+  color: var(--blood-pink);
+  position: relative;
+}
+
+.blood-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  background: linear-gradient(180deg, var(--blood-pink) 0%, transparent 100%);
+  opacity: 0.6;
+  animation: blood-drip 2s ease-in-out infinite;
+}
+
+.sacred-glow {
+  text-shadow: 
+    0 0 5px var(--blessed-white),
+    0 0 10px var(--blessed-white),
+    0 0 20px var(--ritual-gold),
+    0 0 40px var(--ritual-gold),
+    0 0 60px var(--unholy-amber);
+}
+
+.sacred-glow-box {
+  box-shadow: 
+    0 0 5px var(--blessed-white),
+    0 0 10px rgba(255, 250, 240, 0.3),
+    0 0 20px var(--ritual-gold),
+    0 0 40px rgba(255, 170, 0, 0.2),
+    inset 0 0 30px rgba(255, 250, 240, 0.05);
+}
+
+.animate-blood-drip { animation: blood-drip 2s ease-in-out infinite; }
+.animate-soul-float { animation: soul-float 4s ease-in-out infinite; }
+.animate-rune-pulse { animation: rune-pulse 3s ease-in-out infinite; }
+.animate-glitch-text { animation: glitch-text 0.3s ease-in-out infinite; }
+.animate-portal-swirl { animation: portal-swirl 8s linear infinite; }
+.animate-energy-arc { animation: energy-arc 1.5s ease-in-out infinite; }
+.animate-spirit-fade { animation: spirit-fade 2s ease-in-out infinite; }
+
 .pixel-card {
-  background: linear-gradient(135deg, #1a1025 0%, #231832 100%);
-  border: 2px solid #3a2850;
+  background: linear-gradient(135deg, var(--ritual-dark) 0%, var(--card-purple) 100%);
+  border: 2px solid var(--sigil-border);
   position: relative;
   overflow: hidden;
+  transition: all 0.3s ease;
 }
 
 .pixel-card::before {
@@ -170,25 +546,25 @@ img, canvas, svg {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #9b59b644, transparent);
+  background: linear-gradient(90deg, transparent, rgba(155, 89, 182, 0.25), transparent);
 }
 
 .pixel-card:hover {
-  border-color: #9b59b6;
-  box-shadow: 0 0 20px #9b59b622, inset 0 0 20px #9b59b608;
+  border-color: var(--mystic-purple);
+  box-shadow: 0 0 20px rgba(155, 89, 182, 0.15), inset 0 0 20px rgba(155, 89, 182, 0.05);
+  transform: translateY(-2px);
 }
 
-/* Dialogue box JRPG style */
 .dialogue-box {
-  background: linear-gradient(180deg, #1a1025 0%, #12101a 100%);
-  border: 3px solid #3a2850;
+  background: linear-gradient(180deg, var(--ritual-dark) 0%, #12101a 100%);
+  border: 3px solid var(--sigil-border);
   border-radius: 0;
   position: relative;
   padding: 20px;
   box-shadow: 
-    0 0 0 1px #231832,
-    0 0 30px #0d0a1a88,
-    inset 0 1px 0 #3a285044;
+    0 0 0 1px var(--card-purple),
+    0 0 30px rgba(13, 10, 26, 0.5),
+    inset 0 1px 0 rgba(58, 40, 80, 0.25);
 }
 
 .dialogue-box::before {
@@ -198,27 +574,28 @@ img, canvas, svg {
   left: 2px;
   right: 2px;
   bottom: 2px;
-  border: 1px solid #3a285044;
+  border: 1px solid rgba(58, 40, 80, 0.25);
   pointer-events: none;
 }
 
-/* Glow text */
 .text-glow-pink {
-  text-shadow: 0 0 10px #ff336666, 0 0 20px #ff336633;
+  text-shadow: 0 0 10px rgba(255, 51, 102, 0.4), 0 0 20px rgba(255, 51, 102, 0.2);
 }
 
 .text-glow-gold {
-  text-shadow: 0 0 10px #ffd70066, 0 0 20px #ffd70033;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.4), 0 0 20px rgba(255, 215, 0, 0.2);
 }
 
 .text-glow-cyan {
-  text-shadow: 0 0 10px #00ccff66, 0 0 20px #00ccff33;
+  text-shadow: 0 0 10px rgba(0, 204, 255, 0.4), 0 0 20px rgba(0, 204, 255, 0.2);
 }
 
-/* Background stars/particles */
-@keyframes twinkle {
-  0%, 100% { opacity: 0.2; }
-  50% { opacity: 0.8; }
+.text-glow-purple {
+  text-shadow: 0 0 10px rgba(155, 89, 182, 0.4), 0 0 20px rgba(155, 89, 182, 0.2);
+}
+
+.text-glow-green {
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.4), 0 0 20px rgba(0, 255, 136, 0.2);
 }
 
 .bg-stars {
@@ -229,4 +606,41 @@ img, canvas, svg {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+}
+
+.ritual-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 800'%3E%3Ccircle cx='400' cy='400' r='350' fill='none' stroke='%233a2850' stroke-width='2'/%3E%3Ccircle cx='400' cy='400' r='300' fill='none' stroke='%233a2850' stroke-width='1'/%3E%3Ccircle cx='400' cy='400' r='250' fill='none' stroke='%234a3860' stroke-width='2'/%3E%3Cpolygon points='400,100 450,300 400,350 350,300' fill='none' stroke='%234a3860' stroke-width='1'/%3E%3Cpolygon points='400,700 450,500 400,450 350,500' fill='none' stroke='%234a3860' stroke-width='1'/%3E%3Cpolygon points='100,400 300,450 350,400 300,350' fill='none' stroke='%234a3860' stroke-width='1'/%3E%3Cpolygon points='700,400 500,450 450,400 500,350' fill='none' stroke='%234a3860' stroke-width='1'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .animate-blood-drip,
+  .animate-soul-float,
+  .animate-rune-pulse,
+  .animate-glitch-text,
+  .animate-portal-swirl,
+  .animate-energy-arc,
+  .animate-spirit-fade,
+  .page-enter,
+  .page-exit,
+  .ritual-appear,
+  .ritual-rise {
+    animation: none !important;
+  }
 }

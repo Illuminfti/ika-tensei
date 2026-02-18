@@ -2,102 +2,67 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PixelCard } from "@/components/ui/PixelCard";
+import { NFTCard } from "@/components/ui/NFTCard";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { PixelProgress } from "@/components/ui/PixelProgress";
 import { DialogueBox } from "@/components/ui/DialogueBox";
+import { SummoningCircle } from "@/components/ui/SummoningCircle";
+import { IkaSprite } from "@/components/ui/PixelSprite";
 
-// Mock NFT data
+// Mock NFT data with chain info
 const MOCK_NFTS = [
-  { id: 1, name: "Cosmic Squid #42", image: "🦑", collection: "Cosmic Creatures" },
-  { id: 2, name: "Pixel Dragon #7", image: "🐉", collection: "Pixel Beasts" },
-  { id: 3, name: "Ghostly Cat #99", image: "👻", collection: "Spectral Pets" },
-  { id: 4, name: "Neon Owl #23", image: "🦉", collection: "Neon Wildlife" },
-  { id: 5, name: "Cyber Fox #56", image: "🦊", collection: "Cyber fauna" },
-  { id: 6, name: "Void Bear #11", image: "🐻‍❄️", collection: "Void Walkers" },
-  { id: 7, name: "Crystal Wolf #88", image: "🐺", collection: "Crystal Pack" },
-  { id: 8, name: "Mystic Serpent #33", image: "🐍", collection: "Mystic Realms" },
+  { id: "1", name: "Cosmic Squid #42", tokenId: "42", chain: "sui" as const, collection: "Cosmic Creatures", status: "available" as const },
+  { id: "2", name: "Pixel Dragon #7", tokenId: "7", chain: "ethereum" as const, collection: "Pixel Beasts", status: "available" as const },
+  { id: "3", name: "Ghostly Cat #99", tokenId: "99", chain: "solana" as const, collection: "Spectral Pets", status: "available" as const },
+  { id: "4", name: "Neon Owl #23", tokenId: "23", chain: "sui" as const, collection: "Neon Wildlife", status: "available" as const },
+  { id: "5", name: "Cyber Fox #56", tokenId: "56", chain: "ethereum" as const, collection: "Cyber Fauna", status: "available" as const },
+  { id: "6", name: "Void Bear #11", tokenId: "11", chain: "solana" as const, collection: "Void Walkers", status: "available" as const },
+  { id: "7", name: "Crystal Wolf #88", tokenId: "88", chain: "sui" as const, collection: "Crystal Pack", status: "available" as const },
+  { id: "8", name: "Mystic Serpent #33", tokenId: "33", chain: "ethereum" as const, collection: "Mystic Realms", status: "available" as const },
 ];
 
 // Ritual steps
 const RITUAL_STEPS = [
-  { label: "Drawing the summoning circle...", dialogue: "The ancient circle begins to glow with ethereal light... Can you feel the mana gathering?" },
-  { label: "Sealing your NFT in the vault...", dialogue: "Your precious NFT is being bound to the mystical vault... The spirits watch over it now!" },
-  { label: "Generating your reborn identity...", dialogue: "A new identity emerges from the void... Your reborn self takes shape!" },
-  { label: "Minting on Solana...", dialogue: "The blockchain resonates with your presence... Solana burns the seal into the ledger!" },
-  { label: "The ritual is complete!", dialogue: "✨ SUCCESS! ✨ Your soul is now bound to the chain forever! The Ika Tensei ritual has blessed you!" },
+  { label: "Drawing circle...", text: "The ancient runes begin to materialize..." },
+  { label: "Sealing NFT...", text: "Your NFT is being bound to the eternal vault..." },
+  { label: "Generating identity...", text: "A new reborn identity emerges from the void..." },
+  { label: "Minting on Solana...", text: "The soul is being inscribed on the blockchain..." },
+  { label: "Complete!", text: "The ritual is complete. Your soul is now eternal." },
 ];
 
-// Pixel sparkle component for success
-function PixelSparkles() {
-  const sparkles = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    delay: Math.random() * 2,
-    size: Math.random() * 8 + 8,
-    duration: Math.random() * 2 + 2,
-  }));
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {sparkles.map((sparkle) => (
-        <motion.div
-          key={sparkle.id}
-          className="absolute bg-spectral-green"
-          style={{
-            left: `${sparkle.x}%`,
-            width: sparkle.size,
-            height: sparkle.size,
-            boxShadow: `0 0 ${sparkle.size}px #00ff88`,
-          }}
-          initial={{ y: "100%", opacity: 0 }}
-          animate={{
-            y: "-100%",
-            opacity: [0, 1, 1, 0],
-            rotate: [0, 90, 180, 270, 360],
-          }}
-          transition={{
-            duration: sparkle.duration,
-            delay: sparkle.delay,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+type RitualState = "connect" | "select" | "confirm" | "ritual" | "success";
 
 export default function SealPage() {
-  const [walletConnected, setWalletConnected] = useState(false);
+  const [state, setState] = useState<RitualState>("connect");
   const [selectedNft, setSelectedNft] = useState<typeof MOCK_NFTS[0] | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [ritualActive, setRitualActive] = useState(false);
   const [ritualStep, setRitualStep] = useState(0);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   // Handle wallet connection
   const handleConnect = () => {
-    setWalletConnected(true);
+    setState("select");
   };
 
   // Handle NFT selection
-  const handleNftClick = (nft: typeof MOCK_NFTS[0]) => {
-    if (!walletConnected) return;
+  const handleNftSelect = (nft: typeof MOCK_NFTS[0]) => {
     setSelectedNft(nft);
-    setShowConfirm(true);
+    setState("confirm");
   };
 
-  // Handle ritual start
+  // Handle confirmation
   const handleConfirmSeal = () => {
-    setShowConfirm(false);
-    setRitualActive(true);
+    setState("ritual");
     setRitualStep(0);
+  };
+
+  // Handle cancel
+  const handleCancel = () => {
+    setSelectedNft(null);
+    setState("select");
   };
 
   // Auto-advance ritual steps
   useEffect(() => {
-    if (!ritualActive) return;
+    if (state !== "ritual") return;
 
     if (ritualStep < RITUAL_STEPS.length - 1) {
       const timer = setTimeout(() => {
@@ -106,51 +71,71 @@ export default function SealPage() {
       return () => clearTimeout(timer);
     } else {
       const timer = setTimeout(() => {
-        setShowSuccess(true);
-        setRitualActive(false);
-      }, 3000);
+        setState("success");
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [ritualStep, ritualActive]);
+  }, [ritualStep, state]);
 
   // Reset everything
   const handleReset = () => {
-    setWalletConnected(false);
+    setState("connect");
     setSelectedNft(null);
-    setShowConfirm(false);
-    setRitualActive(false);
     setRitualStep(0);
-    setShowSuccess(false);
+  };
+
+  // Get circle phase based on step
+  const getCirclePhase = () => {
+    if (state !== "ritual") return "idle";
+    if (ritualStep === 0) return "charging";
+    if (ritualStep === RITUAL_STEPS.length - 1) return "active";
+    return "active";
   };
 
   return (
-    <div className="min-h-screen bg-void-purple text-ghost-white font-silk p-8">
+    <div className="min-h-screen bg-void-purple relative overflow-hidden">
+      {/* Background atmosphere */}
+      <div 
+        className="fixed inset-0 pointer-events-none"
+        style={{
+          background: `
+            radial-gradient(ellipse at 50% 0%, rgba(139, 0, 0, 0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 80% 80%, rgba(0, 100, 50, 0.1) 0%, transparent 40%),
+            radial-gradient(ellipse at 20% 90%, rgba(75, 0, 130, 0.1) 0%, transparent 40%)
+          `,
+        }}
+      />
+
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-12"
+        className="text-center pt-8 pb-4 relative z-10"
       >
         <h1 className="font-pixel text-4xl md:text-5xl text-ritual-gold mb-2 tracking-wider">
-          🔮 IKA TENSEI 🔮
+          THE SOUL SEAL RITUAL
         </h1>
-        <p className="font-silk text-faded-spirit text-sm">
-          The Soul Seal Ritual
+        <p className="font-silk text-faded-spirit text-sm tracking-widest">
+          Bind your NFT to the eternal chain
         </p>
       </motion.header>
 
       <AnimatePresence mode="wait">
-        {/* Wallet Connection State */}
-        {!walletConnected && !ritualActive && !showSuccess && (
+        {/* WALLET CONNECTION STATE */}
+        {state === "connect" && (
           <motion.div
-            key="wallet"
+            key="connect"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            className="max-w-md mx-auto"
+            className="max-w-md mx-auto relative z-10 px-4"
           >
-            <div className="nes-container is-dark text-center py-12">
-              <div className="text-6xl mb-6">🦑</div>
+            <div className="border-2 border-sigil-border bg-card-purple/80 p-8 text-center">
+              {/* IkaSprite */}
+              <div className="flex justify-center mb-6">
+                <IkaSprite size={64} expression="neutral" />
+              </div>
+              
               <h2 className="font-pixel text-xl text-ritual-gold mb-4">
                 Connect Your Wallet
               </h2>
@@ -164,169 +149,209 @@ export default function SealPage() {
           </motion.div>
         )}
 
-        {/* NFT Selection Grid */}
-        {walletConnected && !ritualActive && !showSuccess && !showConfirm && (
+        {/* NFT SELECTION GRID */}
+        {state === "select" && (
           <motion.div
-            key="grid"
+            key="select"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            className="max-w-4xl mx-auto px-4 pb-8 relative z-10"
           >
             <DialogueBox
-              text="Welcome, seeker! Choose an NFT to bind to the chain. The ritual awaits..."
+              text="Choose an NFT to bind to the chain..."
               speaker="Ika"
-              portrait="excited"
+              portrait="neutral"
             />
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 max-w-4xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
               {MOCK_NFTS.map((nft, index) => (
                 <motion.div
                   key={nft.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ delay: index * 0.05 }}
                 >
-                  <PixelCard onClick={() => handleNftClick(nft)}>
-                    <div className="text-center p-4">
-                      <div className="text-5xl mb-3">{nft.image}</div>
-                      <h3 className="font-pixel text-xs text-ritual-gold mb-1">
-                        {nft.name}
-                      </h3>
-                      <p className="font-silk text-[10px] text-faded-spirit">
-                        {nft.collection}
-                      </p>
-                    </div>
-                  </PixelCard>
+                  <NFTCard
+                    name={nft.name}
+                    tokenId={nft.tokenId}
+                    chain={nft.chain}
+                    status={nft.status}
+                    collection={nft.collection}
+                    onClick={() => handleNftSelect(nft)}
+                  />
                 </motion.div>
               ))}
             </div>
           </motion.div>
         )}
 
-        {/* Confirmation Modal */}
-        {showConfirm && selectedNft && (
+        {/* CONFIRMATION MODAL */}
+        {state === "confirm" && selectedNft && (
           <motion.div
             key="confirm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowConfirm(false)}
+            onClick={handleCancel}
           >
             <motion.div
-              initial={{ scale: 0.8, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: "spring", damping: 15 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg"
+              className="w-full max-w-md"
             >
               <DialogueBox
-                text={`Are you ready to seal ${selectedNft.name}? This ritual binds your NFT to the eternal chain. There is no turning back...`}
+                text={`Are you ready to seal ${selectedNft.name}?`}
                 speaker="Ika"
                 portrait="worried"
+                variant="dramatic"
               />
               
-              <div className="flex gap-4 mt-6 justify-center">
-                <PixelButton
-                  onClick={() => setShowConfirm(false)}
-                  variant="dark"
-                  size="md"
-                >
+              <div className="flex gap-4 justify-center mt-6">
+                <PixelButton onClick={handleCancel} variant="dark" size="lg">
                   Cancel
                 </PixelButton>
-                <PixelButton
-                  onClick={handleConfirmSeal}
-                  variant="warning"
-                  size="md"
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  Seal My Soul
-                </PixelButton>
+                  <PixelButton 
+                    onClick={handleConfirmSeal} 
+                    variant="warning" 
+                    size="lg"
+                    className="animate-pulse"
+                  >
+                    Seal My Soul
+                  </PixelButton>
+                </motion.div>
               </div>
             </motion.div>
           </motion.div>
         )}
 
-        {/* Ritual Progress */}
-        {ritualActive && !showSuccess && (
+        {/* RITUAL PROGRESS */}
+        {state === "ritual" && (
           <motion.div
             key="ritual"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="max-w-2xl mx-auto"
+            className="max-w-2xl mx-auto px-4 pb-8 relative z-10"
           >
-            <DialogueBox
-              text={RITUAL_STEPS[ritualStep].dialogue}
-              speaker="Ika"
-              portrait={ritualStep === 4 ? "excited" : "neutral"}
-            />
-            
-            <div className="nes-container is-dark mt-8 p-6">
-              <div className="mb-4">
-                <span className="font-pixel text-sm text-blood-pink">
-                  ⚡ RITUAL IN PROGRESS
-                </span>
-              </div>
-              
-              <PixelProgress
+            {/* Summoning Circle */}
+            <div className="py-4">
+              <SummoningCircle 
+                phase={getCirclePhase()}
+                size={280}
+              />
+            </div>
+
+            {/* Progress Bar */}
+            <div className="my-6">
+              <PixelProgress 
                 value={((ritualStep + 1) / RITUAL_STEPS.length) * 100}
                 label={RITUAL_STEPS[ritualStep].label}
-                variant="primary"
+                variant="warning"
               />
-              
-              <div className="mt-6 flex justify-between">
-                {RITUAL_STEPS.map((step, index) => (
-                  <div
-                    key={index}
-                    className={`flex flex-col items-center ${
-                      index <= ritualStep ? "text-spectral-green" : "text-faded-spirit"
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 mb-1 ${
-                        index <= ritualStep ? "bg-spectral-green" : "bg-faded-spirit"
-                      }`}
-                      style={{
-                        boxShadow: index <= ritualStep ? "0 0 8px #00ff88" : "none",
-                      }}
-                    />
-                    <span className="font-silk text-[8px] text-center hidden md:block">
-                      {step.label.split("...")[0]}
-                    </span>
-                  </div>
-                ))}
-              </div>
+            </div>
+
+            {/* Step Dialogue */}
+            <DialogueBox
+              text={RITUAL_STEPS[ritualStep].text}
+              speaker="Ritual"
+              portrait="neutral"
+              variant="system"
+            />
+
+            {/* Step Indicators */}
+            <div className="flex justify-center gap-2 mt-8">
+              {RITUAL_STEPS.map((_, index) => (
+                <motion.div
+                  key={index}
+                  className={`w-3 h-3 rounded-sm ${
+                    index <= ritualStep 
+                      ? "bg-spectral-green" 
+                      : "bg-void-purple border border-faded-spirit/30"
+                  }`}
+                  animate={index === ritualStep ? {
+                    boxShadow: ["0 0 5px #00ff88", "0 0 15px #00ff88", "0 0 5px #00ff88"],
+                  } : {}}
+                  transition={{ duration: 1, repeat: Infinity }}
+                />
+              ))}
             </div>
           </motion.div>
         )}
 
-        {/* Success Screen */}
-        {showSuccess && (
+        {/* SUCCESS SCREEN */}
+        {state === "success" && (
           <motion.div
             key="success"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-w-2xl mx-auto text-center relative"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="max-w-2xl mx-auto px-4 pb-8 text-center relative z-10"
           >
-            <PixelSparkles />
-            
-            <div className="nes-container is-dark p-8 relative z-10">
-              <div className="text-6xl mb-6">🎉✨🧿✨🎉</div>
-              <h2 className="font-pixel text-2xl text-spectral-green mb-4">
-                RITUAL COMPLETE!
-              </h2>
-              
-              <DialogueBox
-                text="Your soul has been bound to the chain! Your NFT now exists in the eternal digital realm. The Ika Tensei has accepted you!"
-                speaker="Ika"
-                portrait="excited"
-              />
-              
-              <div className="mt-8">
-                <PixelButton onClick={handleReset} variant="success" size="lg">
-                  Seal Another Soul
-                </PixelButton>
-              </div>
+            {/* Sparkle Particles */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute w-2 h-2"
+                  style={{
+                    backgroundColor: ["#00ff88", "#ffd700", "#ff3366", "#9945ff"][i % 4],
+                    left: `${Math.random() * 100}%`,
+                    bottom: "20%",
+                  }}
+                  animate={{
+                    y: [0, -window.innerHeight * 0.8],
+                    x: [0, (Math.random() - 0.5) * 100],
+                    opacity: [1, 0],
+                    scale: [1, 0.5],
+                  }}
+                  transition={{
+                    duration: 2 + Math.random(),
+                    delay: Math.random() * 0.5,
+                    repeat: Infinity,
+                    repeatDelay: Math.random() * 2,
+                  }}
+                />
+              ))}
             </div>
+
+            {/* Success Title */}
+            <motion.h2
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", damping: 10 }}
+              className="font-pixel text-4xl text-spectral-green mb-6"
+            >
+              RITUAL COMPLETE!
+            </motion.h2>
+
+            {/* Celebration Dialogue */}
+            <DialogueBox
+              text={`Your soul has been bound! ${selectedNft?.name} now exists eternally on the chain.`}
+              speaker="Ika"
+              portrait="excited"
+              variant="system"
+            />
+
+            {/* Reset Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="mt-8"
+            >
+              <PixelButton onClick={handleReset} variant="success" size="lg">
+                Seal Another Soul
+              </PixelButton>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
