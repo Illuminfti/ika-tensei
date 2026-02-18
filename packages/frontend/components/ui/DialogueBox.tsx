@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { IkaSprite, IkaExpression } from "./PixelSprite";
+import Image from "next/image";
 import { PixelButton } from "./PixelButton";
 
 export type PortraitExpression = "neutral" | "excited" | "worried" | "smug" | "angry" | "sleeping" | "happy" | "sad" | "surprised" | "thinking";
@@ -14,22 +14,9 @@ export interface DialogueChoice {
   disabled?: boolean;
 }
 
-// Map PortraitExpression to IkaExpression (some portrait values don't exist in IkaSprite)
-function mapToIkaExpression(portrait?: PortraitExpression): IkaExpression | undefined {
-  if (!portrait) return undefined;
-  const mapping: Record<PortraitExpression, IkaExpression> = {
-    "neutral": "neutral",
-    "excited": "excited",
-    "worried": "worried",
-    "smug": "smug",
-    "angry": "angry",
-    "sleeping": "sleeping",
-    "happy": "happy",
-    "sad": "worried", // Map sad to worried
-    "surprised": "excited", // Map surprised to excited
-    "thinking": "thinking",
-  };
-  return mapping[portrait] as IkaExpression | undefined;
+// Portrait expression mapping (kept for type compatibility)
+function _unusedMapping(portrait?: PortraitExpression): string | undefined {
+  return portrait;
 }
 
 /** Sound effect callbacks - implement with actual audio in parent */
@@ -226,7 +213,7 @@ export function DialogueBox({
         <div className="flex gap-5 items-start pt-3">
           {/* Pixel art portrait with ornate frame */}
           <div className="flex-shrink-0 bg-card-purple border-2 border-sigil-border p-2 relative">
-            <IkaSprite size={56} expression={mapToIkaExpression(portrait)} />
+            <Image src="/art/ika-mascot-v2.png" alt="Ika" width={56} height={56} className="pixelated" />
             {/* Gold corner marks */}
             <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-ritual-gold" />
             <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-ritual-gold" />
