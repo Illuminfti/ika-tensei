@@ -19,7 +19,7 @@ import { useKonamiCode } from "@/hooks/useKonamiCode";
 const RUNE_PARTICLES = [
   "死", "魔", "魂", "転", "生", "封印", "儀", "式", "☆", "✦", "⚡", "✧",
   "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ",
-  "卍", "梵", "🔯"
+  "梵", "◆", "✦"
 ];
 
 interface Particle {
