@@ -247,7 +247,7 @@ contract MaliciousERC721Reentrant is IERC721 {
         // Attempt reentrancy attack - try to call deposit again
         callCount++;
         if (address(target) != address(0) && attacker != address(0)) {
-            try target.depositERC721{value: 0}(address(this), tokenId, attacker, bytes32(uint256(1))) {
+            try target.depositERC721{value: 0}(address(this), tokenId, bytes32(uint256(uint160(address(attacker)))), bytes32(uint256(1))) {
                 attackSuccess = true;
             } catch {
                 // Expected to fail - attack fails due to nonReentrant
@@ -330,7 +330,7 @@ contract MaliciousERC1155Reentrant is IERC1155 {
         // Attempt reentrancy attack
         callCount++;
         if (address(target) != address(0) && attacker != address(0)) {
-            try target.depositERC1155{value: 0}(address(this), id, amount, attacker, bytes32(uint256(1))) {
+            try target.depositERC1155{value: 0}(address(this), id, amount, bytes32(uint256(uint160(address(attacker)))), bytes32(uint256(1))) {
                 attackSuccess = true;
             } catch {
                 // Expected to fail
@@ -372,7 +372,7 @@ contract MaliciousRefundReceiver {
         callCount++;
         if (address(target) != address(0) && attacker != address(0) && callCount == 1) {
             // Try to reenter during refund
-            try target.depositERC721{value: 0}(address(0), 0, attacker, bytes32(uint256(999))) {
+            try target.depositERC721{value: 0}(address(0), 0, bytes32(uint256(uint160(address(attacker)))), bytes32(uint256(999))) {
                 // If this succeeds, we have a bug
             } catch {
                 // Expected to fail
@@ -391,12 +391,12 @@ contract IkaTenseiDepositSecurityTest is Test {
         address indexed nftContract,
         uint256 indexed tokenId,
         address indexed depositor,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce,
         uint64 wormholeSequence
     );
-    event FeeUpdated(uint256 newFee);
-    event FeeRecipientUpdated(address newFeeRecipient);
+    event FeeUpdated(uint256 oldFee, uint256 newFee);
+    event FeeRecipientUpdated(address oldRecipient, address newRecipient);
     event WormholeCoreUpdated(address newWormholeCore);
 
     IkaTenseiDeposit public dep;
@@ -456,7 +456,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // when callback's reentry is blocked
         vm.prank(user);
         uint64 seq = dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(malNft), 100, dWallet, bytes32(uint256(1))
+            address(malNft), 100, bytes32(uint256(uint160(dWallet))), bytes32(uint256(1))
         );
         
         // Verify the deposit went through - callback failed but deposit succeeded
@@ -479,7 +479,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         
         vm.prank(user);
         uint64 seq = dep.depositERC1155{value: DEPOSIT_FEE + wfee}(
-            address(malNft), 99, 50, dWallet, bytes32(uint256(2))
+            address(malNft), 99, 50, bytes32(uint256(uint160(dWallet))), bytes32(uint256(2))
         );
         
         assertEq(malNft.balanceOf(dWallet, 99), 50, "Tokens should be transferred");
@@ -514,7 +514,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // This should work - normal refund to user
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee + excess}(
-            address(testNft), 200, dWallet, bytes32(uint256(3))
+            address(testNft), 200, bytes32(uint256(uint160(dWallet))), bytes32(uint256(3))
         );
         
         // User should have received excess refund (minus fees)
@@ -544,7 +544,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert();
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(testNft), 201, dWallet, bytes32(uint256(4))
+            address(testNft), 201, bytes32(uint256(uint160(dWallet))), bytes32(uint256(4))
         );
     }
 
@@ -567,7 +567,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // Should work - only need to pay wormhole fee
         vm.prank(user);
         uint64 seq = dep.depositERC721{value: wfee}(
-            address(testNft), 202, dWallet, bytes32(uint256(5))
+            address(testNft), 202, bytes32(uint256(uint160(dWallet))), bytes32(uint256(5))
         );
         
         assertEq(seq, 1, "Deposit should succeed with zero deposit fee");
@@ -578,10 +578,16 @@ contract IkaTenseiDepositSecurityTest is Test {
     // TEST 6: High fee edge case
     // ============================================================
     function test_SecurityHighFee() public {
-        // Set fee to a high value (but less than user's balance)
-        uint256 highFee = 10 ether;
+        // Try to set fee above MAX_DEPOSIT_FEE (0.1 ether) - should fail
+        uint256 highFee = 0.2 ether;
         vm.prank(owner);
+        vm.expectRevert("Fee too high");
         dep.setFee(highFee);
+        
+        // Set fee to a valid high value (within limit)
+        uint256 validFee = 0.1 ether;
+        vm.prank(owner);
+        dep.setFee(validFee);
         
         MockERC721 testNft = new MockERC721();
         testNft.mint(user, 203);
@@ -595,20 +601,20 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Insufficient fee");
         vm.prank(user);
         dep.depositERC721{value: wfee}(
-            address(testNft), 203, dWallet, bytes32(uint256(6))
+            address(testNft), 203, bytes32(uint256(uint160(dWallet))), bytes32(uint256(6))
         );
         
         // Should fail - not enough (wormhole fee + small amount, but not highFee)
         vm.expectRevert("Insufficient fee");
         vm.prank(user);
         dep.depositERC721{value: wfee + 1}(
-            address(testNft), 203, dWallet, bytes32(uint256(6))
+            address(testNft), 203, bytes32(uint256(uint160(dWallet))), bytes32(uint256(6))
         );
         
         // Should succeed with highFee + wfee
         vm.prank(user);
         dep.depositERC721{value: highFee + wfee}(
-            address(testNft), 203, dWallet, bytes32(uint256(6))
+            address(testNft), 203, bytes32(uint256(uint160(dWallet))), bytes32(uint256(6))
         );
         
         assertEq(testNft.ownerOf(203), dWallet);
@@ -640,14 +646,14 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Insufficient fee");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + oldFee}(
-            address(testNft), 204, dWallet, bytes32(uint256(7))
+            address(testNft), 204, bytes32(uint256(uint160(dWallet))), bytes32(uint256(7))
         );
         
         // Should succeed with new higher fee
         uint256 newFee = wormhole.messageFee();
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + newFee}(
-            address(testNft), 204, dWallet, bytes32(uint256(7))
+            address(testNft), 204, bytes32(uint256(uint160(dWallet))), bytes32(uint256(7))
         );
         
         assertEq(testNft.ownerOf(204), dWallet);
@@ -667,7 +673,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // User deposits first
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, sameNonce
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), sameNonce
         );
         
         // Create another user with NFT
@@ -684,7 +690,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Nonce already used");
         vm.prank(user2);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft2), 300, dWallet, sameNonce
+            address(nft2), 300, bytes32(uint256(uint160(dWallet))), sameNonce
         );
     }
 
@@ -708,7 +714,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert();
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft1155), 42, dWallet, bytes32(uint256(8))
+            address(nft1155), 42, bytes32(uint256(uint160(dWallet))), bytes32(uint256(8))
         );
     }
 
@@ -725,7 +731,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Amount must be > 0");
         vm.prank(user);
         dep.depositERC1155{value: DEPOSIT_FEE + wfee}(
-            address(nft1155), 42, 0, dWallet, bytes32(uint256(9))
+            address(nft1155), 42, 0, bytes32(uint256(uint160(dWallet))), bytes32(uint256(9))
         );
     }
 
@@ -742,7 +748,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Invalid dWallet address");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, address(0), bytes32(uint256(10))
+            address(nft721), 1, bytes32(0), bytes32(uint256(10))
         );
     }
 
@@ -762,7 +768,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Not token owner");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(otherNft), 500, dWallet, bytes32(uint256(11))
+            address(otherNft), 500, bytes32(uint256(uint160(dWallet))), bytes32(uint256(11))
         );
     }
 
@@ -787,14 +793,14 @@ contract IkaTenseiDepositSecurityTest is Test {
             address(nft721),
             1,
             user,
-            dWallet,
+            bytes32(uint256(uint160(dWallet))),
             bytes32(uint256(12)),
             1
         );
         
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(12))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(12))
         );
         
         // Verify the payload encoding happens correctly by checking the function works
@@ -856,7 +862,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert();
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(13))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(13))
         );
         
         // Unpause as owner
@@ -866,7 +872,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // Now should work
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(13))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(13))
         );
         
         assertEq(nft721.ownerOf(1), dWallet);
@@ -902,7 +908,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         // First deposit succeeds
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(14))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(14))
         );
         
         assertEq(nft721.ownerOf(1), dWallet, "NFT should be at dWallet");
@@ -911,7 +917,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Not token owner");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(15))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(15))
         );
     }
 
@@ -928,7 +934,7 @@ contract IkaTenseiDepositSecurityTest is Test {
         vm.expectRevert("Not authorized");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(16))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(16))
         );
     }
 
@@ -953,10 +959,11 @@ contract IkaTenseiDepositSecurityTest is Test {
     // ADDITIONAL: setFeeRecipient emits correct event
     // ============================================================
     function test_SecurityFeeRecipientEvent() public {
+        address oldRecipient = feeRecipient;
         address newRecipient = makeAddr("newRecipient");
         
         vm.expectEmit(true, true, true, true);
-        emit FeeRecipientUpdated(newRecipient);
+        emit FeeRecipientUpdated(oldRecipient, newRecipient);
         
         vm.prank(owner);
         dep.setFeeRecipient(newRecipient);
@@ -968,10 +975,11 @@ contract IkaTenseiDepositSecurityTest is Test {
     // ADDITIONAL: setFee emits correct event
     // ============================================================
     function test_SecurityFeeEvent() public {
+        uint256 oldFee = DEPOSIT_FEE;
         uint256 newFee = 0.05 ether;
         
         vm.expectEmit(true, true, true, true);
-        emit FeeUpdated(newFee);
+        emit FeeUpdated(oldFee, newFee);
         
         vm.prank(owner);
         dep.setFee(newFee);

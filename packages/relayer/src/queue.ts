@@ -33,6 +33,8 @@ export interface NFTSealedEvent {
 export class ProcessingQueue extends EventEmitter {
   private queue: QueueItem[] = [];
   private processing = new Set<string>();
+  // H3: Processing lock to prevent race conditions
+  private processingLock = new Set<string>();
   private concurrency: number;
   private pollIntervalMs: number;
   private logger: Logger;
@@ -47,12 +49,38 @@ export class ProcessingQueue extends EventEmitter {
   }
 
   /**
+   * H3: Check if seal is locked (being processed)
+   */
+  isLocked(sealHash: string): boolean {
+    return this.processingLock.has(sealHash);
+  }
+
+  /**
+   * H3: Try to acquire processing lock
+   * @returns true if lock acquired, false if already locked
+   */
+  tryLock(sealHash: string): boolean {
+    if (this.processingLock.has(sealHash)) {
+      return false;
+    }
+    this.processingLock.add(sealHash);
+    return true;
+  }
+
+  /**
+   * H3: Release processing lock
+   */
+  unlock(sealHash: string): void {
+    this.processingLock.delete(sealHash);
+  }
+
+  /**
    * Add an event to the queue
    */
   enqueue(event: NFTSealedEvent, priority: number = 0): void {
-    // Check if already in queue or processing
-    if (this.processing.has(event.seal_hash)) {
-      this.logger.debug(`Seal ${event.seal_hash} already processing, skipping`);
+    // H3: Check if already locked (being processed)
+    if (this.processingLock.has(event.seal_hash)) {
+      this.logger.debug(`Seal ${event.seal_hash} already processing (locked), skipping`);
       return;
     }
     
@@ -98,8 +126,9 @@ export class ProcessingQueue extends EventEmitter {
     const available = this.concurrency - this.processing.size;
     if (available <= 0) return [];
     
+    // H3: Filter out items already locked (being processed)
     const batch = this.queue
-      .filter(item => !this.processing.has(item.sealHash))
+      .filter(item => !this.processing.has(item.sealHash) && !this.processingLock.has(item.sealHash))
       .slice(0, available);
     
     return batch;
@@ -109,6 +138,10 @@ export class ProcessingQueue extends EventEmitter {
    * Mark an item as being processed
    */
   startProcessing(sealHash: string): void {
+    // H3: Ensure lock is acquired
+    if (!this.processingLock.has(sealHash)) {
+      this.processingLock.add(sealHash);
+    }
     this.processing.add(sealHash);
     const item = this.queue.find(i => i.sealHash === sealHash);
     if (item) {
@@ -121,6 +154,8 @@ export class ProcessingQueue extends EventEmitter {
    */
   finishProcessing(sealHash: string): void {
     this.processing.delete(sealHash);
+    // H3: Release lock
+    this.processingLock.delete(sealHash);
     this.emit('processed', sealHash);
   }
 
@@ -151,6 +186,8 @@ export class ProcessingQueue extends EventEmitter {
    */
   release(sealHash: string): void {
     this.processing.delete(sealHash);
+    // H3: Also release lock on retry
+    this.processingLock.delete(sealHash);
   }
 
   /**
@@ -165,10 +202,17 @@ export class ProcessingQueue extends EventEmitter {
   }
 
   /**
+   * H3: Get count of active (in-flight) operations
+   */
+  activeCount(): number {
+    return this.processing.size;
+  }
+
+  /**
    * Check if seal is queued or processing
    */
   has(sealHash: string): boolean {
-    return this.processing.has(sealHash) || this.queue.some(i => i.sealHash === sealHash);
+    return this.processingLock.has(sealHash) || this.processing.has(sealHash) || this.queue.some(i => i.sealHash === sealHash);
   }
 
   /**

@@ -30,6 +30,12 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @notice Consistency level 1 = finalized (production safety)
     uint8 public constant CONSISTENCY_LEVEL = 1;
 
+    /// @notice Maximum deposit fee (0.1 ETH)
+    uint256 public constant MAX_DEPOSIT_FEE = 0.1 ether;
+
+    /// @notice Timelock duration for admin changes (2 days)
+    uint256 public constant TIMELOCK_DURATION = 2 days;
+
     // ============ State Variables ============
     
     /// @notice Address of the Wormhole core contract
@@ -47,6 +53,22 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @notice Sequence counter for Wormhole messages
     uint64 public sequence;
 
+    /// @notice Timestamp when contract was paused (for emergency withdrawal)
+    uint256 public pausedAt;
+
+    /// @notice Pending change for timelocked admin operations
+    struct PendingChange {
+        address newValue;
+        uint256 executeAfter;
+        bool exists;
+    }
+
+    /// @notice Mapping of pending changes (keyed by change type)
+    mapping(bytes32 => PendingChange) public pendingChanges;
+
+    /// @notice Mapping of NFT deposits: token => depositor (for emergency withdrawal)
+    mapping(bytes32 => address) public depositers;
+
     // ============ Events ============
 
     /// @notice Event emitted when an NFT is deposited
@@ -54,16 +76,16 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         address indexed nftContract,
         uint256 indexed tokenId,
         address indexed depositor,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce,
         uint64 wormholeSequence
     );
 
     /// @notice Event emitted when fee is updated
-    event FeeUpdated(uint256 newFee);
+    event FeeUpdated(uint256 oldFee, uint256 newFee);
 
     /// @notice Event emitted when fee recipient is updated
-    event FeeRecipientUpdated(address newFeeRecipient);
+    event FeeRecipientUpdated(address oldRecipient, address newRecipient);
 
     /// @notice Event emitted when Wormhole core is updated
     event WormholeCoreUpdated(address newWormholeCore);
@@ -91,18 +113,18 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @notice Deposit an ERC-721 NFT and emit Wormhole attestation
     /// @param nftContract Address of the ERC-721 contract
     /// @param tokenId ID of the token to deposit
-    /// @param dwalletAddress Address of the dWallet (destination for NFT)
+    /// @param dwalletAddress Address of the dWallet (destination for NFT) as bytes32
     /// @param sealNonce Unique nonce to prevent replay attacks
     /// @return wormholeSequence The Wormhole sequence number for this message
     function depositERC721(
         address nftContract,
         uint256 tokenId,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce
     ) external payable nonReentrant whenNotPaused returns (uint64 wormholeSequence) {
         // Validate inputs
         require(nftContract != address(0), "Invalid NFT contract");
-        require(dwalletAddress != address(0), "Invalid dWallet address");
+        require(dwalletAddress != bytes32(0), "Invalid dWallet address");
         
         // Check fee (must cover deposit fee + wormhole message fee)
         uint256 wormholeFee = IWormhole(wormholeCore).messageFee();
@@ -117,7 +139,13 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         require(nft.ownerOf(tokenId) == msg.sender, "Not token owner");
         
         // Transfer NFT to dWallet address (this is the "vault")
-        nft.transferFrom(msg.sender, dwalletAddress, tokenId);
+        // Convert bytes32 dwalletAddress to address for transfer
+        address dwalletAddr = address(uint160(uint256(dwalletAddress)));
+        nft.transferFrom(msg.sender, dwalletAddr, tokenId);
+
+        // Track depositor for emergency withdrawal
+        bytes32 depositKey = keccak256(abi.encodePacked(nftContract, tokenId));
+        depositers[depositKey] = msg.sender;
 
         // Build payload (171 bytes)
         bytes memory payload = _encodeDepositPayload(
@@ -161,19 +189,19 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @param nftContract Address of the ERC-1155 contract
     /// @param tokenId ID of the token to deposit
     /// @param amount Amount of tokens to deposit
-    /// @param dwalletAddress Address of the dWallet (destination for NFT)
+    /// @param dwalletAddress Address of the dWallet (destination for NFT) as bytes32
     /// @param sealNonce Unique nonce to prevent replay attacks
     /// @return wormholeSequence The Wormhole sequence number for this message
     function depositERC1155(
         address nftContract,
         uint256 tokenId,
         uint256 amount,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce
     ) external payable nonReentrant whenNotPaused returns (uint64 wormholeSequence) {
         // Validate inputs
         require(nftContract != address(0), "Invalid NFT contract");
-        require(dwalletAddress != address(0), "Invalid dWallet address");
+        require(dwalletAddress != bytes32(0), "Invalid dWallet address");
         require(amount > 0, "Amount must be > 0");
         
         // Check fee (must cover deposit fee + wormhole message fee)
@@ -189,7 +217,9 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         require(nft.balanceOf(msg.sender, tokenId) >= amount, "Insufficient balance");
         
         // Transfer NFT to dWallet address
-        nft.safeTransferFrom(msg.sender, dwalletAddress, tokenId, amount, "");
+        // Convert bytes32 dwalletAddress to address for transfer
+        address dwalletAddr = address(uint160(uint256(dwalletAddress)));
+        nft.safeTransferFrom(msg.sender, dwalletAddr, tokenId, amount, "");
 
         // Build payload (171 bytes)
         bytes memory payload = _encodeDepositPayload(
@@ -234,16 +264,19 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @notice Update the deposit fee
     /// @param newFee New fee amount in wei
     function setFee(uint256 newFee) external onlyOwner {
+        require(newFee <= MAX_DEPOSIT_FEE, "Fee too high");
+        uint256 oldFee = depositFee;
         depositFee = newFee;
-        emit FeeUpdated(newFee);
+        emit FeeUpdated(oldFee, newFee);
     }
 
     /// @notice Update the fee recipient address
     /// @param newFeeRecipient New fee recipient address
     function setFeeRecipient(address newFeeRecipient) external onlyOwner {
         require(newFeeRecipient != address(0), "Invalid fee recipient");
+        address oldRecipient = feeRecipient;
         feeRecipient = newFeeRecipient;
-        emit FeeRecipientUpdated(newFeeRecipient);
+        emit FeeRecipientUpdated(oldRecipient, newFeeRecipient);
     }
 
     /// @notice Update the Wormhole core contract address
@@ -254,14 +287,58 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         emit WormholeCoreUpdated(newWormholeCore);
     }
 
+    /// @notice Propose a new owner (starts timelock)
+    /// @param newOwner The proposed new owner address
+    function proposeChangeOwner(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        pendingChanges[keccak256("owner")] = PendingChange(
+            newOwner,
+            block.timestamp + TIMELOCK_DURATION,
+            true
+        );
+    }
+
+    /// @notice Execute the pending owner change after timelock expires
+    function executeChangeOwner() external onlyOwner {
+        PendingChange storage change = pendingChanges[keccak256("owner")];
+        require(change.exists && block.timestamp >= change.executeAfter, "Timelock not expired");
+        transferOwnership(change.newValue);
+        delete pendingChanges[keccak256("owner")];
+    }
+
     /// @notice Pause deposits (emergency function)
     function pause() external onlyOwner {
         _pause();
+        pausedAt = block.timestamp;
     }
 
     /// @notice Unpause deposits
     function unpause() external onlyOwner {
         _unpause();
+        pausedAt = 0;
+    }
+
+    /// @notice Emergency withdrawal of NFT after 7 days of pause
+    /// @param nftContract Address of the ERC-721 contract
+    /// @param tokenId ID of the token to withdraw
+    /// @param to Address to send the NFT to
+    function emergencyWithdrawERC721(
+        address nftContract,
+        uint256 tokenId,
+        address to
+    ) external {
+        require(paused(), "Not paused");
+        require(block.timestamp >= pausedAt + 7 days, "Emergency window not open");
+        
+        // Verify the caller is the original depositor
+        bytes32 depositKey = keccak256(abi.encodePacked(nftContract, tokenId));
+        require(depositers[depositKey] == msg.sender, "Not depositor");
+        
+        // Clear the depositor record
+        delete depositers[depositKey];
+        
+        // Transfer the NFT
+        IERC721(nftContract).safeTransferFrom(address(this), to, tokenId);
     }
 
     // ============ View Functions ============
@@ -314,7 +391,7 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         address nftContract,
         uint256 tokenId,
         address depositor,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce
     ) internal view returns (bytes memory) {
         // Using abi.encode for simplicity - produces tightly packed bytes
@@ -324,7 +401,7 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
             bytes32(uint256(uint160(nftContract))),         // 32 bytes (offset 3)
             bytes32(tokenId),                                // 32 bytes (offset 35)
             bytes32(uint256(uint160(depositor))),           // 32 bytes (offset 67)
-            bytes32(uint256(uint160(dwalletAddress))),      // 32 bytes (offset 99)
+            dwalletAddress,                                  // 32 bytes (offset 99) - already bytes32
             uint64(block.number),                            // 8 bytes  (offset 131)
             sealNonce                                        // 32 bytes (offset 139)
         );

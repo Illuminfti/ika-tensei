@@ -17,6 +17,8 @@ module ikatensei::seal_vault {
         id: UID,
         /// dWallet ID bytes -> sealed cap record
         sealed_caps: Table<vector<u8>, SealedCap>,
+        /// seal_hash -> SealProof (stores proof of DWalletCap verification)
+        sealed_dwallet_caps: Table<vector<u8>, SealProof>,
         total_sealed: u64,
     }
 
@@ -26,16 +28,30 @@ module ikatensei::seal_vault {
         cap_id: ID,
     }
 
+    /// Proof of DWalletCap verification - stored when a seal is created.
+    /// The relayer verifies DWalletCap ownership off-chain before calling seal().
+    public struct SealProof has store, copy, drop {
+        seal_hash: vector<u8>,
+        dwallet_id: vector<u8>,
+        dwallet_cap_id: vector<u8>,
+        attestation_dwallet_id: vector<u8>,
+        attestation_dwallet_cap_id: vector<u8>,
+        sealed_at: u64,
+        sealed_by: address,
+    }
+
     public fun new_vault(ctx: &mut TxContext): SealVault {
         SealVault {
             id: object::new(ctx),
             sealed_caps: table::new(ctx),
+            sealed_dwallet_caps: table::new(ctx),
             total_sealed: 0,
         }
     }
 
     /// Record permanently sealed DWalletCap IDs.
     /// Handles both single (Ed25519) and dual (secp256k1) dWallet cases.
+    /// The caller must be the authorized_relayer (verified by registry).
     ///
     /// PERMANENT: No unseal() / release() / recover() function exists.
     /// Once sealed, the corresponding dWallet(s) can NEVER sign.
@@ -45,8 +61,8 @@ module ikatensei::seal_vault {
         cap_id: ID,
         attestation_dwallet_id: ID,
         attestation_cap_id: ID,
-        _seal_hash: vector<u8>,
-        _ctx: &mut TxContext,
+        seal_hash: vector<u8>,
+        ctx: &mut TxContext,
     ) {
         let key = object::id_to_bytes(&dwallet_id);
         assert!(!table::contains(&vault.sealed_caps, key), E_ALREADY_SEALED);
@@ -63,6 +79,18 @@ module ikatensei::seal_vault {
             });
             vault.total_sealed = vault.total_sealed + 1;
         };
+
+        // Store the seal proof for verification
+        // The relayer is responsible for verifying DWalletCap ownership off-chain before calling
+        table::add(&mut vault.sealed_dwallet_caps, seal_hash, SealProof {
+            seal_hash,
+            dwallet_id: object::id_to_bytes(&dwallet_id),
+            dwallet_cap_id: object::id_to_bytes(&cap_id),
+            attestation_dwallet_id: object::id_to_bytes(&attestation_dwallet_id),
+            attestation_dwallet_cap_id: object::id_to_bytes(&attestation_cap_id),
+            sealed_at: tx_context::epoch(ctx),
+            sealed_by: tx_context::sender(ctx),
+        });
     }
 
     /// Convenience wrapper for Ed25519 chains (single dWallet)

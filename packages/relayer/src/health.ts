@@ -49,6 +49,9 @@ export function createHealthServer(
   let running = false;
   let server: http.Server | null = null;
 
+  // H2: Bearer token for health endpoint authentication
+  const HEALTH_TOKEN = process.env.HEALTH_AUTH_TOKEN;
+
   const serviceStatus = {
     sui: { status: 'unknown', error: undefined as string | undefined },
     solana: { status: 'unknown', error: undefined as string | undefined },
@@ -81,6 +84,16 @@ export function createHealthServer(
   }
 
   function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    // H2: Bearer token authentication
+    if (HEALTH_TOKEN) {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || authHeader !== `Bearer ${HEALTH_TOKEN}`) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+    }
+
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -102,10 +115,31 @@ export function createHealthServer(
 
     if (url.pathname === '/health' || url.pathname === '/') {
       const status = getStatus();
-      const statusCode = status.status === 'healthy' ? 200 : status.status === 'degraded' ? 200 : 503;
+      // H2: Remove sensitive data - only expose status, uptime, service booleans, counts
+      const sanitizedStatus = {
+        status: status.status,
+        timestamp: status.timestamp,
+        uptime: status.uptime,
+        version: status.version,
+        services: {
+          sui: { status: status.services.sui.status },
+          solana: { status: status.services.solana.status },
+          ika: { status: status.services.ika.status },
+        },
+        queue: {
+          queued: status.queue.queued,
+          processing: status.queue.processing,
+          total: status.queue.total,
+        },
+        // H2: Remove database record details - just expose counts
+        database: {
+          total: status.database.total,
+        },
+      };
+      const statusCode = sanitizedStatus.status === 'healthy' ? 200 : sanitizedStatus.status === 'degraded' ? 200 : 503;
       
       res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(status, null, 2));
+      res.end(JSON.stringify(sanitizedStatus, null, 2));
       return;
     }
 

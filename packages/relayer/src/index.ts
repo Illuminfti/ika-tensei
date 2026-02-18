@@ -9,7 +9,7 @@
  */
 
 import { loadConfig, type RelayerConfig } from './config.js';
-import { createLogger, type Logger } from './logger';
+import { createLogger, type Logger, sanitize } from './logger';
 import { createDB, type DB, type SealStatus } from './db.js';
 import { ProcessingQueue, type NFTSealedEvent } from './queue.js';
 import { createSuiListener } from './services/sui-listener.js';
@@ -18,7 +18,7 @@ import { createSolanaMinter, type SolanaMinter } from './services/solana-minter.
 import { createSuiCloser, type SuiCloser } from './services/sui-closer.js';
 import { createRealmsCreator, type RealmsCreator } from './services/realms-creator.js';
 import { createHealthServer, type HealthServer } from './health.js';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Connection } from '@solana/web3.js';
 
 export interface Relayer {
   start(): Promise<void>;
@@ -62,10 +62,19 @@ export async function createRelayer(): Promise<Relayer> {
   // Processing loop
   async function processSeal(event: NFTSealedEvent): Promise<void> {
     const { seal_hash, source_chain, dest_chain, source_contract, token_id, nonce } = event;
-    const logger = createLogger(config.logLevel).child({ sealHash: seal_hash.slice(0, 16) + '...' });
+    // M4: Use truncated seal hash for logging
+    const truncatedHash = seal_hash.slice(0, 16) + '...';
+    const logger = createLogger(config.logLevel).child({ sealHash: truncatedHash });
 
-    logger.info(`Processing seal: ${seal_hash.slice(0, 16)}...`);
-    logger.debug(`Event: chain=${source_chain}->${dest_chain}, contract=${source_contract}, token=${token_id}`);
+    logger.info(`Processing seal: ${truncatedHash}`);
+    // M4: Sanitize event data before logging
+    logger.debug(`Event: ${JSON.stringify(sanitize({
+      source_chain,
+      dest_chain,
+      source_contract,
+      token_id,
+      nonce
+    }))}`);
 
     // Check if already processed
     const existing = db.getSealByHash(seal_hash);
@@ -113,27 +122,42 @@ export async function createRelayer(): Promise<Relayer> {
       const messageHash = Buffer.from(seal_hash, 'hex');
       const signResult = await ikaSigner.signMessage(messageHash);
 
+      // M4: Don't log full signature, just truncated
       db.updateSealSignature(seal_hash, signResult.signatureHex, signResult.txDigest);
-      logger.info(`Signature obtained: ${signResult.signatureHex.slice(0, 32)}...`);
+      logger.info(`Signature obtained: ${signResult.signatureHex.slice(0, 16)}...`);
 
       // === Step 3: Verify seal on Solana ===
-      logger.info('Step 3: Verifying seal on Solana...');
-      db.updateSealStatus(seal_hash, 'verifying');
-
-      const dwalletPubkey = Buffer.from(event.dwallet_pubkey.replace(/^0x/, ''), 'hex');
-      const signature = Buffer.from(signResult.signatureHex, 'hex');
-
-      const verifyResult = await solanaMinter.verifySeal(
-        messageHash,
-        source_chain,
-        source_contract,
-        token_id,
-        dwalletPubkey,
-        signature,
+      // C7: Idempotency - check if already verified on Solana before calling verifySeal
+      const messageHashHex = seal_hash;
+      const [recordPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from('reincarnation'), messageHash],
+        config.solanaProgramId,
       );
+      
+      const connection = new Connection(config.solanaRpcUrl, 'confirmed');
+      const existingRecord = await connection.getAccountInfo(recordPda);
+      if (existingRecord) {
+        logger.info('Seal already verified on Solana, skipping to mint');
+        // Skip to Step 4 - Mint
+      } else {
+        logger.info('Step 3: Verifying seal on Solana...');
+        db.updateSealStatus(seal_hash, 'verifying');
 
-      db.updateSealVerified(seal_hash, verifyResult.txDigest);
-      logger.info('Seal verified on Solana');
+        const dwalletPubkey = Buffer.from(event.dwallet_pubkey.replace(/^0x/, ''), 'hex');
+        const signature = Buffer.from(signResult.signatureHex, 'hex');
+
+        const verifyResult = await solanaMinter.verifySeal(
+          messageHash,
+          source_chain,
+          source_contract,
+          token_id,
+          dwalletPubkey,
+          signature,
+        );
+
+        db.updateSealVerified(seal_hash, verifyResult.txDigest);
+        logger.info('Seal verified on Solana');
+      }
 
       // === Step 4: Mint reborn NFT ===
       logger.info('Step 4: Minting reborn NFT on Solana...');
@@ -172,7 +196,7 @@ export async function createRelayer(): Promise<Relayer> {
       
       logger.info('='.repeat(40));
       logger.info(`✅ REINCARNATION COMPLETE!`);
-      logger.info(`   Seal: ${seal_hash.slice(0, 16)}...`);
+      logger.info(`   Seal: ${truncatedHash}`);
       logger.info(`   Mint: ${mintResult.mintAddress}`);
       logger.info('='.repeat(40));
 
@@ -276,7 +300,19 @@ export async function createRelayer(): Promise<Relayer> {
     logger.info('Stopping Ika Tensei Relayer...');
     running = false;
 
-    // Stop services
+    // M5: Wait for in-flight operations (max 30s)
+    const maxWait = 30000;
+    const start = Date.now();
+    while (queue.activeCount() > 0 && Date.now() - start < maxWait) {
+      logger.info(`Waiting for ${queue.activeCount()} in-flight operations...`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    if (queue.activeCount() > 0) {
+      logger.warn(`Forcing shutdown with ${queue.activeCount()} in-flight operations`);
+    }
+
+    // Then stop services
     await suiListener?.stop();
     await healthServer?.stop();
     queue.stop();

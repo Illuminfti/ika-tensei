@@ -161,12 +161,29 @@ export function loadConfig(): RelayerConfig {
     ? parsePublicKey(env.MPL_CORE_PROGRAM_ID, 'MPL_CORE_PROGRAM_ID')
     : new PublicKey('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d'); // Default
 
-  // Parse IKA dWallet
-  const dwalletCapId = env.DWALLET_CAP_ID || '0xae22f56a0c471eb338be0e5103c074a7a76b86271ca0c90a9f6e508d5741d7fa';
-  const dwalletId = env.DWALLET_ID || '0x36ada1f568e2f8aa89590d0157db5732d5ade4080dbf34adddb4e52788a39a32';
-  const encryptedShareId = env.ENCRYPTED_SHARE_ID || '0x09988d0cc971bf6f47c3d21247e4aa391a22f9d2c21995c87dcfbd0ca34287dc';
-  const dwalletPubkeyHex = env.DWALLET_PUBKEY_HEX || '46453f6becb294253dd798a96d86bf62871239aeda8d67d6ea5f788fb0cab756';
+  // Parse IKA dWallet - all required, no defaults
+  const dwalletCapId = env.DWALLET_CAP_ID;
+  if (!dwalletCapId) throw new Error('DWALLET_CAP_ID is required');
+  
+  const dwalletId = env.DWALLET_ID;
+  if (!dwalletId) throw new Error('DWALLET_ID is required');
+  
+  const encryptedShareId = env.ENCRYPTED_SHARE_ID;
+  if (!encryptedShareId) throw new Error('ENCRYPTED_SHARE_ID is required');
+  
+  const dwalletPubkeyHex = env.DWALLET_PUBKEY_HEX;
+  if (!dwalletPubkeyHex) throw new Error('DWALLET_PUBKEY_HEX is required');
   const dwalletPubkey = parseHexBytes(dwalletPubkeyHex, 'DWALLET_PUBKEY_HEX');
+
+  // Parse Sui contract addresses - all required, no defaults
+  const suiPackageId = env.SUI_PACKAGE_ID;
+  if (!suiPackageId) throw new Error('SUI_PACKAGE_ID is required');
+  
+  const suiRegistryId = env.SUI_REGISTRY_ID;
+  if (!suiRegistryId) throw new Error('SUI_REGISTRY_ID is required');
+  
+  const suiVaultId = env.SUI_VAULT_ID;
+  if (!suiVaultId) throw new Error('SUI_VAULT_ID is required');
 
   // Parse Sui keypair
   let suiKeypairBytes: Uint8Array;
@@ -211,10 +228,10 @@ export function loadConfig(): RelayerConfig {
     solanaRpcUrl: env.SOLANA_RPC_URL || 'https://api.devnet.solana.com',
     ikaNetwork,
 
-    // Contract Addresses
-    suiPackageId: env.SUI_PACKAGE_ID || '0x22a886dfaa15087cbe092b4f7f3135e802c02f8b9fa68d267173de1edc55036e',
-    suiRegistryId: env.SUI_REGISTRY_ID || '0xffa3bb04b8cdb11c905900da846cc92f70049654b2d9661269c8ba73c3e71294',
-    suiVaultId: env.SUI_VAULT_ID || '0x0fccb85175e9f0a0ad99e445bdde187be2a2967d73b0402cb4ca147c5273b9a0',
+    // Contract Addresses (required)
+    suiPackageId,
+    suiRegistryId,
+    suiVaultId,
     solanaProgramId,
     mplCoreProgramId,
 

@@ -55,3 +55,54 @@ export function createLogger(level: string = 'info'): Logger {
 
 // Default logger instance
 export const logger = createLogger(process.env.LOG_LEVEL || 'info');
+
+/**
+ * M4: Sanitize sensitive data for logging
+ */
+export function sanitize(data: Record<string, unknown>): Record<string, unknown> {
+  const sensitiveKeys = [
+    'privateKey',
+    'secretKey',
+    'keypair',
+    'keypairBytes',
+    'signature',
+    'dwallet_pubkey',
+    'dwalletPubkey',
+    'encryptedShare',
+    'encrypted_share',
+    'attestation',
+    'key',
+    'password',
+    'token',
+    'accessToken',
+    'refreshToken',
+    'apiKey',
+    'apikey',
+  ];
+
+  const sanitized: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(data)) {
+    const lowerKey = key.toLowerCase();
+    const isSensitive = sensitiveKeys.some(sk => lowerKey.includes(sk.toLowerCase()));
+    
+    if (isSensitive) {
+      if (typeof value === 'string' && value.length > 16) {
+        sanitized[key] = value.slice(0, 16) + '...';
+      } else if (typeof value === 'string') {
+        sanitized[key] = '[REDACTED]';
+      } else {
+        sanitized[key] = '[REDACTED]';
+      }
+    } else if (typeof value === 'string' && value.length === 64) {
+      // Truncate 32-byte hex strings (like seal_hash)
+      sanitized[key] = value.slice(0, 16) + '...';
+    } else if (ArrayBuffer.isView(value) || value instanceof Uint8Array) {
+      sanitized[key] = '[BINARY_DATA]';
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  
+  return sanitized;
+}

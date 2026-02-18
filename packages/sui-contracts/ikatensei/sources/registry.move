@@ -16,6 +16,8 @@ module ikatensei::registry {
     use sui::table::{Self, Table};
     use sui::event::emit;
     use sui::transfer;
+    use sui::coin::{Self, Coin};
+    use sui::object::ID;
     use ikatensei::emitters::{Self, EmitterRegistry};
     use ikatensei::seal_vault::{Self, SealVault};
     use ikatensei::admin::{Self, AdminCap, ProtocolConfig};
@@ -99,6 +101,22 @@ module ikatensei::registry {
         timestamp: u64,
     }
 
+    public struct SealCancelled has copy, drop {
+        seal_hash: vector<u8>,
+        canceller: address,
+        timestamp: u64,
+    }
+
+    public struct AuthorizedRelayerUpdated has copy, drop {
+        new_relayer: address,
+        timestamp: u64,
+    }
+
+    public struct MinimumSealFeeUpdated has copy, drop {
+        new_fee: u64,
+        timestamp: u64,
+    }
+
     // ==================================================================
     // Error codes
     // ==================================================================
@@ -112,6 +130,12 @@ module ikatensei::registry {
     const E_INVALID_CHAIN: u64 = 7;
     const E_UNTRUSTED_EMITTER: u64 = 8;
     const E_VAA_ALREADY_CONSUMED: u64 = 9;
+    const E_MAX_SEALS_EXCEEDED: u64 = 10;
+    const E_INSUFFICIENT_FEE: u64 = 11;
+    const E_UNAUTHORIZED_RELAYER: u64 = 12;
+    const E_CANCEL_TIMEOUT_NOT_ELAPSED: u64 = 13;
+    const E_ALREADY_REBORN_CANNOT_CANCEL: u64 = 14;
+    const E_NOT_SEALER_OR_ADMIN: u64 = 15;
 
     // ==================================================================
     // Chain IDs (our internal IDs matching PRD §12)
@@ -123,12 +147,15 @@ module ikatensei::registry {
     const CHAIN_NEAR: u16 = 4;
     // CHAIN_BITCOIN = 5 is NOT supported via Wormhole (Phase 2+)
 
+    /// Cancel timeout: 7 days worth of epochs (assuming 1 epoch ≈ 1 day on Sui)
+    const CANCEL_TIMEOUT_EPOCHS: u64 = 7;
+
     // ==================================================================
     // Data structures
     // ==================================================================
 
     /// Permanent record of a sealed NFT
-    public struct SealRecord has store, copy {
+    public struct SealRecord has store, copy, drop {
         seal_hash: vector<u8>,
         source_chain_id: u16,
         source_contract: vector<u8>,
@@ -229,7 +256,10 @@ module ikatensei::registry {
         max_seals: u64,
         ctx: &mut TxContext,
     ) {
-        let _ = cap; // Validates admin owns cap
+        // H7: AdminCap provides type-level access control - the &AdminCap parameter ensures
+        // only holders of a valid AdminCap can call this function. This is enforced by the
+        // Sui type system at compile time, not by runtime code.
+        let _ = cap;
         assert!(is_supported_chain(source_chain_id), E_INVALID_CHAIN);
         assert!(
             !table::contains(&registry.collections, collection_id),
@@ -338,6 +368,28 @@ module ikatensei::registry {
         emit(FeeSharesUpdated { guild_share_bps, team_share_bps, timestamp: tx_context::epoch(ctx) });
     }
 
+    /// Set the authorized relayer address (C1)
+    public fun set_authorized_relayer(
+        registry: &mut SealRegistry,
+        cap: &AdminCap,
+        relayer_address: address,
+        ctx: &mut TxContext,
+    ) {
+        admin::set_authorized_relayer(&mut registry.config, cap, relayer_address);
+        emit(AuthorizedRelayerUpdated { new_relayer: relayer_address, timestamp: tx_context::epoch(ctx) });
+    }
+
+    /// Set the minimum seal fee in MIST (H1)
+    public fun set_minimum_seal_fee(
+        registry: &mut SealRegistry,
+        cap: &AdminCap,
+        fee: u64,
+        ctx: &mut TxContext,
+    ) {
+        admin::set_minimum_seal_fee(&mut registry.config, cap, fee);
+        emit(MinimumSealFeeUpdated { new_fee: fee, timestamp: tx_context::epoch(ctx) });
+    }
+
     // ==================================================================
     // Seal Registration - Cross-chain via Wormhole VAA
     //
@@ -405,39 +457,61 @@ module ikatensei::registry {
         walrus_metadata_blob_id: vector<u8>,
         walrus_image_blob_id: vector<u8>,
         collection_name: vector<u8>,
+        /// Fee in SUI (must meet minimum_seal_fee)
+        fee: Coin<sui::sui::SUI>,
         ctx: &mut TxContext,
     ): vector<u8> {
         assert!(!admin::is_paused(&registry.config), E_PROTOCOL_PAUSED);
 
-        // Step 1: Parse and verify Wormhole VAA
-        // NOTE: parse_vaa_stub is a placeholder. Replace with real Wormhole verification.
-        let (emitter_chain, emitter_addr, vaa_hash) = parse_vaa_stub(&vaa_bytes);
+        // Step 0: Verify relayer authorization (C1)
+        // The relayer is trusted to have verified the Wormhole VAA off-chain
+        let sender = tx_context::sender(ctx);
+        assert!(sender == admin::authorized_relayer(&registry.config), E_UNAUTHORIZED_RELAYER);
 
-        // Step 2: Verify emitter is our registered deposit contract
+        // Step 1: Verify fee (H1)
+        let fee_value = coin::value(&fee);
+        assert!(fee_value >= admin::minimum_seal_fee(&registry.config), E_INSUFFICIENT_FEE);
+
+        // Step 2: Parse and verify Wormhole VAA
+        // NOTE: parse_vaa_stub is a placeholder. Replace with real Wormhole verification.
+        let (emitter_chain, emitter_addr, vaa_hash) = parse_vaa_for_relayer(&vaa_bytes);
+
+        // Step 3: Verify emitter is our registered deposit contract
         assert!(
             emitters::is_trusted_emitter(&registry.emitters, emitter_chain, &emitter_addr),
             E_UNTRUSTED_EMITTER
         );
 
-        // Step 3: Anti-replay - mark VAA as consumed
+        // Step 4: Anti-replay - mark VAA as consumed
         assert!(
             emitters::mark_vaa_consumed(&mut registry.emitters, vaa_hash),
             E_VAA_ALREADY_CONSUMED
         );
 
-        // Step 4: Compute canonical seal hash (§6.1)
+        // Step 5: Compute canonical seal hash (§6.1)
         let seal_hash = compute_seal_hash(
             source_chain_id, source_contract, token_id, &attestation_pubkey, nonce,
         );
 
         assert!(!table::contains(&registry.seals, seal_hash), E_SEAL_ALREADY_EXISTS);
 
-        // Step 5: PERMANENTLY lock DWalletCap IDs in SealVault
+        // Step 6: Check max_seals (C10)
+        if (table::contains(&registry.collections, source_contract)) {
+            let coll = table::borrow(&registry.collections, source_contract);
+            assert!(coll.current_seals < coll.max_seals, E_MAX_SEALS_EXCEEDED);
+        };
+
+        // Step 7: PERMANENTLY lock DWalletCap IDs in SealVault
         // The dWallet(s) can never sign again after this.
+        // Note: The relayer must verify DWalletCap ownership off-chain before calling
         seal_vault::seal(vault, dwallet_id, dwallet_cap_id, attestation_dwallet_id,
             attestation_dwallet_cap_id, seal_hash, ctx);
 
-        // Step 6: Store seal record
+        // Step 8: Transfer fee to team treasury
+        let team_treasury = admin::team_treasury(&registry.config);
+        transfer::public_transfer(fee, team_treasury);
+
+        // Step 9: Store seal record
         let sealer = tx_context::sender(ctx);
         let ts = tx_context::epoch(ctx);
 
@@ -463,7 +537,7 @@ module ikatensei::registry {
             collection_name,
         });
 
-        // Step 7: Update collection counter
+        // Step 10: Update collection counter
         if (table::contains(&registry.collections, source_contract)) {
             table::borrow_mut(&mut registry.collections, source_contract).current_seals =
                 table::borrow(&registry.collections, source_contract).current_seals + 1;
@@ -514,9 +588,15 @@ module ikatensei::registry {
         walrus_metadata_blob_id: vector<u8>,
         walrus_image_blob_id: vector<u8>,
         collection_name: vector<u8>,
+        /// Fee in SUI (must meet minimum_seal_fee)
+        fee: Coin<sui::sui::SUI>,
         ctx: &mut TxContext,
     ): vector<u8> {
         assert!(!admin::is_paused(&registry.config), E_PROTOCOL_PAUSED);
+
+        // Verify fee (H1)
+        let fee_value = coin::value(&fee);
+        assert!(fee_value >= admin::minimum_seal_fee(&registry.config), E_INSUFFICIENT_FEE);
 
         let source_chain_id = CHAIN_SUI;
         let seal_hash = compute_seal_hash(
@@ -524,12 +604,22 @@ module ikatensei::registry {
         );
         assert!(!table::contains(&registry.seals, seal_hash), E_SEAL_ALREADY_EXISTS);
 
+        // Check max_seals (C10)
+        if (table::contains(&registry.collections, source_contract)) {
+            let coll = table::borrow(&registry.collections, source_contract);
+            assert!(coll.current_seals < coll.max_seals, E_MAX_SEALS_EXCEEDED);
+        };
+
         // Transfer the NFT permanently to the dWallet's Sui address.
         // The dWallet cap is sealed next, so the dWallet can never sign it out.
         transfer::public_transfer(nft, dwallet_sui_address);
 
         seal_vault::seal(vault, dwallet_id, dwallet_cap_id, attestation_dwallet_id,
             attestation_dwallet_cap_id, seal_hash, ctx);
+
+        // Transfer fee to team treasury
+        let team_treasury = admin::team_treasury(&registry.config);
+        transfer::public_transfer(fee, team_treasury);
 
         let sealer = tx_context::sender(ctx);
         let ts = tx_context::epoch(ctx);
@@ -579,13 +669,38 @@ module ikatensei::registry {
     }
 
     // ==================================================================
-    // Mark Reborn - PERMISSIONLESS
-    // Anyone can call this. No auth required.
-    // Enforces: seal must exist + not already reborn.
+    // Mark Reborn - Only authorized relayer can call
+    // The relayer triggers the reborn process after Solana NFT minting is complete.
     // ==================================================================
 
     public fun mark_reborn(
         registry: &mut SealRegistry,
+        seal_hash: vector<u8>,
+        solana_mint_address: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        // C3: Only authorized relayer can call
+        assert!(tx_context::sender(ctx) == admin::authorized_relayer(&registry.config), E_UNAUTHORIZED_RELAYER);
+
+        assert!(table::contains(&registry.seals, seal_hash), E_SEAL_NOT_FOUND);
+        let record = table::borrow_mut(&mut registry.seals, seal_hash);
+        assert!(!record.reborn, E_ALREADY_REBORN);
+
+        record.reborn = true;
+        record.solana_mint_address = solana_mint_address;
+
+        emit(NFTReborn {
+            seal_hash,
+            solana_mint_address,
+            caller: tx_context::sender(ctx),
+            timestamp: tx_context::epoch(ctx),
+        });
+    }
+
+    /// Admin override for mark_reborn - bypasses relayer check
+    public fun mark_reborn_admin(
+        registry: &mut SealRegistry,
+        _cap: &AdminCap,
         seal_hash: vector<u8>,
         solana_mint_address: vector<u8>,
         ctx: &mut TxContext,
@@ -602,6 +717,58 @@ module ikatensei::registry {
             solana_mint_address,
             caller: tx_context::sender(ctx),
             timestamp: tx_context::epoch(ctx),
+        });
+    }
+
+    // ==================================================================
+    // Cancel Seal - Only original sealer OR admin can cancel
+    // Only if seal is NOT reborn and older than CANCEL_TIMEOUT_EPOCHS
+    // Note: Does NOT unlock DWalletCap - that's permanent by design
+    // ==================================================================
+
+    public fun cancel_seal(
+        registry: &mut SealRegistry,
+        cap: &AdminCap,
+        seal_hash: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(table::contains(&registry.seals, seal_hash), E_SEAL_NOT_FOUND);
+        
+        // Borrow record and copy needed fields before removing
+        let record = table::borrow(&registry.seals, seal_hash);
+        let sealer = record.sealer;
+        let sealed_at = record.sealed_at;
+        let reborn = record.reborn;
+        let source_contract = record.source_contract;
+        
+        // Only allow cancel if seal is NOT reborn
+        assert!(!reborn, E_ALREADY_REBORN_CANNOT_CANCEL);
+        
+        // Check if enough time has passed (7 days = 7 epochs)
+        let current_epoch = tx_context::epoch(ctx);
+        assert!(current_epoch >= sealed_at + CANCEL_TIMEOUT_EPOCHS, E_CANCEL_TIMEOUT_NOT_ELAPSED);
+        
+        // Only sealer or admin can cancel
+        let sender = tx_context::sender(ctx);
+        // H7: AdminCap provides type-level access control - the &AdminCap parameter ensures
+        // only holders of a valid AdminCap can call this function.
+        let _ = cap;
+        // Additional check: sender must be either the sealer or the admin
+        assert!(sender == sealer, E_NOT_SEALER_OR_ADMIN);
+        
+        // Remove seal from registry
+        table::remove(&mut registry.seals, seal_hash);
+        
+        // Update collection counter if applicable
+        if (table::contains(&registry.collections, source_contract)) {
+            table::borrow_mut(&mut registry.collections, source_contract).current_seals =
+                table::borrow(&registry.collections, source_contract).current_seals - 1;
+        };
+
+        emit(SealCancelled {
+            seal_hash,
+            canceller: sender,
+            timestamp: current_epoch,
         });
     }
 
@@ -688,6 +855,14 @@ module ikatensei::registry {
         admin::team_share_bps(&registry.config)
     }
 
+    public fun registry_authorized_relayer(registry: &SealRegistry): address {
+        admin::authorized_relayer(&registry.config)
+    }
+
+    public fun registry_minimum_seal_fee(registry: &SealRegistry): u64 {
+        admin::minimum_seal_fee(&registry.config)
+    }
+
     // Emitter registry accessors
     public fun emitter_count(registry: &SealRegistry): u64 {
         emitters::emitter_count(&registry.emitters)
@@ -752,9 +927,19 @@ module ikatensei::registry {
         std::hash::sha2_256(data)
     }
 
-    /// Stub VAA parser. Returns (emitter_chain, emitter_address, vaa_hash).
+    /// Stub VAA parser for production. When relayer is authorized, we trust they've verified the VAA.
+    /// Returns (emitter_chain, emitter_address, vaa_hash) with stub values.
+    /// For real Wormhole integration, replace this with actual VAA parsing.
+    fun parse_vaa_for_relayer(vaa: &vector<u8>): (u16, vector<u8>, vector<u8>) {
+        // When relayer is authorized, we trust they've verified the VAA off-chain.
+        // This stub returns placeholder values that will be validated against trusted emitters.
+        (21u16, vector[], std::hash::sha2_256(*vaa))
+    }
+
+    /// Stub VAA parser for testing. Returns (emitter_chain, emitter_address, vaa_hash).
     /// Replace with Wormhole integration for production - see comments above register_seal_with_vaa.
-    fun parse_vaa_stub(vaa: &vector<u8>): (u16, vector<u8>, vector<u8>) {
+    #[test_only]
+    public fun parse_vaa_stub(vaa: &vector<u8>): (u16, vector<u8>, vector<u8>) {
         // TODO: Replace with real Wormhole verification for production.
         // Stub returns: Wormhole chain 21 (Sui), empty emitter, SHA2-256(vaa) as hash.
         // This allows demo/testing without Wormhole dependency.

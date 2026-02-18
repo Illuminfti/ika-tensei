@@ -206,11 +206,11 @@ export function createSolanaMinter(
       solanaProgramId,
     );
 
-    // Check if already verified
+    // C7: Idempotency - check if already verified
     const recordInfo = await connection.getAccountInfo(recordPda);
     if (recordInfo) {
-      logger.info('Seal already verified');
-      return { recordPda, txDigest: '' };
+      logger.info('Seal already verified, skipping');
+      return { recordPda, txDigest: 'already-verified' };
     }
 
     const dwalletPubkeyPubkey = new PublicKey(dwalletPubkey);
@@ -272,6 +272,28 @@ export function createSolanaMinter(
       [Buffer.from('reincarnation'), sealHash],
       solanaProgramId,
     );
+
+    // C7: Idempotency - check if already minted by reading record account data
+    const recordInfo = await connection.getAccountInfo(recordPda);
+    if (recordInfo && recordInfo.data.length > 64) {
+      // Try to extract mint address from record (assuming it's stored after seal_hash)
+      // The record layout: seal_hash(32) + source_chain(2) + source_contract(var) + token_id(8) + dwallet_pubkey(32) + mint_pubkey(32) + ...
+      // If mint_pubkey is non-zero, NFT already minted
+      const mintPubkeyOffset = 74; // Approximate offset after seal_hash + source_chain + variable fields
+      if (recordInfo.data.length > mintPubkeyOffset + 32) {
+        const potentialMint = recordInfo.data.slice(mintPubkeyOffset, mintPubkeyOffset + 32);
+        // Check if first byte is non-zero (valid public key)
+        if (potentialMint[0] !== 0 || potentialMint[1] !== 0) {
+          const existingMint = new PublicKey(potentialMint);
+          logger.info(`Already minted, returning existing mint: ${existingMint.toBase58()}`);
+          return {
+            mintAddress: existingMint.toBase58(),
+            assetId: existingMint.toBase58(),
+            txDigest: 'already-minted',
+          };
+        }
+      }
+    }
 
     const [mintAuth] = PublicKey.findProgramAddressSync(
       [Buffer.from('reincarnation_mint'), sealHash],

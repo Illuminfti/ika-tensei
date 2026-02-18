@@ -1,4 +1,8 @@
 //! Ika Tensei v3 - NFT Reincarnation Protocol on Solana
+//!
+//! SECURITY: After final audit, the upgrade authority for this program should be
+//! set to a multisig or revoked entirely. The current deployer keypair MUST NOT
+//! remain as sole upgrade authority in production.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::sysvar::instructions as ix_sysvar;
@@ -99,8 +103,11 @@ pub struct MintReborn<'info> {
     pub recipient: UncheckedAccount<'info>,
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// CHECK: Metaplex Core program
-    pub mpl_core_program: UncheckedAccount<'info>,
+    /// CHECK: Metaplex Core program - verified by address
+    #[account(address = mpl_core::ID)]
+    pub mpl_core_program: AccountInfo<'info>,
+    /// CHECK: Fee recipient (treasury)
+    pub fee_recipient: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -114,8 +121,9 @@ pub struct CreateOnchainCollection<'info> {
     /// CHECK: Collection PDA; seeds = [ONCHAIN_COLLECTION_SEED, config_key]
     #[account(mut, seeds = [constants::ONCHAIN_COLLECTION_SEED, &config.key().to_bytes()], bump)]
     pub collection: UncheckedAccount<'info>,
-    /// CHECK: Metaplex Core program
-    pub mpl_core_program: UncheckedAccount<'info>,
+    /// CHECK: Metaplex Core program - verified by address
+    #[account(address = mpl_core::ID)]
+    pub mpl_core_program: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -284,12 +292,32 @@ pub mod ika_tensei {
         name: String,
         uri: String,
     ) -> Result<()> {
+        // M8: Fee enforcement
+        let config = &ctx.accounts.config;
+        let mint_fee = config.mint_fee;
+        
+        // Verify fee_recipient is not zero address
+        let fee_recipient_key = ctx.accounts.fee_recipient.key();
+        require!(fee_recipient_key != Pubkey::default(), ErrorCode::InvalidFeeRecipient);
+        
+        // Transfer fee from payer to fee_recipient
+        if mint_fee > 0 {
+            let fee_transfer = anchor_lang::system_program::Transfer {
+                from: ctx.accounts.payer.to_account_info(),
+                to: ctx.accounts.fee_recipient.to_account_info(),
+            };
+            anchor_lang::system_program::transfer(
+                CpiContext::new(ctx.accounts.system_program.to_account_info(), fee_transfer),
+                mint_fee,
+            )?;
+            msg!("Fee paid: {} lamports to {}", mint_fee, fee_recipient_key);
+        }
+        
         require!(name.len() <= constants::MAX_NAME_LENGTH, ErrorCode::NameTooLong);
         require!(uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
         require!(!ctx.accounts.config.paused, ErrorCode::Paused);
         require!(!ctx.accounts.record.minted, ErrorCode::AlreadyMinted);
 
-        let config = &ctx.accounts.config;
         let mint_authority_bump = ctx.bumps.mint_authority;
         let mint_authority_seeds: &[&[u8]] = &[
             constants::MINT_SEED,
@@ -425,19 +453,13 @@ fn verify_ed25519_signature(
     expected_signer: &Pubkey,
     expected_message: &[u8; 32],
 ) -> Result<()> {
-    let current_ix = ix_sysvar::load_current_index_checked(instructions_sysvar)
-        .map_err(|_| ErrorCode::InvalidSignature)?;
-    require!(current_ix > 0, ErrorCode::InvalidSignature);
-
-    let ed25519_ix = ix_sysvar::load_instruction_at_checked(
-        (current_ix - 1) as usize,
-        instructions_sysvar,
-    )
-    .map_err(|_| ErrorCode::InvalidSignature)?;
+    // C8 Fix: Load instruction at index 0 (the Ed25519 instruction) and verify program_id
+    let ed25519_ix = ix_sysvar::load_instruction_at_checked(0, instructions_sysvar)
+        .map_err(|_| ErrorCode::InvalidEd25519Instruction)?;
 
     require!(
         ed25519_ix.program_id == anchor_lang::solana_program::ed25519_program::ID,
-        ErrorCode::InvalidSignature
+        ErrorCode::InvalidEd25519Instruction
     );
 
     let data = &ed25519_ix.data;
@@ -466,8 +488,16 @@ pub enum ErrorCode {
     Paused,
     #[msg("Invalid ed25519 signature")]
     InvalidSignature,
+    #[msg("Invalid Ed25519 instruction")]
+    InvalidEd25519Instruction,
+    #[msg("Invalid Metaplex Core program")]
+    InvalidProgram,
     #[msg("Seal already verified")]
     AlreadyVerified,
+    #[msg("Seal not verified")]
+    NotVerified,
+    #[msg("Already reborn")]
+    AlreadyReborn,
     #[msg("Collection not registered")]
     CollectionNotRegistered,
     #[msg("Collection not active")]
@@ -476,6 +506,10 @@ pub enum ErrorCode {
     SupplyExhausted,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Invalid chain ID")]
+    InvalidChainId,
+    #[msg("Invalid fee recipient")]
+    InvalidFeeRecipient,
     #[msg("Name too long")]
     NameTooLong,
     #[msg("URI too long")]

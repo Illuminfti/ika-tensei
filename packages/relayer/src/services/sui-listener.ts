@@ -27,6 +27,20 @@ export function createSuiListener(
 
   const POLL_INTERVAL_MS = 5000;
 
+  /**
+   * M6: Validate event fields before enqueuing
+   */
+  function validateEvent(event: NFTSealedEvent): boolean {
+    if (!event.seal_hash || typeof event.seal_hash !== 'string') return false;
+    if (event.seal_hash.length !== 64) return false; // 32 bytes hex
+    if (!event.source_chain || typeof event.source_chain !== 'number') return false;
+    if (!event.source_contract || typeof event.source_contract !== 'string') return false;
+    if (!event.token_id) return false;
+    // Validate hex format for seal_hash
+    if (!/^[0-9a-fA-F]{64}$/.test(event.seal_hash)) return false;
+    return true;
+  }
+
   async function fetchEvents(): Promise<void> {
     try {
       const response = await client.queryEvents({
@@ -91,6 +105,12 @@ export function createSuiListener(
           dwallet_pubkey: dwalletPubkey,
           tx_digest: event.id.txDigest,
         };
+
+        // M6: Validate event before enqueuing
+        if (!validateEvent(sealedEvent)) {
+          logger.warn(`Invalid event data, skipping: ${sealHash.slice(0, 16)}...`);
+          continue;
+        }
 
         logger.info(`NFTSealed: ${sealHash.slice(0, 16)}... chain:${sealedEvent.source_chain}->${sealedEvent.dest_chain}`);
         onSealed(sealedEvent);

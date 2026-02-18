@@ -9,6 +9,7 @@ module ikatensei::security_tests {
     use sui::object::{Self, UID, ID};
     use sui::transfer;
     use sui::table;
+    use sui::coin::{Self, Coin};
     use ikatensei::seal_vault::{Self, SealVault};
     use ikatensei::registry::{Self, SealRegistry};
     use ikatensei::admin::{Self, AdminCap};
@@ -27,6 +28,79 @@ module ikatensei::security_tests {
 
     fun pubkey32(): vector<u8> {
         x"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+    }
+
+    // Helper to create a test coin with minimum seal fee (1_000_000 MIST)
+    fun create_test_fee(ctx: &mut TxContext): Coin<sui::sui::SUI> {
+        coin::mint_for_testing<sui::sui::SUI>(1_000_000, ctx)
+    }
+
+    // Default empty metadata fields for tests
+    fun empty_metadata(): (vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>) {
+        (vector[], vector[], vector[], vector[], vector[], vector[])
+    }
+
+    // Helper to set authorized relayer for tests (uses deployer as relayer)
+    fun setup_authorized_relayer(registry: &mut SealRegistry, admin_cap: &AdminCap, relayer: address, ctx: &mut TxContext) {
+        registry::set_authorized_relayer(registry, admin_cap, relayer, ctx);
+    }
+
+    // Wrapper for register_seal_native with test defaults
+    fun register_seal_test<T: key + store>(
+        registry: &mut SealRegistry,
+        vault: &mut SealVault,
+        nft: T,
+        dwallet_id: ID,
+        cap_id: ID,
+        attest_dwallet_id: ID,
+        attest_cap_id: ID,
+        dwallet_pubkey: vector<u8>,
+        attest_pubkey: vector<u8>,
+        dwallet_sui_address: address,
+        source_contract: vector<u8>,
+        token_id: vector<u8>,
+        nonce: u64,
+        ctx: &mut TxContext,
+    ): vector<u8> {
+        let (name, desc, uri, meta_blob, img_blob, coll_name) = empty_metadata();
+        let fee = create_test_fee(ctx);
+        registry::register_seal_native<T>(
+            registry, vault, nft,
+            dwallet_id, cap_id, attest_dwallet_id, attest_cap_id,
+            dwallet_pubkey, attest_pubkey, dwallet_sui_address,
+            source_contract, token_id, nonce,
+            name, desc, uri, meta_blob, img_blob, coll_name,
+            fee, ctx
+        )
+    }
+
+    // Wrapper for register_seal_with_vaa with test defaults
+    fun register_seal_with_vaa_test(
+        registry: &mut SealRegistry,
+        vault: &mut SealVault,
+        vaa_bytes: vector<u8>,
+        dwallet_id: ID,
+        dwallet_cap_id: ID,
+        attestation_dwallet_id: ID,
+        attestation_dwallet_cap_id: ID,
+        dwallet_pubkey: vector<u8>,
+        attestation_pubkey: vector<u8>,
+        source_chain_id: u16,
+        source_contract: vector<u8>,
+        token_id: vector<u8>,
+        nonce: u64,
+        ctx: &mut TxContext,
+    ): vector<u8> {
+        let (name, desc, uri, meta_blob, img_blob, coll_name) = empty_metadata();
+        let fee = create_test_fee(ctx);
+        registry::register_seal_with_vaa(
+            registry, vault, vaa_bytes,
+            dwallet_id, dwallet_cap_id, attestation_dwallet_id, attestation_dwallet_cap_id,
+            dwallet_pubkey, attestation_pubkey,
+            source_chain_id, source_contract, token_id, nonce,
+            name, desc, uri, meta_blob, img_blob, coll_name,
+            fee, ctx
+        )
     }
 
     fun pubkey32_alt(): vector<u8> {
@@ -151,7 +225,7 @@ module ikatensei::security_tests {
             let pk = pubkey32();
 
             // First seal
-            let _seal_hash = registry::register_seal_native<TestNFT>(
+            let _seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -165,7 +239,7 @@ module ikatensei::security_tests {
 
             // Second seal with SAME dWallet ID - should fail at seal_vault level
             let nft2 = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
-            registry::register_seal_native<TestNFT>(
+            register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft2,
                 d, c, d, c,  // SAME dWallet ID
@@ -204,7 +278,7 @@ module ikatensei::security_tests {
             let pk = pubkey32();
 
             // First seal
-            let _seal1 = registry::register_seal_native<TestNFT>(
+            let _seal1 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft1,
                 d1, c1, d1, c1,
@@ -221,7 +295,7 @@ module ikatensei::security_tests {
             let d2 = object::id_from_address(@0x4444);
             let c2 = object::id_from_address(@0x5555);
 
-            let _seal2 = registry::register_seal_native<TestNFT>(
+            let _seal2 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft2,
                 d2, c2, d2, c2,  // Different dWallet ID
@@ -248,7 +322,7 @@ module ikatensei::security_tests {
     // ==================================================================
 
     #[test]
-    #[expected_failure(abort_code = registry::E_UNTRUSTED_EMITTER)]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_RELAYER)]
     fun test_seal_with_unregistered_emitter() {
         let deployer = @0xA;
         let mut scenario = test_scenario::begin(deployer);
@@ -261,6 +335,7 @@ module ikatensei::security_tests {
             let mut vault = test_scenario::take_shared<SealVault>(&scenario);
 
             // DON'T register emitter - try to seal with VAA directly
+            // But now fails on relayer check first (E_UNAUTHORIZED_RELAYER)
             let vaa_bytes = x"deadbeef";
             let d = object::id_from_address(@0x1111);
             let c = object::id_from_address(@0x2222);
@@ -268,7 +343,7 @@ module ikatensei::security_tests {
             let c_attest = object::id_from_address(@0x4444);
             let pk = pubkey32();
 
-            registry::register_seal_with_vaa(
+            register_seal_with_vaa_test(
                 &mut registry,
                 &mut vault,
                 vaa_bytes,
@@ -294,7 +369,7 @@ module ikatensei::security_tests {
     // ==================================================================
 
     #[test]
-    #[expected_failure(abort_code = registry::E_SEAL_NOT_FOUND)]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_RELAYER)]
     fun test_mark_reborn_nonexistent_seal() {
         let deployer = @0xA;
         let mut scenario = test_scenario::begin(deployer);
@@ -329,13 +404,17 @@ module ikatensei::security_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d = object::id_from_address(@0x1111);
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -347,15 +426,17 @@ module ikatensei::security_tests {
                 test_scenario::ctx(&mut scenario),
             );
 
-            registry::mark_reborn(&mut registry, seal_hash, mint32(),
+            // First reborn - use admin override
+            registry::mark_reborn_admin(&mut registry, &admin_cap, seal_hash, mint32(),
                 test_scenario::ctx(&mut scenario));
 
             // Second reborn - should fail
-            registry::mark_reborn(&mut registry, seal_hash, mint32_alt(),
+            registry::mark_reborn_admin(&mut registry, &admin_cap, seal_hash, mint32_alt(),
                 test_scenario::ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         test_scenario::end(scenario);
@@ -420,7 +501,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _seal_hash = registry::register_seal_native<TestNFT>(
+            let _seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -513,7 +594,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -558,7 +639,7 @@ module ikatensei::security_tests {
             let long_contract = x"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
             let long_token = x"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001";
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -612,7 +693,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            registry::register_seal_native<TestNFT>(
+            register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -673,7 +754,7 @@ module ikatensei::security_tests {
             let c_attest = object::id_from_address(@0x4444);
             let pk = pubkey32();
 
-            registry::register_seal_with_vaa(
+            register_seal_with_vaa_test(
                 &mut registry, &mut vault,
                 vaa,
                 d, c, d_attest, c_attest,
@@ -797,13 +878,17 @@ module ikatensei::security_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d = object::id_from_address(@0x1111);
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _h1 = registry::register_seal_native<TestNFT>(
+            let _h1 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -820,6 +905,7 @@ module ikatensei::security_tests {
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         // Seal NFT #2
@@ -827,13 +913,17 @@ module ikatensei::security_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d = object::id_from_address(@0x4444);
             let c = object::id_from_address(@0x5555);
             let pk = pubkey32();
 
-            let h2 = registry::register_seal_native<TestNFT>(
+            let h2 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -848,11 +938,13 @@ module ikatensei::security_tests {
             let coll = registry::get_collection(&registry, b"test_collection");
             assert!(registry::collection_config_current_seals(coll) == 2, 2);
 
-            registry::mark_reborn(&mut registry, h2, mint32(),
+            // Use admin override for mark_reborn
+            registry::mark_reborn_admin(&mut registry, &admin_cap, h2, mint32(),
                 test_scenario::ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         // Seal NFT #3
@@ -860,13 +952,17 @@ module ikatensei::security_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d = object::id_from_address(@0x7777);
             let c = object::id_from_address(@0x8888);
             let pk = pubkey32();
 
-            let _h3 = registry::register_seal_native<TestNFT>(
+            let _h3 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -883,6 +979,7 @@ module ikatensei::security_tests {
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         // Verify final counts
@@ -927,7 +1024,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _seal1 = registry::register_seal_native<TestNFT>(
+            let _seal1 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -959,7 +1056,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x5555);
             let pk = pubkey32();
 
-            let _seal2 = registry::register_seal_native<TestNFT>(
+            let _seal2 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -1010,7 +1107,7 @@ module ikatensei::security_tests {
 
             // Seal 1
             let nft1 = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
-            let _s1 = registry::register_seal_native<TestNFT>(
+            let _s1 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft1,
                 object::id_from_address(@0x1111), object::id_from_address(@0x2222),
@@ -1022,7 +1119,7 @@ module ikatensei::security_tests {
 
             // Seal 2
             let nft2 = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
-            let _s2 = registry::register_seal_native<TestNFT>(
+            let _s2 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft2,
                 object::id_from_address(@0x4444), object::id_from_address(@0x5555),
@@ -1146,7 +1243,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _hash = registry::register_seal_native<TestNFT>(
+            let _hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -1184,7 +1281,7 @@ module ikatensei::security_tests {
             let c = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _seal_hash = registry::register_seal_native<TestNFT>(
+            let _seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d, c, d, c,
@@ -1279,7 +1376,7 @@ module ikatensei::security_tests {
             let c1 = object::id_from_address(@0x2222);
             let pk = pubkey32();
 
-            let _seal1 = registry::register_seal_native<TestNFT>(
+            let _seal1 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft1,
                 d1, c1, d1, c1,
@@ -1296,7 +1393,7 @@ module ikatensei::security_tests {
             let d2 = object::id_from_address(@0x4444);
             let c2 = object::id_from_address(@0x5555);
 
-            let _seal2 = registry::register_seal_native<TestNFT>(
+            let _seal2 = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft2,
                 d2, c2, d2, c2,

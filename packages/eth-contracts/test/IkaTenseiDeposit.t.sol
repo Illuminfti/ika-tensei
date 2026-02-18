@@ -184,7 +184,7 @@ contract IkaTenseiDepositTest is Test {
         address indexed nftContract,
         uint256 indexed tokenId,
         address indexed depositor,
-        address dwalletAddress,
+        bytes32 dwalletAddress,
         bytes32 sealNonce,
         uint64 wormholeSequence
     );
@@ -240,14 +240,14 @@ contract IkaTenseiDepositTest is Test {
             address(nft721),
             1,
             user,
-            dWallet,
+            bytes32(uint256(uint160(dWallet))),
             sealNonce,
             1 // first wormhole sequence from mock
         );
 
         vm.prank(user);
         uint64 seq = dep.depositERC721{value: totalFee}(
-            address(nft721), 1, dWallet, sealNonce
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), sealNonce
         );
 
         assertEq(seq, 1,         "wrong wormhole sequence");
@@ -264,7 +264,7 @@ contract IkaTenseiDepositTest is Test {
 
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(1))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(1))
         );
 
         assertEq(feeRecipient.balance - before, DEPOSIT_FEE, "fee not forwarded");
@@ -281,7 +281,7 @@ contract IkaTenseiDepositTest is Test {
 
         vm.prank(user);
         dep.depositERC721{value: sent}(
-            address(nft721), 1, dWallet, bytes32(uint256(2))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(2))
         );
 
         assertApproxEqAbs(user.balance, before - DEPOSIT_FEE - wfee, 1e15, "excess not refunded");
@@ -297,7 +297,7 @@ contract IkaTenseiDepositTest is Test {
 
         vm.prank(user);
         uint64 seq = dep.depositERC1155{value: DEPOSIT_FEE + wfee}(
-            address(nft1155), 42, 50, dWallet, nonce
+            address(nft1155), 42, 50, bytes32(uint256(uint160(dWallet))), nonce
         );
 
         assertEq(seq, 1);
@@ -316,7 +316,7 @@ contract IkaTenseiDepositTest is Test {
 
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, nonce
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), nonce
         );
 
         nft721.mint(user, 2);
@@ -324,7 +324,7 @@ contract IkaTenseiDepositTest is Test {
         vm.expectRevert("Nonce already used");
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 2, dWallet, nonce // same nonce
+            address(nft721), 2, bytes32(uint256(uint160(dWallet))), nonce // same nonce
         );
     }
 
@@ -336,7 +336,7 @@ contract IkaTenseiDepositTest is Test {
         vm.expectRevert("Insufficient fee");
         vm.prank(user);
         dep.depositERC721{value: 0}(
-            address(nft721), 1, dWallet, bytes32(uint256(1))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(1))
         );
     }
 
@@ -376,7 +376,7 @@ contract IkaTenseiDepositTest is Test {
         vm.expectRevert();
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(1))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(1))
         );
 
         vm.prank(owner);
@@ -385,7 +385,7 @@ contract IkaTenseiDepositTest is Test {
         // Should succeed after unpause
         vm.prank(user);
         dep.depositERC721{value: DEPOSIT_FEE + wfee}(
-            address(nft721), 1, dWallet, bytes32(uint256(1))
+            address(nft721), 1, bytes32(uint256(uint160(dWallet))), bytes32(uint256(1))
         );
         assertEq(nft721.ownerOf(1), dWallet);
     }

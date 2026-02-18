@@ -8,6 +8,7 @@ module ikatensei::ika_tensei_v3_tests {
     use sui::test_scenario::{Self};
     use sui::object::{Self, UID};
     use sui::transfer;
+    use sui::coin::{Self, Coin};
     use ikatensei::seal_vault::{Self, SealVault};
     use ikatensei::registry::{Self, SealRegistry};
     use ikatensei::admin::{Self, AdminCap};
@@ -36,6 +37,79 @@ module ikatensei::ika_tensei_v3_tests {
     // A valid 32-byte Solana mint address
     fun mint32(): vector<u8> {
         x"4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c"
+    }
+
+    // Helper to create a test coin with minimum seal fee (1_000_000 MIST)
+    fun create_test_fee(ctx: &mut TxContext): Coin<sui::sui::SUI> {
+        coin::mint_for_testing<sui::sui::SUI>(1_000_000, ctx)
+    }
+
+    // Default empty metadata fields for tests
+    fun empty_metadata(): (vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>) {
+        (vector[], vector[], vector[], vector[], vector[], vector[])
+    }
+
+    // Helper to set authorized relayer for tests (uses deployer as relayer)
+    fun setup_authorized_relayer(registry: &mut SealRegistry, admin_cap: &AdminCap, relayer: address, ctx: &mut TxContext) {
+        registry::set_authorized_relayer(registry, admin_cap, relayer, ctx);
+    }
+
+    // Wrapper for register_seal_native with test defaults
+    fun register_seal_test<T: key + store>(
+        registry: &mut SealRegistry,
+        vault: &mut SealVault,
+        nft: T,
+        dwallet_id: ID,
+        cap_id: ID,
+        attest_dwallet_id: ID,
+        attest_cap_id: ID,
+        dwallet_pubkey: vector<u8>,
+        attest_pubkey: vector<u8>,
+        dwallet_sui_address: address,
+        source_contract: vector<u8>,
+        token_id: vector<u8>,
+        nonce: u64,
+        ctx: &mut TxContext,
+    ): vector<u8> {
+        let (name, desc, uri, meta_blob, img_blob, coll_name) = empty_metadata();
+        let fee = create_test_fee(ctx);
+        registry::register_seal_native<T>(
+            registry, vault, nft,
+            dwallet_id, cap_id, attest_dwallet_id, attest_cap_id,
+            dwallet_pubkey, attest_pubkey, dwallet_sui_address,
+            source_contract, token_id, nonce,
+            name, desc, uri, meta_blob, img_blob, coll_name,
+            fee, ctx
+        )
+    }
+
+    // Wrapper for register_seal_with_vaa with test defaults
+    fun register_seal_with_vaa_test(
+        registry: &mut SealRegistry,
+        vault: &mut SealVault,
+        vaa_bytes: vector<u8>,
+        dwallet_id: ID,
+        dwallet_cap_id: ID,
+        attestation_dwallet_id: ID,
+        attestation_dwallet_cap_id: ID,
+        dwallet_pubkey: vector<u8>,
+        attestation_pubkey: vector<u8>,
+        source_chain_id: u16,
+        source_contract: vector<u8>,
+        token_id: vector<u8>,
+        nonce: u64,
+        ctx: &mut TxContext,
+    ): vector<u8> {
+        let (name, desc, uri, meta_blob, img_blob, coll_name) = empty_metadata();
+        let fee = create_test_fee(ctx);
+        registry::register_seal_with_vaa(
+            registry, vault, vaa_bytes,
+            dwallet_id, dwallet_cap_id, attestation_dwallet_id, attestation_dwallet_cap_id,
+            dwallet_pubkey, attestation_pubkey,
+            source_chain_id, source_contract, token_id, nonce,
+            name, desc, uri, meta_blob, img_blob, coll_name,
+            fee, ctx
+        )
     }
 
     // ==================================================================
@@ -287,13 +361,17 @@ module ikatensei::ika_tensei_v3_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault    = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer (deployer acts as relayer in tests)
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft        = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let dwallet_id = object::id_from_address(@0x1111);
             let cap_id     = object::id_from_address(@0x2222);
             let pubkey     = pubkey32();
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 dwallet_id, cap_id,
@@ -315,6 +393,7 @@ module ikatensei::ika_tensei_v3_tests {
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         test_scenario::end(scenario);
@@ -338,7 +417,7 @@ module ikatensei::ika_tensei_v3_tests {
             let d_attest    = object::id_from_address(@0xcccc);
             let c_attest    = object::id_from_address(@0xdddd);
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft,
                 d_primary, c_primary,
@@ -379,12 +458,16 @@ module ikatensei::ika_tensei_v3_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault    = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft  = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d    = object::id_from_address(@0x1111);
             let c    = object::id_from_address(@0x2222);
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
@@ -395,8 +478,9 @@ module ikatensei::ika_tensei_v3_tests {
             // Not reborn yet
             assert!(!registry::is_reborn(&registry, seal_hash), 0);
 
-            registry::mark_reborn(
-                &mut registry, seal_hash, mint32(),
+            // Use admin override since mark_reborn requires relayer auth
+            registry::mark_reborn_admin(
+                &mut registry, &admin_cap, seal_hash, mint32(),
                 test_scenario::ctx(&mut scenario),
             );
 
@@ -409,13 +493,14 @@ module ikatensei::ika_tensei_v3_tests {
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         test_scenario::end(scenario);
     }
 
     #[test]
-    #[expected_failure(abort_code = registry::E_SEAL_NOT_FOUND)]
+    #[expected_failure(abort_code = registry::E_UNAUTHORIZED_RELAYER)]
     fun test_mark_reborn_fails_seal_not_found() {
         let deployer = @0xA;
         let mut scenario = test_scenario::begin(deployer);
@@ -425,7 +510,8 @@ module ikatensei::ika_tensei_v3_tests {
         test_scenario::next_tx(&mut scenario, deployer);
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
-            // Random hash that was never registered
+            // Random hash that was never registered - now fails on relayer auth first
+            // Since no relayer is set, this fails with E_UNAUTHORIZED_RELAYER
             registry::mark_reborn(
                 &mut registry, x"cafebabe12345678", mint32(),
                 test_scenario::ctx(&mut scenario),
@@ -448,12 +534,16 @@ module ikatensei::ika_tensei_v3_tests {
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault    = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft  = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d    = object::id_from_address(@0x5555);
             let c    = object::id_from_address(@0x6666);
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
@@ -461,15 +551,17 @@ module ikatensei::ika_tensei_v3_tests {
                 test_scenario::ctx(&mut scenario),
             );
 
-            registry::mark_reborn(&mut registry, seal_hash, mint32(),
+            // Use admin override for first mark_reborn
+            registry::mark_reborn_admin(&mut registry, &admin_cap, seal_hash, mint32(),
                 test_scenario::ctx(&mut scenario));
 
-            // Second mark_reborn must abort
-            registry::mark_reborn(&mut registry, seal_hash, mint32(),
+            // Second mark_reborn must abort - use admin override
+            registry::mark_reborn_admin(&mut registry, &admin_cap, seal_hash, mint32(),
                 test_scenario::ctx(&mut scenario));
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         test_scenario::end(scenario);
@@ -534,7 +626,7 @@ module ikatensei::ika_tensei_v3_tests {
             let d   = object::id_from_address(@0x123);
             let c   = object::id_from_address(@0x456);
 
-            registry::register_seal_native<TestNFT>(
+            register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
@@ -887,7 +979,7 @@ module ikatensei::ika_tensei_v3_tests {
             let d   = object::id_from_address(@0x1234);
             let c   = object::id_from_address(@0x5678);
 
-            registry::register_seal_native<TestNFT>(
+            register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
@@ -923,12 +1015,16 @@ module ikatensei::ika_tensei_v3_tests {
         let seal_hash = {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
             let mut vault    = test_scenario::take_shared<SealVault>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
+
+            // Set up authorized relayer (deployer acts as relayer in tests)
+            setup_authorized_relayer(&mut registry, &admin_cap, deployer, test_scenario::ctx(&mut scenario));
 
             let nft = TestNFT { id: object::new(test_scenario::ctx(&mut scenario)) };
             let d   = object::id_from_address(@0xfeed);
             let c   = object::id_from_address(@0xbeef);
 
-            let h = registry::register_seal_native<TestNFT>(
+            let h = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
@@ -942,16 +1038,18 @@ module ikatensei::ika_tensei_v3_tests {
 
             test_scenario::return_shared(registry);
             test_scenario::return_shared(vault);
+            test_scenario::return_to_sender(&scenario, admin_cap);
             h
         };
 
-        // Step 2: reborn (from a different caller to prove permissionless)
-        test_scenario::next_tx(&mut scenario, caller);
+        // Step 2: reborn (now requires relayer auth, use admin override)
+        test_scenario::next_tx(&mut scenario, deployer);
         {
             let mut registry = test_scenario::take_shared<SealRegistry>(&scenario);
+            let admin_cap = test_scenario::take_from_sender<AdminCap>(&scenario);
 
-            registry::mark_reborn(
-                &mut registry, seal_hash, mint32(),
+            registry::mark_reborn_admin(
+                &mut registry, &admin_cap, seal_hash, mint32(),
                 test_scenario::ctx(&mut scenario),
             );
 
@@ -963,6 +1061,7 @@ module ikatensei::ika_tensei_v3_tests {
             assert!(registry::seal_record_chain(r)       == 2,        6); // SUI
 
             test_scenario::return_shared(registry);
+            test_scenario::return_to_sender(&scenario, admin_cap);
         };
 
         test_scenario::end(scenario);
@@ -990,7 +1089,7 @@ module ikatensei::ika_tensei_v3_tests {
             let contract  = b"my_contract";
             let token     = b"token_abc";
 
-            let seal_hash = registry::register_seal_native<TestNFT>(
+            let seal_hash = register_seal_test<TestNFT>(
                 &mut registry, &mut vault,
                 nft, d, c, d, c,
                 pubkey32(), pubkey32(),
