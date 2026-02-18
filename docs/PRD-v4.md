@@ -213,87 +213,294 @@ The frontend simplifies dramatically:
 
 5. **Expiry: No expiry.** Deposit addresses persist indefinitely. No compelling reason to expire them — the dWallet exists on IKA regardless.
 
-## Critical Technical Challenge: Cross-Chain NFT Metadata
+## Cross-Chain NFT Metadata Pipeline
 
-To mint a proper reborn NFT on Solana, we need the original NFT's metadata (name, description, image, attributes/traits) from the source chain. This is a MASSIVE consideration because every chain and every NFT standard stores metadata differently.
+The hardest engineering challenge: fetching NFT metadata from 30+ chains, normalizing it, re-uploading to permanent storage, and minting a proper reborn NFT on Solana.
 
-### Metadata Standards by Chain
+### Metadata API Stack
+
+**⚠️ Landscape has shifted.** SimpleHash (acquired by Phantom, dead), Reservoir (pivoted, dead), NFTPort (shut down). Here's what works in 2026:
+
+| Chain(s) | Primary API | Fallback | Cost |
+|----------|-----------|----------|------|
+| EVM (18 chains) | **Alchemy NFT API** | NFTScan ($1/1M CU) | Free tier = 600K lookups/mo |
+| Solana | **Helius DAS API** | Direct RPC | Free tier = 1M credits/mo |
+| Sui | **No API exists** — custom RPC resolver required | — | RPC costs only |
+| Aptos, BTC Ordinals, TON | **NFTScan** | Rarible API | $1/1M CU |
+| Berachain, Monad, novel L2s | **Rarible Protocol API** | Covalent | Enterprise pricing |
+| 100+ tail chains | **Covalent GoldRush** | Direct RPC | $10/mo |
+
+**Total API cost at scale:** 10K seals/mo = basically free. 100K = ~$25/mo. 1M = ~$100/mo.
+
+### Per-Chain Metadata Standards
 
 **EVM (ERC-721 / ERC-1155):**
-- `tokenURI(tokenId)` returns a URI (HTTP, IPFS, Arweave, on-chain base64)
-- URI points to JSON: `{ name, description, image, attributes: [{trait_type, value}] }`
-- Image can be: IPFS hash, HTTP URL, on-chain SVG (base64), Arweave
-- Some collections use centralized APIs that may go down
-- ERC-1155 uses `uri(tokenId)` with `{id}` substitution
+- `tokenURI(tokenId)` → URI (IPFS, Arweave, HTTP, on-chain base64)
+- URI → JSON: `{ name, description, image, attributes: [{trait_type, value}] }`
+- OpenSea extensions: `animation_url`, `external_url`, `background_color`
+- ERC-1155: `uri(tokenId)` with `{id}` hex substitution pattern
+- Variations: some use `properties` not `attributes`, some nest differently
+- **CryptoPunks:** Custom contract, no ERC-721. Need special handling (punkIndex → imageHash → Larva Labs API)
+- **On-chain SVGs** (Art Blocks, Nouns): base64-encoded in tokenURI data, decode + re-upload
+- **Lazy-minted / unrevealed:** tokenURI may return placeholder. Detect and warn user.
 
 **Solana (Metaplex):**
-- Token Metadata program: on-chain name + symbol + URI
-- URI → JSON with same structure as EVM but Metaplex-specific fields
-- Metaplex Core (newer): different account structure
+- Token Metadata: on-chain account with name, symbol, URI field
+- Metaplex Core (newer): single-account design, different account structure
+- Compressed NFTs (cNFTs): metadata in Merkle tree, requires DAS-compatible RPC (Helius)
+- Images typically on Arweave already (can reference directly)
 
 **Sui:**
-- Objects with `display` standard (Display<T>)
-- Fields defined per collection — no universal tokenURI equivalent
-- Need to know the Move type to read display fields
-- Kiosk-locked NFTs add complexity
+- `Display<T>` standard: fields set per collection type
+- No universal tokenURI — must know the Move type to query display fields
+- Read via `sui_getObject` + display resolution
+- **Kiosk-locked NFTs:** Popular collections enforce TransferPolicy. May not be transferable to deposit address. Restrict to non-kiosk NFTs initially.
 
 **Aptos:**
-- Token v1: `TokenDataId { creator, collection, name }` → on-chain metadata
-- Token v2 (Digital Asset Standard): objects with URI property
-- Two incompatible standards active
+- Token v1 (legacy): `TokenDataId { creator, collection, name }` → on-chain PropertyMap
+- Token v2 / Digital Asset Standard: objects with URI property
+- Must detect which standard a given NFT uses (check account structure)
 
 **NEAR (NEP-171/177):**
-- `nft_metadata()` for collection, `nft_token(token_id)` for token
-- Returns JSON with `media` (image URL) and `reference` (metadata URL)
+- `nft_metadata()` for collection-level, `nft_token(token_id)` for per-token
+- Returns `media` (direct image URL) + `reference` (full metadata JSON URL)
+- Images typically on IPFS or Arweave
 
-### Metadata Fetching Strategy
+### Metadata Resolution Pipeline
 
 ```
-1. Detect NFT at deposit address → get contract + tokenID + chain
-2. Call chain-specific metadata resolver:
-   - EVM: call tokenURI(), fetch JSON, resolve image
-   - Solana: read Metaplex account, fetch JSON
-   - Sui: read Display<T> fields
-   - Aptos: read token data (v1 or v2)
-   - NEAR: call nft_token() view function
-3. Normalize to universal schema:
-   {
-     name: string,
-     description: string,
-     image: string (IPFS/HTTP URL),
-     attributes: [{trait_type, value}][],
-     source_chain: string,
-     source_contract: string,
-     source_token_id: string,
-     original_metadata_uri: string
-   }
-4. Upload image + metadata to Arweave (via Irys/Bundlr, permanent storage, Solana-native)
-5. Mint reborn NFT on Solana with Arweave URI
+Step 1: DETECT
+  NFT arrives at deposit address → get chain + contract + tokenID
+
+Step 2: FETCH (tiered)
+  Try Tier 1 API (Alchemy/Helius) → normalized metadata + cached image URL
+  ↓ fail
+  Try Tier 2 API (NFTScan/Rarible) → metadata
+  ↓ fail  
+  Try Tier 3 Direct RPC (tokenURI / getObject / nft_token) → raw URI
+  ↓ fail
+  Try Tier 4 Marketplace API (OpenSea / Magic Eden) → metadata
+  ↓ fail
+  Mark as "metadata unavailable" → mint with minimal info (chain, contract, tokenID only)
+
+Step 3: RESOLVE IMAGE
+  Parse image field from metadata:
+  - ipfs:// → try gateways in order: nftstorage.link → cloudflare-ipfs.com → ipfs.io → pinata gateway → w3s.link
+  - ar:// → arweave.net/{txId}
+  - https:// → fetch directly (with timeout + retry)
+  - data:image/svg+xml;base64,... → decode base64
+  - data:application/json;base64,... → decode, extract image, recurse
+
+Step 4: NORMALIZE
+  Map to universal schema:
+  {
+    name: string,                    // Original NFT name
+    description: string,             // Original description  
+    image: Buffer,                   // Downloaded image binary
+    image_mime: string,              // image/png, image/svg+xml, video/mp4, etc.
+    animation_url?: string,          // Video/audio if present
+    attributes: [{                   // Traits
+      trait_type: string,
+      value: string | number
+    }],
+    source_chain: string,            // "ethereum", "polygon", "sui", etc.
+    source_chain_id: number,         // Wormhole chain ID
+    source_contract: string,         // Contract/program address
+    source_token_id: string,         // Token ID
+    original_metadata_uri: string,   // Original tokenURI for reference
+    fetched_at: string               // ISO timestamp (snapshot time)
+  }
+
+Step 5: UPLOAD TO ARWEAVE (via Irys)
+  a. Upload image → get Arweave image URI
+  b. Build reborn metadata JSON (see schema below)
+  c. Upload metadata JSON → get Arweave metadata URI
+  
+Step 6: MINT ON SOLANA
+  Mint Metaplex Core NFT with Arweave metadata URI
 ```
+
+### Reborn NFT Specification
+
+**Minting Standard: Metaplex Core** (not Token Metadata, not cNFTs)
+- Official Metaplex recommendation for all new projects (2026)
+- ~0.003 SOL per mint (80% cheaper than Token Metadata)
+- ~17,000 compute units (vs 205,000 for TM)
+- Single account per NFT, enforced royalties, DAS-compatible
+- Program ID: `CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d`
+- SDKs: `@metaplex-foundation/mpl-core`, `@metaplex-foundation/umi`
+
+**Collection:** Single "Ika Tensei Reborn" collection for all reborn NFTs.
+```typescript
+// One-time collection creation (~0.002 SOL)
+await createCollection(umi, {
+  collection: collectionSigner,
+  name: 'Ika Tensei Reborn',
+  uri: collectionMetadataUri,
+  plugins: [{
+    type: 'Royalties',
+    basisPoints: 500, // 5%
+    creators: [{ address: protocolTreasury, percentage: 100 }],
+    ruleSet: ruleSet('None'), // Permissive initially, can enforce later
+  }]
+});
+```
+
+**Reborn NFT Name:** `"{Original Name} ✦ Reborn"`
+
+**Reborn NFT Metadata JSON** (uploaded to Arweave):
+```json
+{
+  "name": "Cosmic Squid #42 ✦ Reborn",
+  "symbol": "REBORN",
+  "description": "Originally Cosmic Squid #42 from the Cosmic Creatures collection on Ethereum. Sealed and reborn on Solana through Ika Tensei — the NFT reincarnation protocol.",
+  "image": "https://gateway.irys.xyz/{image-tx-id}",
+  "animation_url": "https://gateway.irys.xyz/{video-tx-id}",
+  "external_url": "https://etherscan.io/nft/{contract}/{tokenId}",
+  "attributes": [
+    {"trait_type": "Background", "value": "Nebula"},
+    {"trait_type": "Body", "value": "Cosmic"},
+    {"trait_type": "Eyes", "value": "Stargazer"},
+    {"trait_type": "Source Chain", "value": "Ethereum"},
+    {"trait_type": "Source Collection", "value": "Cosmic Creatures"},
+    {"trait_type": "Source Token ID", "value": "42"},
+    {"trait_type": "Seal Date", "value": "2026-03-15"},
+    {"trait_type": "dWallet Address", "value": "0x1a2b3c..."},
+    {"trait_type": "Provenance", "value": "Ika Tensei Reborn"}
+  ],
+  "properties": {
+    "files": [
+      {"uri": "https://gateway.irys.xyz/{image-tx-id}", "type": "image/png"}
+    ],
+    "category": "image",
+    "provenance": {
+      "source_chain": "ethereum",
+      "source_chain_id": 2,
+      "source_contract": "0xAbCdEf...",
+      "source_token_id": "42",
+      "dwallet_address": "0x1a2b3c...",
+      "seal_tx": "J2ScVXNczDhwE8v7ZcnDaRoaxVryxQpaj3PmoSS6aG3M",
+      "original_metadata_uri": "ipfs://QmXyz..."
+    }
+  }
+}
+```
+
+**Royalties:** 5% advisory initially (`ruleSet('None')`). Can upgrade to enforced allowlist via `updateCollectionPlugin` later for marketplace compliance.
+
+### Storage: Arweave via Irys
+
+- **Irys (formerly Bundlr):** Upload SDK that pays Arweave in SOL/ETH/other tokens
+- **Permanent storage:** Pay once, stored forever. No pinning, no expiry.
+- **Cost:** ~$0.015 per MB. Typical NFT (1MB image + 2KB JSON) = ~$0.02
+- **Speed:** 7000x faster than direct Arweave uploads
+- **Integration:** `@irys/sdk` — Node.js, pays with Solana keypair
+
+```typescript
+import Irys from "@irys/sdk";
+
+const irys = new Irys({ url: "https://node2.irys.xyz", token: "solana", key: walletKeypair });
+await irys.fund(irys.utils.toAtomic(0.1)); // Fund with 0.1 SOL
+
+// Upload image
+const imageReceipt = await irys.uploadFile("./image.png");
+const imageUri = `https://gateway.irys.xyz/${imageReceipt.id}`;
+
+// Upload metadata JSON
+const metadataReceipt = await irys.upload(JSON.stringify(metadata));
+const metadataUri = `https://gateway.irys.xyz/${metadataReceipt.id}`;
+```
+
+### Cost Per Reborn NFT
+
+| Component | Cost |
+|-----------|------|
+| Arweave upload (image + JSON via Irys) | ~$0.02 |
+| Solana mint (Metaplex Core) | ~0.003 SOL (~$0.30) |
+| Metadata API lookup | Free (within tier limits) |
+| **Total per reborn NFT** | **~$0.30-0.50** |
 
 ### Edge Cases
-- **On-chain SVGs:** Decode base64, re-upload as PNG or keep as SVG
-- **IPFS gateway failures:** Try multiple gateways (ipfs.io, cloudflare-ipfs, pinata, nftstorage)
-- **Dead metadata:** Some old collections have dead HTTP URLs. Cache aggressively.
-- **Dynamic NFTs:** Metadata changes over time. We snapshot at seal time.
-- **No metadata:** Some NFTs are purely on-chain with no URI. Extract what we can.
-- **Large media:** Video NFTs, music NFTs. Arweave handles large files but cost scales with size.
+
+- **On-chain SVGs** (Nouns, Art Blocks): Decode base64, re-upload as-is to Arweave
+- **IPFS failures:** 5-gateway rotation with 10s timeout each, then cache miss = retry queue
+- **Dead metadata URIs:** Some old collections have dead HTTP servers. Try marketplace APIs as fallback. If truly dead, mint with chain/contract/tokenID only + "metadata unavailable" flag
+- **Dynamic NFTs:** We snapshot at seal time. The reborn NFT preserves the state at moment of sealing.
+- **Unrevealed / lazy-minted:** Detect placeholder metadata (common patterns: "unrevealed", "hidden"). Warn user to reveal before sealing.
+- **Soulbound tokens (SBTs):** Cannot be transferred to deposit address. Detect and reject with explanation.
+- **CryptoPunks:** No ERC-721. Custom resolver using Larva Labs contract + punk image generation.
+- **Wrapped NFTs:** Detect wrapper (WNFT, Wrapped Punks) and resolve underlying metadata.
+- **Video/audio NFTs:** Upload media to Arweave, set `animation_url` in reborn metadata.
+- **ERC-1155 semi-fungibles:** Verify user sent exactly 1 token (not a batch). Handle `{id}` substitution in URI.
+- **Kiosk-locked Sui NFTs:** Cannot transfer to deposit address. Phase 2: build kiosk-aware deposit flow.
 
 ### Implementation: Modular Metadata Resolver
 
-Build a chain-agnostic metadata resolver with per-chain adapters:
-
 ```typescript
-interface MetadataResolver {
-  resolve(chain: Chain, contract: string, tokenId: string): Promise<NormalizedMetadata>;
+interface ChainResolver {
+  // Detect if NFT exists at address
+  detectDeposit(address: string): Promise<DepositedNFT | null>;
+  // Fetch metadata for a specific NFT
+  resolveMetadata(contract: string, tokenId: string): Promise<RawMetadata>;
 }
 
-// Per-chain implementations
-class EVMResolver implements MetadataResolver { ... }
-class SolanaResolver implements MetadataResolver { ... }
-class SuiResolver implements MetadataResolver { ... }
-class AptosResolver implements MetadataResolver { ... }
-class NEARResolver implements MetadataResolver { ... }
+// Tier 1: API-backed resolvers (fast, cached, normalized)
+class AlchemyEVMResolver implements ChainResolver { ... }    // 18 EVM chains
+class HeliusSolanaResolver implements ChainResolver { ... }   // Solana + cNFTs
+
+// Tier 2: API fallback
+class NFTScanResolver implements ChainResolver { ... }        // Aptos, BTC, gaps
+class RaribleResolver implements ChainResolver { ... }        // Novel L2s
+
+// Tier 3: Direct RPC (always available, slower)
+class EVMDirectResolver implements ChainResolver { ... }      // tokenURI() + fetch
+class SuiDirectResolver implements ChainResolver { ... }      // sui_getObject + Display
+class AptosDirectResolver implements ChainResolver { ... }    // Token v1/v2 detection
+class NEARDirectResolver implements ChainResolver { ... }     // nft_token() view call
+
+// Normalizer: any raw metadata → universal schema
+class MetadataNormalizer {
+  normalize(raw: RawMetadata, chain: Chain): NormalizedMetadata;
+}
+
+// Image resolver: any URI → downloaded binary
+class ImageResolver {
+  resolve(uri: string): Promise<{ buffer: Buffer; mime: string }>;
+  // Handles: ipfs://, ar://, https://, data:base64, SVG decode
+  // IPFS gateway rotation: nftstorage → cloudflare → ipfs.io → pinata → w3s
+}
+
+// Uploader: normalized metadata + image → Arweave URIs
+class ArweaveUploader {
+  upload(metadata: NormalizedMetadata, image: Buffer): Promise<{ imageUri: string; metadataUri: string }>;
+  // Uses Irys SDK, pays in SOL
+}
+
+// Minter: Arweave URI → Metaplex Core NFT on Solana
+class RebornMinter {
+  mint(metadataUri: string, recipient: PublicKey, collection: PublicKey): Promise<string>;
+  // Uses @metaplex-foundation/mpl-core + umi
+}
 ```
 
-This is one of the hardest parts of the whole system — reliable cross-chain metadata resolution at scale.
+### IPFS Gateway Rotation Strategy
+
+```typescript
+const IPFS_GATEWAYS = [
+  "https://nftstorage.link/ipfs/",      // Most reliable for NFTs
+  "https://cloudflare-ipfs.com/ipfs/",   // Fast CDN
+  "https://ipfs.io/ipfs/",              // Official, sometimes slow
+  "https://gateway.pinata.cloud/ipfs/",  // Pinata
+  "https://w3s.link/ipfs/",             // Web3.Storage
+];
+
+async function resolveIPFS(cid: string): Promise<Buffer> {
+  for (const gateway of IPFS_GATEWAYS) {
+    try {
+      const res = await fetch(gateway + cid, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+    } catch { continue; }
+  }
+  throw new Error(`IPFS resolution failed for ${cid} across all gateways`);
+}
+```
