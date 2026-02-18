@@ -267,8 +267,8 @@ To mint a proper reborn NFT on Solana, we need the original NFT's metadata (name
      source_token_id: string,
      original_metadata_uri: string
    }
-4. Upload image + metadata to Walrus (decentralized storage on Sui)
-5. Mint reborn NFT on Solana with Walrus URI
+4. Upload image + metadata to Arweave (via Irys/Bundlr, permanent storage, Solana-native)
+5. Mint reborn NFT on Solana with Arweave URI
 ```
 
 ### Edge Cases
@@ -277,7 +277,7 @@ To mint a proper reborn NFT on Solana, we need the original NFT's metadata (name
 - **Dead metadata:** Some old collections have dead HTTP URLs. Cache aggressively.
 - **Dynamic NFTs:** Metadata changes over time. We snapshot at seal time.
 - **No metadata:** Some NFTs are purely on-chain with no URI. Extract what we can.
-- **Large media:** Video NFTs, music NFTs. Size limits on Walrus?
+- **Large media:** Video NFTs, music NFTs. Arweave handles large files but cost scales with size.
 
 ### Implementation: Modular Metadata Resolver
 
