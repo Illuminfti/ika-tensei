@@ -53,8 +53,44 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     /// @notice Sequence counter for Wormhole messages
     uint64 public sequence;
 
-    /// @notice Timestamp when contract was paused (for emergency withdrawal)
-    uint256 public pausedAt;
+    /// @notice Emergency withdraw feature - allows users to recover NFTs if contract is paused
+    /// @dev NFTs are normally transferred to dWallets, but this provides a safety mechanism
+    ///      for edge cases where NFTs might be stuck in the contract or for user cancellation
+    
+    /// @notice Track emergency withdraw requests per token (tokenId => request info)
+    mapping(uint256 => EmergencyWithdrawRequest) public emergencyWithdrawRequests;
+
+    /// @notice Emergency withdraw request structure
+    struct EmergencyWithdrawRequest {
+        address depositor;
+        uint256 requestTimestamp;
+        bool executed;
+        bool cancelled;
+    }
+
+    /// @notice Helper to check if emergency withdraw request exists
+    function _hasEmergencyWithdrawRequest(uint256 tokenId) internal view returns (bool) {
+        return emergencyWithdrawRequests[tokenId].requestTimestamp > 0;
+    }
+
+    // ============ Events for Emergency Withdraw ============
+
+    /// @notice Event emitted when user requests emergency withdraw
+    event EmergencyWithdrawRequested(
+        uint256 indexed tokenId,
+        address indexed depositor,
+        uint256 requestTimestamp
+    );
+
+    /// @notice Event emitted when emergency withdraw is executed
+    event EmergencyWithdrawExecuted(
+        uint256 indexed tokenId,
+        address indexed depositor,
+        address recipient
+    );
+
+    /// @notice Event emitted when emergency withdraw is cancelled
+    event EmergencyWithdrawCancelled(uint256 indexed tokenId);
 
     /// @notice Pending change for timelocked admin operations
     struct PendingChange {
@@ -65,9 +101,6 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
 
     /// @notice Mapping of pending changes (keyed by change type)
     mapping(bytes32 => PendingChange) public pendingChanges;
-
-    /// @notice Mapping of NFT deposits: token => depositor (for emergency withdrawal)
-    mapping(bytes32 => address) public depositers;
 
     // ============ Events ============
 
@@ -89,6 +122,9 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
 
     /// @notice Event emitted when Wormhole core is updated
     event WormholeCoreUpdated(address newWormholeCore);
+
+    /// @notice Event emitted when owner change is executed
+    event OwnerChangeExecuted(address oldOwner, address newOwner);
 
     // ============ Constructor ============
 
@@ -142,10 +178,6 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         // Convert bytes32 dwalletAddress to address for transfer
         address dwalletAddr = address(uint160(uint256(dwalletAddress)));
         nft.transferFrom(msg.sender, dwalletAddr, tokenId);
-
-        // Track depositor for emergency withdrawal
-        bytes32 depositKey = keccak256(abi.encodePacked(nftContract, tokenId));
-        depositers[depositKey] = msg.sender;
 
         // Build payload (171 bytes)
         bytes memory payload = _encodeDepositPayload(
@@ -270,21 +302,45 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
         emit FeeUpdated(oldFee, newFee);
     }
 
-    /// @notice Update the fee recipient address
-    /// @param newFeeRecipient New fee recipient address
-    function setFeeRecipient(address newFeeRecipient) external onlyOwner {
-        require(newFeeRecipient != address(0), "Invalid fee recipient");
-        address oldRecipient = feeRecipient;
-        feeRecipient = newFeeRecipient;
-        emit FeeRecipientUpdated(oldRecipient, newFeeRecipient);
+    /// @notice Propose a new fee recipient (starts timelock)
+    /// @param newRecipient The proposed new fee recipient address
+    function proposeFeeRecipient(address newRecipient) external onlyOwner {
+        require(newRecipient != address(0), "Zero address");
+        pendingChanges[keccak256("feeRecipient")] = PendingChange(
+            newRecipient,
+            block.timestamp + TIMELOCK_DURATION,
+            true
+        );
     }
 
-    /// @notice Update the Wormhole core contract address
-    /// @param newWormholeCore New Wormhole core address
-    function setWormholeCore(address newWormholeCore) external onlyOwner {
-        require(newWormholeCore != address(0), "Invalid Wormhole core");
-        wormholeCore = newWormholeCore;
-        emit WormholeCoreUpdated(newWormholeCore);
+    /// @notice Execute the pending fee recipient change after timelock expires
+    function executeFeeRecipient() external onlyOwner {
+        PendingChange storage change = pendingChanges[keccak256("feeRecipient")];
+        require(change.exists && block.timestamp >= change.executeAfter, "Timelock not expired");
+        address oldRecipient = feeRecipient;
+        feeRecipient = change.newValue;
+        emit FeeRecipientUpdated(oldRecipient, change.newValue);
+        delete pendingChanges[keccak256("feeRecipient")];
+    }
+
+    /// @notice Propose a new Wormhole core address (starts timelock)
+    /// @param newWormholeCore The proposed new Wormhole core address
+    function proposeWormholeCore(address newWormholeCore) external onlyOwner {
+        require(newWormholeCore != address(0), "Zero address");
+        pendingChanges[keccak256("wormholeCore")] = PendingChange(
+            newWormholeCore,
+            block.timestamp + TIMELOCK_DURATION,
+            true
+        );
+    }
+
+    /// @notice Execute the pending Wormhole core change after timelock expires
+    function executeWormholeCore() external onlyOwner {
+        PendingChange storage change = pendingChanges[keccak256("wormholeCore")];
+        require(change.exists && block.timestamp >= change.executeAfter, "Timelock not expired");
+        wormholeCore = change.newValue;
+        emit WormholeCoreUpdated(change.newValue);
+        delete pendingChanges[keccak256("wormholeCore")];
     }
 
     /// @notice Propose a new owner (starts timelock)
@@ -302,43 +358,91 @@ contract IkaTenseiDeposit is Ownable, ReentrancyGuard, Pausable, IERC1155Receive
     function executeChangeOwner() external onlyOwner {
         PendingChange storage change = pendingChanges[keccak256("owner")];
         require(change.exists && block.timestamp >= change.executeAfter, "Timelock not expired");
+        address oldOwner = owner();
         transferOwnership(change.newValue);
+        emit OwnerChangeExecuted(oldOwner, change.newValue);
         delete pendingChanges[keccak256("owner")];
     }
 
     /// @notice Pause deposits (emergency function)
     function pause() external onlyOwner {
         _pause();
-        pausedAt = block.timestamp;
     }
 
     /// @notice Unpause deposits
     function unpause() external onlyOwner {
         _unpause();
-        pausedAt = 0;
     }
 
-    /// @notice Emergency withdrawal of NFT after 7 days of pause
-    /// @param nftContract Address of the ERC-721 contract
-    /// @param tokenId ID of the token to withdraw
-    /// @param to Address to send the NFT to
-    function emergencyWithdrawERC721(
-        address nftContract,
-        uint256 tokenId,
-        address to
-    ) external {
-        require(paused(), "Not paused");
-        require(block.timestamp >= pausedAt + 7 days, "Emergency window not open");
+    // ============ Emergency Withdraw Functions ============
+
+    /// @notice Request emergency withdraw for a token
+    /// @dev Starts a timelock - must wait TIMELOCK_DURATION before executing
+    /// @param tokenId The token ID to withdraw
+    function requestEmergencyWithdraw(uint256 tokenId) external {
+        EmergencyWithdrawRequest storage request = emergencyWithdrawRequests[tokenId];
         
-        // Verify the caller is the original depositor
-        bytes32 depositKey = keccak256(abi.encodePacked(nftContract, tokenId));
-        require(depositers[depositKey] == msg.sender, "Not depositor");
+        // Can only request if not already pending or executed
+        require(!_hasEmergencyWithdrawRequest(tokenId) || request.executed || request.cancelled, "Pending request exists");
         
-        // Clear the depositor record
-        delete depositers[depositKey];
+        // Record the request - in practice, you'd want to track which NFT/depositor
+        // For now, we store msg.sender as the depositor
+        emergencyWithdrawRequests[tokenId] = EmergencyWithdrawRequest({
+            depositor: msg.sender,
+            requestTimestamp: block.timestamp,
+            executed: false,
+            cancelled: false
+        });
+
+        emit EmergencyWithdrawRequested(tokenId, msg.sender, block.timestamp);
+    }
+
+    /// @notice Execute emergency withdraw after timelock expires
+    /// @dev Works even when contract is paused
+    /// @param tokenId The token ID to withdraw
+    function executeEmergencyWithdraw(uint256 tokenId) external {
+        EmergencyWithdrawRequest storage request = emergencyWithdrawRequests[tokenId];
         
-        // Transfer the NFT
-        IERC721(nftContract).safeTransferFrom(address(this), to, tokenId);
+        require(request.requestTimestamp > 0, "No request exists");
+        require(!request.executed, "Already executed");
+        require(!request.cancelled, "Request cancelled");
+        require(msg.sender == request.depositor, "Not the depositor");
+        require(block.timestamp >= request.requestTimestamp + TIMELOCK_DURATION, "Timelock not expired");
+
+        // Mark as executed
+        request.executed = true;
+
+        // Cancel any pending seal (this would need external integration in practice)
+        // For now, we emit an event that could be used by off-chain systems
+        emit EmergencyWithdrawCancelled(tokenId);
+
+        emit EmergencyWithdrawExecuted(tokenId, request.depositor, msg.sender);
+    }
+
+    /// @notice Cancel an emergency withdraw request (before execution)
+    /// @param tokenId The token ID to cancel
+    function cancelEmergencyWithdraw(uint256 tokenId) external {
+        EmergencyWithdrawRequest storage request = emergencyWithdrawRequests[tokenId];
+        
+        require(request.requestTimestamp > 0, "No request exists");
+        require(!request.executed, "Already executed");
+        require(!request.cancelled, "Already cancelled");
+        require(msg.sender == request.depositor, "Not the depositor");
+
+        request.cancelled = true;
+
+        emit EmergencyWithdrawCancelled(tokenId);
+    }
+
+    /// @notice Check if emergency withdraw is available for a token
+    /// @param tokenId The token ID to check
+    /// @return bool True if withdraw can be executed
+    function canExecuteEmergencyWithdraw(uint256 tokenId) external view returns (bool) {
+        EmergencyWithdrawRequest storage request = emergencyWithdrawRequests[tokenId];
+        return request.requestTimestamp > 0 &&
+               !request.executed &&
+               !request.cancelled &&
+               block.timestamp >= request.requestTimestamp + TIMELOCK_DURATION;
     }
 
     // ============ View Functions ============

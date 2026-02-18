@@ -4,8 +4,6 @@
 
 import { PublicKey } from '@solana/web3.js';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-import { readFileSync } from 'fs';
-import { homedir } from 'os';
 
 export interface RelayerConfig {
   // Chain Configuration
@@ -103,43 +101,6 @@ function parseKeypairFromBase64(value: string | undefined, key: string): Uint8Ar
   }
 }
 
-function loadDefaultKeystore(): Uint8Array | null {
-  try {
-    const keystorePath = `${homedir()}/.sui/sui_config/sui.keystore`;
-    const content = readFileSync(keystorePath, 'utf8');
-    const keystore = JSON.parse(content);
-    if (keystore && keystore[0]) {
-      const decoded = Buffer.from(keystore[0], 'base64');
-      // Sui keystore format: [flag(1) + privkey(32)]
-      if (decoded.length >= 33) {
-        return new Uint8Array(decoded.slice(1, 33));
-      }
-    }
-  } catch {
-    // Ignore - will use env var
-  }
-  return null;
-}
-
-function loadDefaultSolanaKeypair(): Uint8Array | null {
-  try {
-    const keypath = `${homedir()}/.config/solana/id.json`;
-    const content = readFileSync(keypath, 'utf8');
-    const keypair = JSON.parse(content);
-    // Solana keypair is [privkey(64)]
-    if (Array.isArray(keypair) && keypair.length >= 64) {
-      const bytes = new Uint8Array(64);
-      for (let i = 0; i < 64; i++) {
-        bytes[i] = keypair[i];
-      }
-      return bytes;
-    }
-  } catch {
-    // Ignore - will use env var
-  }
-  return null;
-}
-
 export function loadConfig(): RelayerConfig {
   // Load .env file if exists
   try {
@@ -185,30 +146,16 @@ export function loadConfig(): RelayerConfig {
   const suiVaultId = env.SUI_VAULT_ID;
   if (!suiVaultId) throw new Error('SUI_VAULT_ID is required');
 
-  // Parse Sui keypair
-  let suiKeypairBytes: Uint8Array;
-  if (env.SUI_KEYPAIR_BASE64) {
-    suiKeypairBytes = parseKeypairFromBase64(env.SUI_KEYPAIR_BASE64, 'SUI_KEYPAIR_BASE64');
-  } else {
-    const defaultBytes = loadDefaultKeystore();
-    if (!defaultBytes) {
-      throw new Error('Sui keypair not configured: set SUI_KEYPAIR_BASE64 or use default keystore');
-    }
-    suiKeypairBytes = defaultBytes;
-  }
+  // Parse Sui keypair - REQUIRED
+  const suiKeypairBase64 = env.SUI_KEYPAIR_BASE64;
+  if (!suiKeypairBase64) throw new Error('SUI_KEYPAIR_BASE64 is required - no fallback to system keystore');
+  const suiKeypairBytes = parseKeypairFromBase64(suiKeypairBase64, 'SUI_KEYPAIR_BASE64');
   const suiKeypair = Ed25519Keypair.fromSecretKey(suiKeypairBytes);
 
-  // Parse Solana keypair
-  let solanaKeypairBytes: Uint8Array;
-  if (env.SOLANA_KEYPAIR_BASE64) {
-    solanaKeypairBytes = parseKeypairFromBase64(env.SOLANA_KEYPAIR_BASE64, 'SOLANA_KEYPAIR_BASE64');
-  } else {
-    const defaultBytes = loadDefaultSolanaKeypair();
-    if (!defaultBytes) {
-      throw new Error('Solana keypair not configured: set SOLANA_KEYPAIR_BASE64 or use default keypair');
-    }
-    solanaKeypairBytes = defaultBytes;
-  }
+  // Parse Solana keypair - REQUIRED
+  const solanaKeypairBase64 = env.SOLANA_KEYPAIR_BASE64;
+  if (!solanaKeypairBase64) throw new Error('SOLANA_KEYPAIR_BASE64 is required - no fallback to system keypair');
+  const solanaKeypairBytes = parseKeypairFromBase64(solanaKeypairBase64, 'SOLANA_KEYPAIR_BASE64');
 
   // Parse relayer settings
   const healthPort = parseInt(env.HEALTH_PORT || '3470', 10);

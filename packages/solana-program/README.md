@@ -287,6 +287,56 @@ solana program deploy target/deploy/ika_tensei.so --url devnet
 solana program deploy target/deploy/ika_tensei.so --url mainnet-beta
 ```
 
+## Upgrade Authority
+
+The program uses Anchor's default upgrade authority (the deployer keypair). This is suitable for development and testing, but mainnet requires a secure multi-signature setup.
+
+### Current Setup (Development)
+- **Authority:** Deployer keypair (`~/.config/solana/id.json`)
+- **Suitable for:** Devnet, testnet
+
+### Mainnet Plan
+
+**Phase 1 - Deploy (Deployer Keypair)**
+- Program deployed with deployer as upgrade authority
+- Suitable for iterative updates during audit period
+
+**Phase 2 - Transfer to Multisig (Post-Audit)**
+- Transfer upgrade authority to a secure multisig (e.g., 3-of-5)
+- Enables team-based upgrade decisions with hardware wallet security
+
+**Phase 3 - Revoke (After Stability Period)**
+- Make program immutable by revoking upgrade authority
+- Ensures no future upgrades can occur
+- Requires `--final` flag
+
+### Commands
+
+**Transfer to Multisig:**
+```bash
+solana program set-upgrade-authority mbEQvaiUYdc65Qz4rd67oBY1LbSCBq1Da8Y1MciwtPa \
+  --new-upgrade-authority <MULTISIG_ADDRESS> \
+  --url mainnet-beta
+```
+
+**Make Immutable (Revoke):**
+```bash
+solana program set-upgrade-authority mbEQvaiUYdc65Qz4rd67oBY1LbSCBq1Da8Y1MciwtPa \
+  --final \
+  --url mainnet-beta
+```
+
+**Verify Current Authority:**
+```bash
+solana program show mbEQvaiUYdc65Qz4rd67oBY1LbSCBq1Da8Y1MciwtPa
+```
+
+### Security Notes
+- Never deploy to mainnet with deployer keypair as upgrade authority long-term
+- Use a hardware wallet for multisig signers
+- Wait 30+ days of stability before revoking
+- Document the multisig threshold and signers in operational runbooks
+
 ## Metaplex Core CPI
 
 The program uses Metaplex Core's `CreateV2CpiBuilder` for minting:

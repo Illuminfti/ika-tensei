@@ -7,6 +7,16 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "../src/IkaTenseiDeposit.sol";
 
 // =============================================================
+//                      EVENT DECLARATIONS
+// =============================================================
+
+/// @notice Library to hold test events (solidity allows library events)
+library TestEvents {
+    event EmergencyWithdrawRequested(uint256 indexed tokenId, address indexed depositor, uint256 requestTimestamp);
+    event EmergencyWithdrawExecuted(uint256 indexed tokenId, address indexed depositor, address recipient);
+}
+
+// =============================================================
 //                      MOCK CONTRACTS
 // =============================================================
 
@@ -211,7 +221,10 @@ contract IkaTenseiDepositTest is Test {
 
         // Point to our local mock instead of the real Sepolia address
         vm.prank(owner);
-        dep.setWormholeCore(address(wormhole));
+        dep.proposeWormholeCore(address(wormhole));
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+        vm.prank(owner);
+        dep.executeWormholeCore();
 
         vm.deal(user, 10 ether);
         nft721.mint(user, 1);
@@ -351,16 +364,31 @@ contract IkaTenseiDepositTest is Test {
         dep.setFee(0);
     }
 
-    // ── Admin: setFeeRecipient ───────────────────────────────
+    // ── Admin: setFeeRecipient (timelocked) ─────────────────
     function test_SetFeeRecipient_onlyOwner() public {
         address newRecipient = makeAddr("newRecipient");
+        
+        // Propose new fee recipient
         vm.prank(owner);
-        dep.setFeeRecipient(newRecipient);
+        dep.proposeFeeRecipient(newRecipient);
+        
+        // Cannot execute before timelock expires
+        vm.expectRevert("Timelock not expired");
+        vm.prank(owner);
+        dep.executeFeeRecipient();
+        
+        // Warp past timelock
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+        
+        // Execute the change
+        vm.prank(owner);
+        dep.executeFeeRecipient();
         assertEq(dep.feeRecipient(), newRecipient);
-
+        
+        // Non-owner cannot propose
         vm.expectRevert();
         vm.prank(user);
-        dep.setFeeRecipient(address(0x5));
+        dep.proposeFeeRecipient(address(0x5));
     }
 
     // ── Admin: pause / unpause ───────────────────────────────
@@ -399,5 +427,218 @@ contract IkaTenseiDepositTest is Test {
     // ── getWormholeFee ───────────────────────────────────────
     function test_GetWormholeFee() public {
         assertEq(dep.getWormholeFee(), wormhole.messageFee());
+    }
+
+    // ============================================================
+    //                    EMERGENCY WITHDRAW TESTS
+    // ============================================================
+
+    // ── requestEmergencyWithdraw ──────────────────────────────
+
+    function test_RequestEmergencyWithdraw_Success() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        (address depositor, uint256 timestamp, bool executed, bool cancelled) = dep.emergencyWithdrawRequests(1);
+        assertEq(depositor, user);
+        assertEq(timestamp, block.timestamp);
+        assertFalse(executed);
+        assertFalse(cancelled);
+    }
+
+    function test_RequestEmergencyWithdraw_EmitsEvent() public {
+        vm.prank(user);
+        vm.expectEmit(true, true, true, true);
+        emit TestEvents.EmergencyWithdrawRequested(1, user, block.timestamp);
+        dep.requestEmergencyWithdraw(1);
+    }
+
+    function test_RequestEmergencyWithdraw_AllowsNewAfterCancel() public {
+        // Request
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        // Cancel
+        vm.prank(user);
+        dep.cancelEmergencyWithdraw(1);
+
+        // Should be able to request again
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        (address depositor,,,) = dep.emergencyWithdrawRequests(1);
+        assertEq(depositor, user);
+    }
+
+    // ── executeEmergencyWithdraw ─────────────────────────────
+
+    function test_ExecuteEmergencyWithdraw_BeforeTimelock() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.prank(user);
+        vm.expectRevert("Timelock not expired");
+        dep.executeEmergencyWithdraw(1);
+    }
+
+    function test_ExecuteEmergencyWithdraw_AfterTimelock() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        // Warp past timelock (2 days)
+        vm.warp(block.timestamp + 2 days);
+
+        vm.prank(user);
+        vm.expectEmit(true, true, true, true);
+        emit TestEvents.EmergencyWithdrawExecuted(1, user, user);
+        dep.executeEmergencyWithdraw(1);
+
+        (,, bool executed,) = dep.emergencyWithdrawRequests(1);
+        assertTrue(executed);
+    }
+
+    function test_ExecuteEmergencyWithdraw_NotDepositor() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.warp(block.timestamp + 2 days);
+
+        vm.prank(otherUser);
+        vm.expectRevert("Not the depositor");
+        dep.executeEmergencyWithdraw(1);
+    }
+
+    function test_ExecuteEmergencyWithdraw_NoRequest() public {
+        vm.prank(user);
+        vm.expectRevert("No request exists");
+        dep.executeEmergencyWithdraw(1);
+    }
+
+    function test_ExecuteEmergencyWithdraw_AlreadyExecuted() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.warp(block.timestamp + 2 days);
+
+        vm.prank(user);
+        dep.executeEmergencyWithdraw(1);
+
+        // Try again
+        vm.prank(user);
+        vm.expectRevert("Already executed");
+        dep.executeEmergencyWithdraw(1);
+    }
+
+    // ── cancelEmergencyWithdraw ─────────────────────────────
+
+    function test_CancelEmergencyWithdraw_Success() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.prank(user);
+        dep.cancelEmergencyWithdraw(1);
+
+        (,,, bool cancelled) = dep.emergencyWithdrawRequests(1);
+        assertTrue(cancelled);
+    }
+
+    function test_CancelEmergencyWithdraw_NotDepositor() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.prank(otherUser);
+        vm.expectRevert("Not the depositor");
+        dep.cancelEmergencyWithdraw(1);
+    }
+
+    function test_CancelEmergencyWithdraw_AlreadyCancelled() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.prank(user);
+        dep.cancelEmergencyWithdraw(1);
+
+        vm.prank(user);
+        vm.expectRevert("Already cancelled");
+        dep.cancelEmergencyWithdraw(1);
+    }
+
+    // ── Works when paused ───────────────────────────────────
+
+    function test_EmergencyWithdraw_WorksWhenPaused() public {
+        // Pause the contract
+        vm.prank(owner);
+        dep.pause();
+
+        // Request should work even when paused
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        // Warp past timelock
+        vm.warp(block.timestamp + 2 days);
+
+        // Execute should work even when paused
+        vm.prank(user);
+        dep.executeEmergencyWithdraw(1);
+
+        (,, bool executed,) = dep.emergencyWithdrawRequests(1);
+        assertTrue(executed);
+    }
+
+    // ── canExecuteEmergencyWithdraw ─────────────────────────
+
+    function test_CanExecuteEmergencyWithdraw_True() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.warp(block.timestamp + 2 days);
+
+        assertTrue(dep.canExecuteEmergencyWithdraw(1));
+    }
+
+    function test_CanExecuteEmergencyWithdraw_False_BeforeTimelock() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        assertFalse(dep.canExecuteEmergencyWithdraw(1));
+    }
+
+    function test_CanExecuteEmergencyWithdraw_False_NoRequest() public {
+        assertFalse(dep.canExecuteEmergencyWithdraw(1));
+    }
+
+    function test_CanExecuteEmergencyWithdraw_False_Executed() public {
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.warp(block.timestamp + 2 days);
+
+        vm.prank(user);
+        dep.executeEmergencyWithdraw(1);
+
+        assertFalse(dep.canExecuteEmergencyWithdraw(1));
+    }
+
+    // ── Multiple tokens ─────────────────────────────────────
+
+    function test_EmergencyWithdraw_MultipleTokens() public {
+        // Request for multiple tokens
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(1);
+
+        vm.prank(user);
+        dep.requestEmergencyWithdraw(2);
+
+        vm.prank(otherUser);
+        dep.requestEmergencyWithdraw(3);
+
+        // Check all requests exist
+        (address d1,,,) = dep.emergencyWithdrawRequests(1);
+        (address d2,,,) = dep.emergencyWithdrawRequests(2);
+        (address d3,,,) = dep.emergencyWithdrawRequests(3);
+
+        assertEq(d1, user);
+        assertEq(d2, user);
+        assertEq(d3, otherUser);
     }
 }

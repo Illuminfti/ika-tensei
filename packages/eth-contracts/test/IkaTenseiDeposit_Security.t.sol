@@ -421,7 +421,10 @@ contract IkaTenseiDepositSecurityTest is Test {
         dep = new IkaTenseiDeposit(DEPOSIT_FEE, feeRecipient, false);
 
         vm.prank(owner);
-        dep.setWormholeCore(address(wormhole));
+        dep.proposeWormholeCore(address(wormhole));
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+        vm.prank(owner);
+        dep.executeWormholeCore();
 
         vm.deal(user, 100 ether);
         vm.deal(attacker, 100 ether);
@@ -497,9 +500,12 @@ contract IkaTenseiDepositSecurityTest is Test {
         MaliciousRefundReceiver malReceiver = new MaliciousRefundReceiver();
         malReceiver.setTarget(payable(address(dep)));
         
-        // Set fee recipient to a normal address first
+        // Set fee recipient to a normal address first (timelocked)
         vm.prank(owner);
-        dep.setFeeRecipient(feeRecipient);
+        dep.proposeFeeRecipient(feeRecipient);
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+        vm.prank(owner);
+        dep.executeFeeRecipient();
         
         // Create NFT and try deposit with excess
         MockERC721 testNft = new MockERC721();
@@ -527,9 +533,12 @@ contract IkaTenseiDepositSecurityTest is Test {
     function test_SecurityFeeRecipientGriefing() public {
         RevertingFeeRecipient badRecipient = new RevertingFeeRecipient();
         
-        // Set the bad recipient as fee recipient
+        // Set the bad recipient as fee recipient (timelocked)
         vm.prank(owner);
-        dep.setFeeRecipient(address(badRecipient));
+        dep.proposeFeeRecipient(address(badRecipient));
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+        vm.prank(owner);
+        dep.executeFeeRecipient();
         
         // Create new NFT for this test
         MockERC721 testNft = new MockERC721();
@@ -819,13 +828,13 @@ contract IkaTenseiDepositSecurityTest is Test {
     function test_SecurityAccessControlSetFeeRecipient() public {
         vm.expectRevert();
         vm.prank(user);
-        dep.setFeeRecipient(makeAddr("newRecipient"));
+        dep.proposeFeeRecipient(makeAddr("newRecipient"));
     }
 
     function test_SecurityAccessControlSetWormholeCore() public {
         vm.expectRevert();
         vm.prank(user);
-        dep.setWormholeCore(makeAddr("newWormhole"));
+        dep.proposeWormholeCore(makeAddr("newWormhole"));
     }
 
     function test_SecurityAccessControlPause() public {
@@ -879,21 +888,21 @@ contract IkaTenseiDepositSecurityTest is Test {
     }
 
     // ============================================================
-    // TEST 16: setWormholeCore to address(0)
+    // TEST 16: proposeWormholeCore to address(0)
     // ============================================================
     function test_SecuritySetWormholeCoreToZeroAddress() public {
-        vm.expectRevert("Invalid Wormhole core");
+        vm.expectRevert("Zero address");
         vm.prank(owner);
-        dep.setWormholeCore(address(0));
+        dep.proposeWormholeCore(address(0));
     }
 
     // ============================================================
-    // TEST 17: setFeeRecipient to address(0)
+    // TEST 17: proposeFeeRecipient to address(0)
     // ============================================================
     function test_SecuritySetFeeRecipientToZeroAddress() public {
-        vm.expectRevert("Invalid fee recipient");
+        vm.expectRevert("Zero address");
         vm.prank(owner);
-        dep.setFeeRecipient(address(0));
+        dep.proposeFeeRecipient(address(0));
     }
 
     // ============================================================
@@ -956,17 +965,21 @@ contract IkaTenseiDepositSecurityTest is Test {
     }
 
     // ============================================================
-    // ADDITIONAL: setFeeRecipient emits correct event
+    // ADDITIONAL: executeFeeRecipient emits correct event
     // ============================================================
     function test_SecurityFeeRecipientEvent() public {
         address oldRecipient = feeRecipient;
         address newRecipient = makeAddr("newRecipient");
         
+        vm.prank(owner);
+        dep.proposeFeeRecipient(newRecipient);
+        
         vm.expectEmit(true, true, true, true);
         emit FeeRecipientUpdated(oldRecipient, newRecipient);
         
+        vm.warp(block.timestamp + 2 days + 1 seconds);
         vm.prank(owner);
-        dep.setFeeRecipient(newRecipient);
+        dep.executeFeeRecipient();
         
         assertEq(dep.feeRecipient(), newRecipient);
     }
@@ -988,16 +1001,20 @@ contract IkaTenseiDepositSecurityTest is Test {
     }
 
     // ============================================================
-    // ADDITIONAL: setWormholeCore emits correct event
+    // ADDITIONAL: executeWormholeCore emits correct event
     // ============================================================
     function test_SecurityWormholeCoreEvent() public {
         address newCore = makeAddr("newWormhole");
         
+        vm.prank(owner);
+        dep.proposeWormholeCore(newCore);
+        
         vm.expectEmit(true, true, true, true);
         emit WormholeCoreUpdated(newCore);
         
+        vm.warp(block.timestamp + 2 days + 1 seconds);
         vm.prank(owner);
-        dep.setWormholeCore(newCore);
+        dep.executeWormholeCore();
         
         assertEq(dep.wormholeCore(), newCore);
     }
