@@ -3,7 +3,7 @@
 **Version:** 3.1
 **Date:** 2026-02-17
 **Status:** ACTIVE — Build Spec (Updated: Wormhole VAA deposit verification)
-**Author:** Ika Minami (AI Architect) + Illumi (Product/BD)
+**Author:** Ika Tensei Team
 
 ---
 

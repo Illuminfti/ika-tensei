@@ -233,17 +233,6 @@ pnpm test:e2e
 
 ---
 
-## 👥 Team
-
-| Name | Role |
-|------|------|
-| **Illumi** | Marketing / BD |
-| **Faisal** | Build |
-| **David** | Product |
-| **Omer** | Security |
-
----
-
 ## 🏆 Hackathon
 
 Built for the **Solana Graveyard Hackathon** — bringing dead NFTs back to life across chains.
