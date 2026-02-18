@@ -548,13 +548,10 @@ function WaitingStep({
         ✦ The Summoning Is In Progress ✦
       </h2>
 
-      {/* Summoning circle */}
+      {/* Summoning circle - left side, larger */}
       <div className="flex justify-center mb-6">
-        <SummoningCircle phase={circlePhase} size={240} />
+        <SummoningCircle phase={circlePhase} size={280} />
       </div>
-
-      {/* Runic progress visualization */}
-      <RunicProgress currentStep={ritualStep} />
 
       {/* Current status text */}
       <div className="mb-6 mt-6">
@@ -570,6 +567,9 @@ function WaitingStep({
           }
         />
       </div>
+
+      {/* Runic progress visualization */}
+      <RunicProgress currentStep={ritualStep} />
 
       {/* Status step progression */}
       <div className="space-y-2 mb-6">

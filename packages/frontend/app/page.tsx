@@ -10,7 +10,7 @@ import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 import { DialogueBox } from "@/components/ui/DialogueBox";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { StatsCounter } from "@/components/ui/StatsCounter";
-import { SakuraParticles } from "@/components/ui/SakuraParticles";
+// SakuraParticles removed per user request
 import { useKonamiCode } from "@/hooks/useKonamiCode";
 
 // ============================================================================
@@ -251,7 +251,7 @@ export default function Home() {
         
         {/* Sakura petals - subtle background effect */}
         <div className="absolute inset-0 z-0 pointer-events-none">
-          <SakuraParticles />
+          {/* Sakura removed */}
         </div>
 
         {/* Hero background art - mirrored on both sides, center clear for content - with parallax */}
