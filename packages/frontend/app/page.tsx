@@ -500,8 +500,8 @@ export default function Home() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
               {[
-                { label: "Audited", detail: "9 HIGH findings fixed", icon: "🛡️" },
-                { label: "Open Source", detail: "github.com/Illuminfti", icon: "📖" },
+                { label: "No Bridges", detail: "No multisigs, no wrapped tokens", icon: "🛡️" },
+                { label: "Open Source", detail: "Every line on GitHub", icon: "📖" },
                 { label: "dWallet MPC", detail: "2PC-MPC cryptography", icon: "🔐" },
               ].map((item, i) => (
                 <motion.div
