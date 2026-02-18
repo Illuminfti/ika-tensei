@@ -225,11 +225,11 @@ export async function mirrorNftImage(
     return metadata;
   }
 
-  const { walrusUrl } = await mirrorImage(metadata.image, options);
+  const { url: arweaveUrl } = await mirrorImage(metadata.image, options);
 
   return {
     ...metadata,
-    image_walrus: walrusUrl,
+    image_arweave: arweaveUrl,
   };
 }
 

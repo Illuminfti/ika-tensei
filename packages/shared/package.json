@@ -29,6 +29,10 @@
     "./constants": {
       "import": "./dist/constants.js",
       "types": "./dist/constants.d.ts"
+    },
+    "./metadata": {
+      "import": "./dist/metadata/index.js",
+      "types": "./dist/metadata/index.d.ts"
     }
   },
   "scripts": {
@@ -60,6 +64,8 @@
   },
   "dependencies": {
     "@irys/sdk": "^0.2.11",
+    "@metaplex-foundation/mpl-core": "^1.7.0",
+    "@metaplex-foundation/umi": "^1.5.1",
     "@solana/spl-governance": "^0.3.28",
     "bn.js": "^5.2.2"
   }

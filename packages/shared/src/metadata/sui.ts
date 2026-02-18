@@ -239,6 +239,7 @@ export async function fetchSuiMetadata(
         seal_hash: sealHash,
         dwallet_id: dwalletId,
         sealed_at: Date.now(),
+        fetched_at: new Date().toISOString(),
       },
       raw_metadata: {
         ...contentFields,

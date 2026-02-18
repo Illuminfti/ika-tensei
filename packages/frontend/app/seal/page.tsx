@@ -1,360 +1,638 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { NFTCard } from "@/components/ui/NFTCard";
-import { PixelButton } from "@/components/ui/PixelButton";
-import { PixelProgress } from "@/components/ui/PixelProgress";
-import { DialogueBox } from "@/components/ui/DialogueBox";
+import Link from "next/link";
+import { useSealFlow, STATUS_ORDER, STATUS_LABELS } from "@/hooks/useSealFlow";
+import { useWalletStore } from "@/stores/wallet";
+import { getChainById, DYNAMIC_ENV_ID } from "@/lib/constants";
 import { SummoningCircle } from "@/components/ui/SummoningCircle";
+import { DialogueBox } from "@/components/ui/DialogueBox";
+import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
+import { ChainSelector } from "@/components/ui/ChainSelector";
+import { DepositAddress } from "@/components/ui/DepositAddress";
+import { SolanaConnectInner, DevModeConnect } from "@/components/wallet/SolanaConnect";
 import { IkaSprite } from "@/components/ui/PixelSprite";
 
-// Mock NFT data with chain info
-const MOCK_NFTS = [
-  { id: "1", name: "Cosmic Squid #42", tokenId: "42", chain: "sui" as const, collection: "Cosmic Creatures", status: "available" as const },
-  { id: "2", name: "Pixel Dragon #7", tokenId: "7", chain: "ethereum" as const, collection: "Pixel Beasts", status: "available" as const },
-  { id: "3", name: "Ghostly Cat #99", tokenId: "99", chain: "solana" as const, collection: "Spectral Pets", status: "available" as const },
-  { id: "4", name: "Neon Owl #23", tokenId: "23", chain: "sui" as const, collection: "Neon Wildlife", status: "available" as const },
-  { id: "5", name: "Cyber Fox #56", tokenId: "56", chain: "ethereum" as const, collection: "Cyber Fauna", status: "available" as const },
-  { id: "6", name: "Void Bear #11", tokenId: "11", chain: "solana" as const, collection: "Void Walkers", status: "available" as const },
-  { id: "7", name: "Crystal Wolf #88", tokenId: "88", chain: "sui" as const, collection: "Crystal Pack", status: "available" as const },
-  { id: "8", name: "Mystic Serpent #33", tokenId: "33", chain: "ethereum" as const, collection: "Mystic Realms", status: "available" as const },
-];
+// ─── Step breadcrumb ──────────────────────────────────────────────────────────
 
-// Ritual steps
-const RITUAL_STEPS = [
-  { label: "Drawing circle...", text: "The ancient runes begin to materialize..." },
-  { label: "Sealing NFT...", text: "Your NFT is being bound to the eternal vault..." },
-  { label: "Generating identity...", text: "A new reborn identity emerges from the void..." },
-  { label: "Minting on Solana...", text: "The soul is being inscribed on the blockchain..." },
-  { label: "Complete!", text: "The ritual is complete. Your soul is now eternal." },
-];
+const STEPS = ["Connect", "Select Chain", "Deposit", "Summoning", "Complete"] as const;
 
-type RitualState = "connect" | "select" | "confirm" | "ritual" | "success";
+function StepIndicator({ current }: { current: number }) {
+  return (
+    <div className="flex items-center justify-center gap-1 md:gap-2">
+      {STEPS.map((label, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <div key={label} className="flex items-center gap-1">
+            <div className="flex flex-col items-center gap-1">
+              <motion.div
+                animate={active ? { boxShadow: ["0 0 4px #ffd700", "0 0 12px #ffd700", "0 0 4px #ffd700"] } : {}}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="w-4 h-4 flex items-center justify-center"
+                style={{
+                  background: done ? "#00ff88" : active ? "#ffd700" : "transparent",
+                  border: `2px solid ${done ? "#00ff88" : active ? "#ffd700" : "#3a2850"}`,
+                }}
+              >
+                {done && (
+                  <span style={{ fontSize: 8, color: "#000" }}>✓</span>
+                )}
+              </motion.div>
+              <span
+                className="font-pixel hidden md:block"
+                style={{
+                  fontSize: 7,
+                  color: done ? "#00ff88" : active ? "#ffd700" : "#3a2850",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {label}
+              </span>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div
+                className="w-6 md:w-8 h-px mb-4"
+                style={{ background: i < current ? "#00ff88" : "#3a2850" }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Step index map ───────────────────────────────────────────────────────────
+
+function stepToIndex(step: string): number {
+  switch (step) {
+    case "connect": return 0;
+    case "select_chain": return 1;
+    case "deposit": return 2;
+    case "waiting": return 3;
+    case "complete": return 4;
+    default: return 0;
+  }
+}
+
+// ─── Panel wrapper ────────────────────────────────────────────────────────────
+
+function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.3 }}
+      className={`border-2 border-sigil-border bg-card-purple/90 p-6 ${className}`}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// ─── Step 1: Connect Wallet ───────────────────────────────────────────────────
+
+function ConnectStep({ onConnect }: { onConnect: (pk: string) => void }) {
+  return (
+    <Panel>
+      <DialogueBox
+        speaker="Ika"
+        portrait="neutral"
+        text="The ritual begins with your Solana wallet. Connect Phantom, Backpack, or Solflare to begin."
+        variant="normal"
+      />
+      <div className="mt-6">
+        {DYNAMIC_ENV_ID ? (
+          <SolanaConnectInner onConnect={onConnect} />
+        ) : (
+          <DevModeConnect onConnect={onConnect} />
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Step 2: Select Source Chain ─────────────────────────────────────────────
+
+function SelectChainStep({
+  selectedChain,
+  onSelect,
+  onConfirm,
+  isLoading,
+  error,
+  onBack,
+}: {
+  selectedChain: string | null;
+  onSelect: (id: string) => void;
+  onConfirm: () => void;
+  isLoading: boolean;
+  error: string | null;
+  onBack: () => void;
+}) {
+  return (
+    <Panel>
+      <div className="mb-4">
+        <DialogueBox
+          speaker="Ika"
+          portrait="excited"
+          text="Which chain holds your NFT? Choose the source realm..."
+          variant="normal"
+        />
+      </div>
+
+      <ChainSelector selected={selectedChain} onSelect={onSelect} />
+
+      {error && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-3 font-pixel text-[9px] text-demon-red text-center"
+        >
+          ⚠ {error}
+        </motion.p>
+      )}
+
+      <div className="flex gap-3 justify-between mt-6">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onBack}
+          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+        >
+          ← Back
+        </motion.button>
+
+        <motion.button
+          whileHover={selectedChain && !isLoading ? { scale: 1.05 } : {}}
+          whileTap={selectedChain && !isLoading ? { scale: 0.95 } : {}}
+          onClick={onConfirm}
+          disabled={!selectedChain || isLoading}
+          className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
+            !selectedChain || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
+          }`}
+        >
+          {isLoading ? "⏳ Preparing..." : "Get Deposit Address →"}
+        </motion.button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Step 3: Show Deposit Address ─────────────────────────────────────────────
+
+function DepositStep({
+  address,
+  chainId,
+  onConfirmSent,
+  onBack,
+}: {
+  address: string;
+  chainId: string;
+  onConfirmSent: () => void;
+  onBack: () => void;
+}) {
+  const chain = getChainById(chainId);
+
+  if (!chain) return null;
+
+  return (
+    <Panel>
+      <div className="mb-5">
+        <DialogueBox
+          speaker="Ika"
+          portrait="excited"
+          text={`Your sacred deposit address is ready! Send your NFT from ${chain.name} to this address.`}
+          variant="normal"
+        />
+      </div>
+
+      <DepositAddress
+        address={address}
+        chain={chain}
+        onConfirmSent={onConfirmSent}
+      />
+
+      <div className="mt-4 flex">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onBack}
+          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+        >
+          ← Back
+        </motion.button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Step 4: Waiting (Summoning Circle + Status) ──────────────────────────────
+
+function WaitingStep({
+  sealStatus,
+  chainId,
+  depositAddress,
+}: {
+  sealStatus: string | null;
+  chainId: string | null;
+  depositAddress: string | null;
+}) {
+  const currentStatusIdx = sealStatus
+    ? STATUS_ORDER.indexOf(sealStatus as (typeof STATUS_ORDER)[number])
+    : 0;
+
+  // Circle phase based on status
+  const circlePhase =
+    sealStatus === "complete"
+      ? "overload"
+      : sealStatus === "minting" || sealStatus === "uploading"
+      ? "active"
+      : sealStatus === "detected" || sealStatus === "fetching_metadata"
+      ? "charging"
+      : "idle";
+
+  return (
+    <Panel>
+      <h2 className="font-pixel text-center text-ritual-gold text-sm mb-6">
+        ✦ The Summoning Is In Progress ✦
+      </h2>
+
+      {/* Summoning circle */}
+      <div className="flex justify-center mb-6">
+        <SummoningCircle phase={circlePhase} size={240} />
+      </div>
+
+      {/* Current status text */}
+      <div className="mb-6">
+        <DialogueBox
+          speaker="Ritual"
+          portrait="neutral"
+          variant="system"
+          text={
+            sealStatus
+              ? STATUS_LABELS[sealStatus as keyof typeof STATUS_LABELS] ??
+                "Processing..."
+              : "Waiting for your NFT to arrive at the deposit address..."
+          }
+        />
+      </div>
+
+      {/* Status step progression */}
+      <div className="space-y-2 mb-6">
+        {STATUS_ORDER.filter((s) => s !== "error").map((status, i) => {
+          const done = i < currentStatusIdx;
+          const active = i === currentStatusIdx;
+          return (
+            <div key={status} className="flex items-center gap-3">
+              <motion.div
+                animate={
+                  active
+                    ? {
+                        boxShadow: [
+                          "0 0 4px #ffd700",
+                          "0 0 12px #ffd700",
+                          "0 0 4px #ffd700",
+                        ],
+                      }
+                    : {}
+                }
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="w-4 h-4 flex-shrink-0 flex items-center justify-center"
+                style={{
+                  background: done
+                    ? "#00ff88"
+                    : active
+                    ? "#ffd70033"
+                    : "transparent",
+                  border: `2px solid ${
+                    done ? "#00ff88" : active ? "#ffd700" : "#3a2850"
+                  }`,
+                }}
+              >
+                {done && (
+                  <span style={{ fontSize: 8, color: "#000" }}>✓</span>
+                )}
+                {active && (
+                  <motion.div
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                    className="w-2 h-2"
+                    style={{ background: "#ffd700" }}
+                  />
+                )}
+              </motion.div>
+              <span
+                className="font-pixel text-[9px]"
+                style={{
+                  color: done
+                    ? "#00ff88"
+                    : active
+                    ? "#ffd700"
+                    : "rgba(200,190,220,0.3)",
+                }}
+              >
+                {STATUS_LABELS[status]}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Deposit address reminder */}
+      {depositAddress && chainId && (
+        <div
+          className="p-3 text-center"
+          style={{ border: "1px solid #3a285066", background: "rgba(13,10,26,0.5)" }}
+        >
+          <p className="font-pixel text-[8px] text-faded-spirit mb-1">
+            Deposit address ({getChainById(chainId)?.name})
+          </p>
+          <p className="font-mono text-[10px] text-ghost-white break-all">
+            {depositAddress.slice(0, 10)}...{depositAddress.slice(-8)}
+          </p>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ─── Step 5: Complete ─────────────────────────────────────────────────────────
+
+function CompleteStep({
+  rebornNFT,
+  chainId,
+  onReset,
+}: {
+  rebornNFT: { mint: string; name: string; image: string } | null;
+  chainId: string | null;
+  onReset: () => void;
+}) {
+  const chain = chainId ? getChainById(chainId) : null;
+
+  // Sparkle particles
+  const particles = Array.from({ length: 16 }, (_, i) => ({
+    color: ["#00ff88", "#ffd700", "#ff3366", "#9945ff"][i % 4],
+    left: `${(i * 6.25 + Math.random() * 5) % 100}%`,
+    duration: 2 + (i % 3) * 0.5,
+    delay: (i % 8) * 0.15,
+  }));
+
+  return (
+    <Panel>
+      {/* Confetti */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        {particles.map((p, i) => (
+          <motion.div
+            key={i}
+            className="absolute w-2 h-2"
+            style={{ backgroundColor: p.color, left: p.left, bottom: "20%" }}
+            animate={{
+              y: [0, -400],
+              x: [0, (i % 2 === 0 ? 1 : -1) * 40],
+              opacity: [1, 0],
+              scale: [1, 0.3],
+            }}
+            transition={{
+              duration: p.duration,
+              delay: p.delay,
+              repeat: Infinity,
+              repeatDelay: p.duration * 0.5,
+            }}
+          />
+        ))}
+      </div>
+
+      <motion.h2
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", damping: 8 }}
+        className="font-pixel text-center text-3xl text-spectral-green mb-6"
+        style={{ textShadow: "0 0 20px #00ff88" }}
+      >
+        RITUAL COMPLETE!
+      </motion.h2>
+
+      <div className="flex justify-center mb-6">
+        <motion.div
+          animate={{ y: [0, -10, 0] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <IkaSprite size={80} expression="excited" />
+        </motion.div>
+      </div>
+
+      <DialogueBox
+        speaker="Ika"
+        portrait="excited"
+        variant="normal"
+        text={
+          rebornNFT
+            ? `${rebornNFT.name} has been reborn on Solana! Your NFT has transcended chains and lives again.`
+            : "Your NFT has been reborn on Solana! The ritual is complete."
+        }
+      />
+
+      {/* Reborn NFT card */}
+      {rebornNFT && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="mt-6 p-4 border-2 border-spectral-green/50 bg-black/30"
+        >
+          {rebornNFT.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={rebornNFT.image}
+              alt={rebornNFT.name}
+              className="w-32 h-32 mx-auto mb-3 pixelated object-contain"
+              style={{ imageRendering: "pixelated" }}
+            />
+          )}
+
+          <h3
+            className="font-pixel text-center text-sm text-ritual-gold mb-1"
+            style={{ textShadow: "0 0 8px #ffd700" }}
+          >
+            {rebornNFT.name}
+          </h3>
+
+          {/* Mint address */}
+          <p className="font-mono text-[9px] text-faded-spirit text-center break-all mb-4">
+            {rebornNFT.mint}
+          </p>
+
+          {/* Explorer links */}
+          <div className="flex gap-3 justify-center flex-wrap">
+            <a
+              href={`https://explorer.solana.com/address/${rebornNFT.mint}?cluster=devnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nes-btn is-success font-pixel text-[9px] !py-2 !px-3"
+            >
+              Solana Explorer
+            </a>
+            <a
+              href={`https://magiceden.io/item-details/${rebornNFT.mint}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nes-btn is-primary font-pixel text-[9px] !py-2 !px-3"
+            >
+              Magic Eden
+            </a>
+            <a
+              href={`https://www.tensor.trade/item/${rebornNFT.mint}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nes-btn is-dark font-pixel text-[9px] !py-2 !px-3"
+            >
+              Tensor
+            </a>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Source chain seal info */}
+      {chain && (
+        <p className="font-silk text-xs text-faded-spirit text-center mt-4">
+          Original NFT permanently sealed on{" "}
+          <span style={{ color: chain.color }}>{chain.name}</span> via IKA
+          dWallet
+        </p>
+      )}
+
+      {/* Seal another */}
+      <div className="flex justify-center mt-8">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onReset}
+          className="nes-btn is-warning font-pixel text-[10px] !py-3 !px-8"
+        >
+          ✦ Seal Another NFT
+        </motion.button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SealPage() {
-  const [state, setState] = useState<RitualState>("connect");
-  const [selectedNft, setSelectedNft] = useState<typeof MOCK_NFTS[0] | null>(null);
-  const [ritualStep, setRitualStep] = useState(0);
+  const { connected, publicKey, connect } = useWalletStore();
+  const flow = useSealFlow();
 
-  // Handle wallet connection
-  const handleConnect = () => {
-    setState("select");
-  };
-
-  // Handle NFT selection
-  const handleNftSelect = (nft: typeof MOCK_NFTS[0]) => {
-    setSelectedNft(nft);
-    setState("confirm");
-  };
-
-  // Handle confirmation
-  const handleConfirmSeal = () => {
-    setState("ritual");
-    setRitualStep(0);
-  };
-
-  // Handle cancel
-  const handleCancel = () => {
-    setSelectedNft(null);
-    setState("select");
-  };
-
-  // Auto-advance ritual steps
-  useEffect(() => {
-    if (state !== "ritual") return;
-
-    if (ritualStep < RITUAL_STEPS.length - 1) {
-      const timer = setTimeout(() => {
-        setRitualStep((prev) => prev + 1);
-      }, 3000);
-      return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => {
-        setState("success");
-      }, 2000);
-      return () => clearTimeout(timer);
+  // When wallet connects, advance the flow step
+  const handleWalletConnect = (pk: string) => {
+    connect(pk);
+    if (flow.step === "connect") {
+      flow.onWalletConnected();
     }
-  }, [ritualStep, state]);
-
-  // Reset everything
-  const handleReset = () => {
-    setState("connect");
-    setSelectedNft(null);
-    setRitualStep(0);
   };
 
-  // Get circle phase based on step
-  const getCirclePhase = () => {
-    if (state !== "ritual") return "idle";
-    if (ritualStep === 0) return "charging";
-    if (ritualStep === RITUAL_STEPS.length - 1) return "active";
-    return "active";
-  };
+  // If wallet is already connected and flow is on "connect" step, auto-advance
+  // (handles page refresh with persisted wallet)
+  const effectiveStep =
+    connected && flow.step === "connect" ? "select_chain" : flow.step;
+
+  const stepIndex = stepToIndex(effectiveStep);
 
   return (
     <div className="min-h-screen bg-void-purple relative overflow-hidden">
-      {/* Background atmosphere */}
-      <div 
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          background: `
-            radial-gradient(ellipse at 50% 0%, rgba(139, 0, 0, 0.15) 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 80%, rgba(0, 100, 50, 0.1) 0%, transparent 40%),
-            radial-gradient(ellipse at 20% 90%, rgba(75, 0, 130, 0.1) 0%, transparent 40%)
-          `,
-        }}
-      />
+      <BackgroundAtmosphere mood="mystical" />
 
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center pt-8 pb-4 relative z-10"
+        className="text-center pt-8 pb-6 relative z-10"
       >
-        <h1 className="font-pixel text-4xl md:text-5xl text-ritual-gold mb-2 tracking-wider">
-          THE SOUL SEAL RITUAL
+        <h1
+          className="font-pixel text-3xl md:text-4xl text-ritual-gold mb-2 tracking-wider"
+          style={{ textShadow: "0 0 16px #ffd70066" }}
+        >
+          ✦ THE SOUL SEAL RITUAL ✦
         </h1>
-        <p className="font-silk text-faded-spirit text-sm tracking-widest">
-          Bind your NFT to the eternal chain
+        <p className="font-silk text-faded-spirit text-xs tracking-widest">
+          NFT Reincarnation · Powered by IKA dWallet
         </p>
       </motion.header>
 
-      <AnimatePresence mode="wait">
-        {/* WALLET CONNECTION STATE */}
-        {state === "connect" && (
-          <motion.div
-            key="connect"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="max-w-md mx-auto relative z-10 px-4"
-          >
-            <div className="border-2 border-sigil-border bg-card-purple/80 p-8 text-center">
-              {/* IkaSprite */}
-              <div className="flex justify-center mb-6">
-                <IkaSprite size={64} expression="neutral" />
-              </div>
-              
-              <h2 className="font-pixel text-xl text-ritual-gold mb-4">
-                Connect Your Wallet
-              </h2>
-              <p className="font-silk text-faded-spirit mb-8 text-sm">
-                Connect your wallet to begin the soul seal ritual
-              </p>
-              <PixelButton onClick={handleConnect} variant="primary" size="lg">
-                Connect Wallet
-              </PixelButton>
-            </div>
-          </motion.div>
-        )}
+      {/* Step indicator */}
+      <div className="relative z-10 px-4 mb-6">
+        <div className="max-w-2xl mx-auto">
+          <StepIndicator current={stepIndex} />
+        </div>
+      </div>
 
-        {/* NFT SELECTION GRID */}
-        {state === "select" && (
-          <motion.div
-            key="select"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="max-w-4xl mx-auto px-4 pb-8 relative z-10"
-          >
-            <DialogueBox
-              text="Choose an NFT to bind to the chain..."
-              speaker="Ika"
-              portrait="neutral"
+      {/* Main content */}
+      <div className="relative z-10 max-w-2xl mx-auto px-4 pb-16">
+        <AnimatePresence mode="wait">
+          {effectiveStep === "connect" && (
+            <ConnectStep key="connect" onConnect={handleWalletConnect} />
+          )}
+
+          {effectiveStep === "select_chain" && (
+            <SelectChainStep
+              key="select_chain"
+              selectedChain={flow.sourceChain}
+              onSelect={(id) => flow.selectChain(id, publicKey ?? "")}
+              onConfirm={() => {
+                if (flow.sourceChain && publicKey) {
+                  // selectChain is called via onSelect; confirm just re-calls
+                  // if no pending request is in flight
+                  if (!flow.isLoading && !flow.depositAddress) {
+                    flow.selectChain(flow.sourceChain, publicKey);
+                  }
+                }
+              }}
+              isLoading={flow.isLoading}
+              error={flow.error}
+              onBack={flow.goBack}
             />
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8">
-              {MOCK_NFTS.map((nft, index) => (
-                <motion.div
-                  key={nft.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <NFTCard
-                    name={nft.name}
-                    tokenId={nft.tokenId}
-                    chain={nft.chain}
-                    status={nft.status}
-                    collection={nft.collection}
-                    onClick={() => handleNftSelect(nft)}
-                  />
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
+          )}
 
-        {/* CONFIRMATION MODAL */}
-        {state === "confirm" && selectedNft && (
-          <motion.div
-            key="confirm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
-            onClick={handleCancel}
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ type: "spring", damping: 15 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md"
-            >
-              <DialogueBox
-                text={`Are you ready to seal ${selectedNft.name}?`}
-                speaker="Ika"
-                portrait="worried"
-                variant="dramatic"
-              />
-              
-              <div className="flex gap-4 justify-center mt-6">
-                <PixelButton onClick={handleCancel} variant="dark" size="lg">
-                  Cancel
-                </PixelButton>
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <PixelButton 
-                    onClick={handleConfirmSeal} 
-                    variant="warning" 
-                    size="lg"
-                    className="animate-pulse"
-                  >
-                    Seal My Soul
-                  </PixelButton>
-                </motion.div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {/* RITUAL PROGRESS */}
-        {state === "ritual" && (
-          <motion.div
-            key="ritual"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="max-w-2xl mx-auto px-4 pb-8 relative z-10"
-          >
-            {/* Summoning Circle */}
-            <div className="py-4 flex justify-center">
-              <SummoningCircle 
-                phase={getCirclePhase()}
-                size={280}
-              />
-            </div>
-
-            {/* Progress Bar */}
-            <div className="my-6">
-              <PixelProgress 
-                value={((ritualStep + 1) / RITUAL_STEPS.length) * 100}
-                label={RITUAL_STEPS[ritualStep].label}
-                variant="warning"
-              />
-            </div>
-
-            {/* Step Dialogue */}
-            <DialogueBox
-              text={RITUAL_STEPS[ritualStep].text}
-              speaker="Ritual"
-              portrait="neutral"
-              variant="system"
+          {effectiveStep === "deposit" && flow.depositAddress && (
+            <DepositStep
+              key="deposit"
+              address={flow.depositAddress}
+              chainId={flow.sourceChain!}
+              onConfirmSent={flow.startWaiting}
+              onBack={flow.goBack}
             />
+          )}
 
-            {/* Step Indicators */}
-            <div className="flex justify-center gap-2 mt-8">
-              {RITUAL_STEPS.map((_, index) => (
-                <motion.div
-                  key={index}
-                  className={`w-3 h-3 rounded-sm ${
-                    index <= ritualStep 
-                      ? "bg-spectral-green" 
-                      : "bg-void-purple border border-faded-spirit/30"
-                  }`}
-                  animate={index === ritualStep ? {
-                    boxShadow: ["0 0 5px #00ff88", "0 0 15px #00ff88", "0 0 5px #00ff88"],
-                  } : {}}
-                  transition={{ duration: 1, repeat: Infinity }}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* SUCCESS SCREEN */}
-        {state === "success" && (
-          <motion.div
-            key="success"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="max-w-2xl mx-auto px-4 pb-8 text-center relative z-10"
-          >
-            {/* Sparkle Particles */}
-            <div className="fixed inset-0 pointer-events-none overflow-hidden">
-              {Array.from({ length: 20 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  className="absolute w-2 h-2"
-                  style={{
-                    backgroundColor: ["#00ff88", "#ffd700", "#ff3366", "#9945ff"][i % 4],
-                    left: `${Math.random() * 100}%`,
-                    bottom: "20%",
-                  }}
-                  animate={{
-                    y: [0, -window.innerHeight * 0.8],
-                    x: [0, (Math.random() - 0.5) * 100],
-                    opacity: [1, 0],
-                    scale: [1, 0.5],
-                  }}
-                  transition={{
-                    duration: 2 + Math.random(),
-                    delay: Math.random() * 0.5,
-                    repeat: Infinity,
-                    repeatDelay: Math.random() * 2,
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Success Title */}
-            <motion.h2
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", damping: 10 }}
-              className="font-pixel text-4xl text-spectral-green mb-6"
-            >
-              RITUAL COMPLETE!
-            </motion.h2>
-
-            {/* Celebration Dialogue */}
-            <DialogueBox
-              text={`Your soul has been bound! ${selectedNft?.name} now exists eternally on the chain.`}
-              speaker="Ika"
-              portrait="excited"
-              variant="system"
+          {effectiveStep === "waiting" && (
+            <WaitingStep
+              key="waiting"
+              sealStatus={flow.sealStatus}
+              chainId={flow.sourceChain}
+              depositAddress={flow.depositAddress}
             />
+          )}
 
-            {/* Reset Button */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              className="mt-8"
-            >
-              <PixelButton onClick={handleReset} variant="success" size="lg">
-                Seal Another Soul
-              </PixelButton>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {effectiveStep === "complete" && (
+            <CompleteStep
+              key="complete"
+              rebornNFT={flow.rebornNFT}
+              chainId={flow.sourceChain}
+              onReset={flow.reset}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Back to home */}
+        <div className="text-center mt-8">
+          <Link
+            href="/"
+            className="font-pixel text-[9px] text-faded-spirit hover:text-ghost-white transition-colors"
+          >
+            ← Return to the Sanctum
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,84 +1,180 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { initiateSeal, getSealStatus, SealRequest, SealResponse } from "@/lib/api";
+import { startSeal, getSealStatus, SealStatusValue } from "@/lib/api";
 
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL_MS = 5000;
 
-const STEP_LABELS = [
-  "Preparing the summoning circle...",
-  "Depositing your NFT into the sacred vault...",
-  "Sealing your NFT in the blockchain...",
-  "Generating your reborn identity via dWallet...",
-  "Minting your reborn NFT on Solana...",
-  "The ritual is complete! Welcome to your new life!",
+// ─── State Shape ──────────────────────────────────────────────────────────────
+
+export type SealFlowStep =
+  | "connect"
+  | "select_chain"
+  | "deposit"
+  | "waiting"
+  | "complete";
+
+export interface SealFlowState {
+  step: SealFlowStep;
+  sourceChain: string | null;
+  depositAddress: string | null;
+  dwalletId: string | null;
+  sealStatus: SealStatusValue | null;
+  rebornNFT: { mint: string; name: string; image: string } | null;
+  error: string | null;
+  isLoading: boolean;
+}
+
+// Status label map (for UI display)
+export const STATUS_LABELS: Record<SealStatusValue, string> = {
+  waiting_deposit: "Awaiting deposit...",
+  detected: "NFT detected! Verifying...",
+  fetching_metadata: "Fetching NFT metadata...",
+  uploading: "Uploading to Arweave...",
+  minting: "Minting reborn NFT on Solana...",
+  complete: "Ritual complete!",
+  error: "Something went wrong",
+};
+
+// Ordered status progression for step display
+export const STATUS_ORDER: SealStatusValue[] = [
+  "waiting_deposit",
+  "detected",
+  "fetching_metadata",
+  "uploading",
+  "minting",
+  "complete",
 ];
 
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+const INITIAL_STATE: SealFlowState = {
+  step: "connect",
+  sourceChain: null,
+  depositAddress: null,
+  dwalletId: null,
+  sealStatus: null,
+  rebornNFT: null,
+  error: null,
+  isLoading: false,
+};
+
 export function useSealFlow() {
-  const [step, setStep] = useState(-1); // -1 = not started
-  const [status, setStatus] = useState<SealResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [state, setState] = useState<SealFlowState>(INITIAL_STATE);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  const startSeal = useCallback(async (request: SealRequest) => {
-    setIsLoading(true);
-    setError(null);
-    setStep(0);
+  // ── Wallet connected → move to chain selection ──────────────────────────────
+  const onWalletConnected = useCallback(() => {
+    setState((s) => ({ ...s, step: "select_chain", error: null }));
+  }, []);
 
-    try {
-      const response = await initiateSeal(request);
-      setStatus(response);
-      setStep(response.step);
+  // ── Chain selected → call API to get deposit address ───────────────────────
+  const selectChain = useCallback(
+    async (chainId: string, solanaWallet: string) => {
+      setState((s) => ({
+        ...s,
+        sourceChain: chainId,
+        isLoading: true,
+        error: null,
+      }));
 
-      // Start polling
-      if (response.status !== "complete" && response.status !== "error") {
-        pollRef.current = setInterval(async () => {
-          try {
-            const updated = await getSealStatus(response.sealHash);
-            setStatus(updated);
-            setStep(updated.step);
-
-            if (updated.status === "complete" || updated.status === "error") {
-              if (pollRef.current) clearInterval(pollRef.current);
-              if (updated.status === "error") setError(updated.error || "Unknown error");
-            }
-          } catch (e) {
-            // Keep polling on network errors
-          }
-        }, POLL_INTERVAL);
+      try {
+        const { dwalletId, depositAddress } = await startSeal(
+          solanaWallet,
+          chainId
+        );
+        setState((s) => ({
+          ...s,
+          dwalletId,
+          depositAddress,
+          step: "deposit",
+          isLoading: false,
+        }));
+      } catch (e) {
+        setState((s) => ({
+          ...s,
+          isLoading: false,
+          error: e instanceof Error ? e.message : "Failed to get deposit address",
+        }));
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to initiate seal");
-      setStep(-1);
-    } finally {
-      setIsLoading(false);
-    }
+    },
+    []
+  );
+
+  // ── User confirms they sent the NFT → start polling ─────────────────────────
+  const startWaiting = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      step: "waiting",
+      sealStatus: "waiting_deposit",
+      error: null,
+    }));
   }, []);
 
-  const reset = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    setStep(-1);
-    setStatus(null);
-    setError(null);
-    setIsLoading(false);
-  }, []);
-
+  // ── Polling loop ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (state.step !== "waiting" || !state.dwalletId) return;
+
+    const poll = async () => {
+      try {
+        const result = await getSealStatus(state.dwalletId!);
+        setState((s) => ({ ...s, sealStatus: result.status }));
+
+        if (result.status === "complete") {
+          setState((s) => ({
+            ...s,
+            step: "complete",
+            rebornNFT: result.rebornNFT ?? null,
+          }));
+          if (pollRef.current) clearInterval(pollRef.current);
+        } else if (result.status === "error") {
+          setState((s) => ({
+            ...s,
+            error: result.error ?? "An error occurred during sealing",
+          }));
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+      } catch {
+        // Network error — keep polling silently
+      }
+    };
+
+    // Kick off immediately, then every POLL_INTERVAL_MS
+    poll();
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
+  }, [state.step, state.dwalletId]);
+
+  // ── Reset everything ─────────────────────────────────────────────────────────
+  const reset = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setState(INITIAL_STATE);
+  }, []);
+
+  // ── Go back one step ─────────────────────────────────────────────────────────
+  const goBack = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setState((s) => {
+      switch (s.step) {
+        case "select_chain":
+          return { ...INITIAL_STATE, step: "connect" };
+        case "deposit":
+          return { ...s, step: "select_chain", depositAddress: null, dwalletId: null, error: null };
+        default:
+          return s;
+      }
+    });
   }, []);
 
   return {
-    step,
-    stepLabel: step >= 0 ? STEP_LABELS[Math.min(step, STEP_LABELS.length - 1)] : "",
-    totalSteps: STEP_LABELS.length - 1,
-    status,
-    error,
-    isLoading,
-    isComplete: status?.status === "complete",
-    startSeal,
+    ...state,
+    onWalletConnected,
+    selectChain,
+    startWaiting,
     reset,
+    goBack,
   };
 }

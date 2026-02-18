@@ -4,36 +4,29 @@ import { useWalletStore } from "@/stores/wallet";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { DYNAMIC_ENV_ID } from "@/lib/constants";
 
+// v4: Solana-only connect button
 export function ConnectButton() {
-  const { isConnected, ethAddress, solAddress, setConnected, setEthAddress, setSolAddress } = useWalletStore();
+  const { connected, publicKey, connect, disconnect } = useWalletStore();
 
-  // If Dynamic is configured, it handles connection via its own UI
-  // This is the fallback/demo mode
   const handleConnect = () => {
     if (DYNAMIC_ENV_ID) {
-      // Dynamic handles this
+      // Dynamic handles this via its own UI flow on the seal page
       return;
     }
-    // Demo mode: fake connection
-    setConnected(true);
-    setEthAddress("0x1234567890abcdef1234567890abcdef12345678");
-    setSolAddress("FKab3XhBz7c9oVn8pHQH3YkMUmP9ZjJwvGxMFSzotPcV");
+    // Dev mode: fake connection
+    connect("DevWallet11111111111111111111111111111111111");
   };
 
   const handleDisconnect = () => {
-    setConnected(false);
-    setEthAddress(null);
-    setSolAddress(null);
+    disconnect();
   };
 
-  if (isConnected) {
+  if (connected && publicKey) {
     return (
       <div className="flex items-center gap-2">
         <span className="font-silk text-[10px] text-spectral-green">●</span>
         <span className="font-mono text-[10px] text-faded-spirit">
-          {ethAddress ? `${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)}` : ""}
-          {ethAddress && solAddress ? " | " : ""}
-          {solAddress ? `${solAddress.slice(0, 4)}...${solAddress.slice(-4)}` : ""}
+          {publicKey.slice(0, 6)}...{publicKey.slice(-4)}
         </span>
         <PixelButton variant="dark" size="sm" onClick={handleDisconnect}>
           ✕
@@ -44,7 +37,7 @@ export function ConnectButton() {
 
   return (
     <PixelButton variant="primary" size="sm" onClick={handleConnect}>
-      Connect
+      Connect Wallet
     </PixelButton>
   );
 }

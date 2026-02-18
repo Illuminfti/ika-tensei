@@ -1,7 +1,7 @@
 "use client";
 
 import { DynamicContextProvider } from "@dynamic-labs/sdk-react-core";
-import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
+// v4: Solana-only — removed EthereumWalletConnectors
 import { SolanaWalletConnectors } from "@dynamic-labs/solana";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, ReactNode } from "react";
@@ -30,7 +30,8 @@ export function Providers({ children }: { children: ReactNode }) {
     <DynamicContextProvider
       settings={{
         environmentId: DYNAMIC_ENV_ID,
-        walletConnectors: [EthereumWalletConnectors, SolanaWalletConnectors],
+        // v4: Solana wallet only — Phantom, Backpack, Solflare, etc.
+        walletConnectors: [SolanaWalletConnectors],
         cssOverrides: `
           .dynamic-widget-inline-controls { background: #231832 !important; }
           .dynamic-widget-inline-controls * { font-family: "Silkscreen", monospace !important; }

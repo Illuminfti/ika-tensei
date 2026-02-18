@@ -28,6 +28,12 @@ export interface NFTSealedEvent {
   collection_mint?: string;
   dwallet_pubkey: string;
   tx_digest: string;
+  /** User's Solana wallet — reborn NFT minted here (optional, defaults to relayer) */
+  recipient_solana_address?: string;
+  /** Source chain image URL (optional, resolved from metadata_uri if not provided) */
+  image_url?: string;
+  /** Source chain animation/video URL (optional) */
+  animation_url?: string;
 }
 
 export class ProcessingQueue extends EventEmitter {

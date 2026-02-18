@@ -1,10 +1,12 @@
 import { API_BASE } from "./constants";
 
+// ─── Legacy Types (kept for compatibility) ─────────────────────────────────────
+
 export interface SealRequest {
-  sourceChain: "ethereum" | "sui";
-  contractAddress: string;
-  tokenId: string;
-  depositorAddress: string;
+  sourceChain: string;
+  contractAddress?: string;
+  tokenId?: string;
+  depositorAddress?: string;
   solanaRecipient: string;
 }
 
@@ -22,6 +24,40 @@ export interface SealResponse {
   error?: string;
 }
 
+// ─── v4 Deposit-Address Flow Types ────────────────────────────────────────────
+
+export interface StartSealRequest {
+  solanaWallet: string;
+  sourceChain: string;
+}
+
+export interface StartSealResponse {
+  dwalletId: string;
+  depositAddress: string;
+}
+
+export type SealStatusValue =
+  | "waiting_deposit"
+  | "detected"
+  | "fetching_metadata"
+  | "uploading"
+  | "minting"
+  | "complete"
+  | "error";
+
+export interface SealStatusResponse {
+  dwalletId: string;
+  status: SealStatusValue;
+  rebornNFT?: {
+    mint: string;
+    name: string;
+    image: string;
+  };
+  error?: string;
+}
+
+// ─── Core fetch wrapper ────────────────────────────────────────────────────────
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -34,7 +70,32 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-// Initiate a seal
+// ─── v4 API: Deposit-Address Flow ─────────────────────────────────────────────
+
+/**
+ * Create a new seal session — returns a dWallet-derived deposit address
+ * for the selected source chain.
+ */
+export async function startSeal(
+  solanaWallet: string,
+  sourceChain: string
+): Promise<StartSealResponse> {
+  return fetchApi<StartSealResponse>("/api/seal/start", {
+    method: "POST",
+    body: JSON.stringify({ solanaWallet, sourceChain } satisfies StartSealRequest),
+  });
+}
+
+/**
+ * Poll the status of a seal in progress.
+ */
+export async function getSealStatus(dwalletId: string): Promise<SealStatusResponse> {
+  return fetchApi<SealStatusResponse>(`/api/seal/${dwalletId}/status`);
+}
+
+// ─── Legacy / v3 API ──────────────────────────────────────────────────────────
+
+/** @deprecated Use startSeal + getSealStatus */
 export async function initiateSeal(request: SealRequest): Promise<SealResponse> {
   return fetchApi<SealResponse>("/api/seal", {
     method: "POST",
@@ -42,42 +103,66 @@ export async function initiateSeal(request: SealRequest): Promise<SealResponse> 
   });
 }
 
-// Poll seal status
-export async function getSealStatus(sealHash: string): Promise<SealResponse> {
+/** @deprecated Use getSealStatus(dwalletId) */
+export async function getSealStatusLegacy(sealHash: string): Promise<SealResponse> {
   return fetchApi<SealResponse>(`/api/seal/${sealHash}`);
 }
 
-// Get user's NFTs from a chain
+// ─── Other endpoints ──────────────────────────────────────────────────────────
+
 export async function getUserNfts(chain: string, address: string) {
-  return fetchApi<{ nfts: Array<{ id: string; name: string; image: string; contractAddress: string; tokenId: string }> }>(
-    `/api/nfts?chain=${chain}&address=${address}`
-  );
+  return fetchApi<{
+    nfts: Array<{
+      id: string;
+      name: string;
+      image: string;
+      contractAddress: string;
+      tokenId: string;
+    }>;
+  }>(`/api/nfts?chain=${chain}&address=${address}`);
 }
 
-// Get reborn NFTs for a user
 export async function getRebornNfts(solanaAddress: string) {
-  return fetchApi<{ nfts: Array<{ mint: string; name: string; image: string; originalChain: string; originalContract: string; originalTokenId: string; sealHash: string; rebornDate: string }> }>(
-    `/api/reborn?address=${solanaAddress}`
-  );
+  return fetchApi<{
+    nfts: Array<{
+      mint: string;
+      name: string;
+      image: string;
+      originalChain: string;
+      originalContract: string;
+      originalTokenId: string;
+      sealHash: string;
+      rebornDate: string;
+    }>;
+  }>(`/api/reborn?address=${solanaAddress}`);
 }
 
-// DAO endpoints
 export async function getProposals() {
-  return fetchApi<{ proposals: Array<{ id: string; title: string; description: string; votesFor: number; votesAgainst: number; totalVotes: number; status: string; endsAt: string }> }>(
-    "/api/guild/proposals"
-  );
+  return fetchApi<{
+    proposals: Array<{
+      id: string;
+      title: string;
+      description: string;
+      votesFor: number;
+      votesAgainst: number;
+      totalVotes: number;
+      status: string;
+      endsAt: string;
+    }>;
+  }>("/api/guild/proposals");
 }
 
-export async function castVote(proposalId: string, vote: "for" | "against" | "abstain", signature: string) {
+export async function castVote(
+  proposalId: string,
+  vote: "for" | "against" | "abstain",
+  signature: string
+) {
   return fetchApi<{ success: boolean }>("/api/guild/vote", {
     method: "POST",
     body: JSON.stringify({ proposalId, vote, signature }),
   });
 }
 
-// Stats
 export async function getStats() {
-  return fetchApi<{ sealed: number; reborn: number; chains: number }>(
-    "/api/stats"
-  );
+  return fetchApi<{ sealed: number; reborn: number; chains: number }>("/api/stats");
 }

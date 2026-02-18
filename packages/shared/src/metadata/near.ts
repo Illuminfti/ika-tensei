@@ -276,6 +276,7 @@ export async function fetchNearMetadata(
         dwallet_id: dwalletId,
         sealed_at: Date.now(),
         original_metadata_uri: tokenMetadata.reference ?? undefined,
+        fetched_at: new Date().toISOString(),
       },
       raw_metadata: {
         ...tokenMetadata,

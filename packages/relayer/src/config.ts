@@ -36,6 +36,22 @@ export interface RelayerConfig {
   maxRetries: number;
   retryDelayMs: number;
   logLevel: string;
+
+  // API Server
+  apiPort: number;
+
+  // dWallet Pool
+  poolTargetSize: number;
+  poolReplenishThreshold: number;
+
+  // Deposit Detector
+  alchemyApiKey: string;
+  alchemyWebhookSecret: string;
+  heliusApiKey: string;
+  depositPollIntervalMs: number;
+
+  // Metaplex Core Collection (create once, reuse for all reborn NFTs)
+  rebornCollectionAddress?: string;
 }
 
 function parseEnvChainId(value: string | undefined, key: string): 'mainnet' | 'testnet' | 'devnet' {
@@ -199,5 +215,21 @@ export async function loadConfig(): Promise<RelayerConfig> {
     maxRetries,
     retryDelayMs,
     logLevel,
+
+    // API Server
+    apiPort: parseInt(env.API_PORT || '3471', 10),
+
+    // dWallet Pool
+    poolTargetSize: parseInt(env.POOL_TARGET_SIZE || '20', 10),
+    poolReplenishThreshold: parseInt(env.POOL_REPLENISH_THRESHOLD || '5', 10),
+
+    // Deposit Detector
+    alchemyApiKey: env.ALCHEMY_API_KEY || '',
+    alchemyWebhookSecret: env.ALCHEMY_WEBHOOK_SECRET || '',
+    heliusApiKey: env.HELIUS_API_KEY || '',
+    depositPollIntervalMs: parseInt(env.DEPOSIT_POLL_INTERVAL_MS || '30000', 10),
+
+    // Metaplex Core Collection
+    rebornCollectionAddress: env.REBORN_COLLECTION_ADDRESS || undefined,
   };
 }
