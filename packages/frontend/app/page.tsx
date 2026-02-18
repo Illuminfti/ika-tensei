@@ -43,18 +43,19 @@ export default function Home() {
       <section className="relative flex flex-col items-center justify-center min-h-[100vh] px-4 overflow-hidden">
         {/* Hero background art - mirrored on both sides, center clear for content */}
         <div className="absolute inset-0 z-0 opacity-30 overflow-hidden">
-          {/* Left side - flipped so statue faces outward left, fades toward center */}
-          <div className="absolute inset-y-0 left-0 w-[55%] scale-x-[-1]" style={{ maskImage: 'linear-gradient(to right, black 40%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 40%, transparent 100%)' }}>
+          {/* Left side - flipped so statue faces outward left */}
+          <div className="absolute inset-y-0 left-0 w-[60%]" style={{ maskImage: 'linear-gradient(to right, black 30%, black 50%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 30%, black 50%, transparent 100%)' }}>
             <Image
               src="/art/hero-wide.png"
               alt=""
               fill
               className="object-cover object-center"
+              style={{ transform: 'scaleX(-1)' }}
               priority
             />
           </div>
-          {/* Right side - normal orientation, statue faces outward right, fades toward center */}
-          <div className="absolute inset-y-0 right-0 w-[55%]" style={{ maskImage: 'linear-gradient(to left, black 40%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to left, black 40%, transparent 100%)' }}>
+          {/* Right side - normal orientation, statue faces outward right */}
+          <div className="absolute inset-y-0 right-0 w-[60%]" style={{ maskImage: 'linear-gradient(to left, black 30%, black 50%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to left, black 30%, black 50%, transparent 100%)' }}>
             <Image
               src="/art/hero-wide.png"
               alt=""
