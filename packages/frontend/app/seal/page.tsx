@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useSealFlow, STATUS_ORDER, STATUS_LABELS } from "@/hooks/useSealFlow";
@@ -12,6 +13,247 @@ import { ChainSelector } from "@/components/ui/ChainSelector";
 import { DepositAddress } from "@/components/ui/DepositAddress";
 import { SolanaConnectInner, DevModeConnect } from "@/components/wallet/SolanaConnect";
 import { IkaSprite } from "@/components/ui/PixelSprite";
+
+// ─── Blood Pact Modal ──────────────────────────────────────────────────────────
+
+interface BloodPactModalProps {
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function BloodPactModal({ onConfirm, onCancel }: BloodPactModalProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        transition={{ type: "spring", damping: 15 }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-lg"
+      >
+        {/* Blood pact border effect */}
+        <motion.div
+          className="absolute -inset-2 rounded-lg"
+          style={{
+            background: 'linear-gradient(45deg, #dc143c, #8b0000, #dc143c, #8b0000)',
+            backgroundSize: '400% 400%',
+          }}
+          animate={{
+            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+          }}
+          transition={{ duration: 3, repeat: Infinity }}
+        />
+        
+        {/* Inner dark content */}
+        <div 
+          className="relative bg-void-purple p-6 m-0.5 rounded-lg"
+          style={{
+            boxShadow: 'inset 0 0 50px rgba(220,20,60,0.2)',
+          }}
+        >
+          {/* Header */}
+          <div className="text-center mb-6">
+            <motion.div
+              animate={{ 
+                textShadow: ['0 0 10px #dc143c', '0 0 20px #dc143c', '0 0 10px #dc143c'],
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="font-pixel text-xl text-blood-pink mb-2"
+            >
+              ⛧ BLOOD PACT ⛧
+            </motion.div>
+            <p className="font-silk text-faded-spirit text-xs">
+              The eternal binding awaits...
+            </p>
+          </div>
+          
+          {/* Warning text */}
+          <div className="bg-blood-pink/10 p-4 rounded mb-6 border border-blood-pink/20">
+            <p className="font-silk text-sm text-faded-spirit text-center">
+              By confirming, your soul shall be bound to the eternal chain. 
+              This pact cannot be undone. The spirits bear witness...
+            </p>
+          </div>
+          
+          {/* Buttons */}
+          <div className="flex gap-4 justify-center">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onCancel}
+              className="
+                px-6 py-3 font-pixel text-xs 
+                border-2 border-void-purple/50 text-faded-spirit
+                hover:border-faded-spirit transition-colors
+              "
+            >
+              I REFUSE
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onConfirm}
+              className="
+                px-6 py-3 font-pixel text-xs
+                bg-blood-pink text-white border-2 border-blood-pink
+                hover:bg-red-700 hover:border-red-700
+                transition-colors relative overflow-hidden
+              "
+              style={{
+                boxShadow: '0 0 20px rgba(220,20,60,0.5)',
+              }}
+            >
+              <motion.span
+                className="absolute inset-0 bg-white/20"
+                initial={{ x: '-100%' }}
+                whileHover={{ x: '100%' }}
+                transition={{ duration: 0.5 }}
+              />
+              I ACCEPT THE PACT
+            </motion.button>
+          </div>
+          
+          {/* Bottom sigil */}
+          <div className="text-center mt-6 text-blood-pink/50">
+            ☠︎ THE IKA TENSEI ☠︎
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Runic Progress Indicator ─────────────────────────────────────────────────
+
+interface RunicProgressProps {
+  currentStep: number;
+}
+
+const RUNE_GLYPHS = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ'];
+const RITUAL_STEPS = [
+  "Gathering energy...",
+  "Weaving spell...",
+  "Binding to chain...",
+  "Minting on Solana...",
+];
+
+function RunicProgress({ currentStep }: RunicProgressProps) {
+  return (
+    <div className="flex justify-between items-center max-w-md mx-auto mt-6">
+      {RITUAL_STEPS.map((label, index) => {
+        const isActive = index <= currentStep;
+        const isCurrent = index === currentStep;
+        
+        return (
+          <div key={index} className="flex flex-col items-center relative">
+            {/* Connector line */}
+            {index < RITUAL_STEPS.length - 1 && (
+              <div 
+                className="absolute top-3 left-1/2 w-full h-0.5 -translate-x-0"
+                style={{
+                  backgroundColor: isActive ? '#dc143c' : '#2a1a1a',
+                  boxShadow: isActive ? '0 0 10px rgba(220,20,60,0.5)' : 'none',
+                  width: '200%',
+                  zIndex: -1,
+                }}
+              />
+            )}
+            
+            {/* Rune */}
+            <motion.div
+              className={`
+                w-10 h-10 rounded-full flex items-center justify-center
+                border-2 transition-all duration-500
+                ${isActive 
+                  ? 'border-blood-pink bg-blood-pink/20' 
+                  : 'border-void-purple/30 bg-void-purple/20'
+                }
+              `}
+              animate={isCurrent ? {
+                boxShadow: ['0 0 10px #dc143c', '0 0 25px #dc143c', '0 0 10px #dc143c'],
+              } : {}}
+              transition={{ duration: 1, repeat: Infinity }}
+            >
+              <span 
+                className="text-lg"
+                style={{
+                  color: isActive ? '#ffd700' : '#4a2c2c',
+                  textShadow: isActive ? '0 0 10px #ffd700' : 'none',
+                }}
+              >
+                {RUNE_GLYPHS[index]}
+              </span>
+            </motion.div>
+            
+            {/* Label */}
+            <span 
+              className={`
+                font-silk text-[8px] mt-2 text-center max-w-20
+                transition-colors duration-300
+                ${isActive ? 'text-faded-spirit' : 'text-void-purple/50'}
+              `}
+            >
+              {label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Chain Aura Component ────────────────────────────────────────────────────
+
+interface ChainAuraProps {
+  chainId: string | null;
+}
+
+function ChainAura({ chainId }: ChainAuraProps) {
+  const auraColor = useMemo(() => {
+    switch (chainId) {
+      case 'ethereum': return { primary: '#ffd700', secondary: '#ffaa00', name: 'Ethereum' };
+      case 'solana': return { primary: '#00ffff', secondary: '#00ccff', name: 'Solana' };
+      case 'sui': return { primary: '#a855f7', secondary: '#8b5cf6', name: 'Sui' };
+      default: return null;
+    }
+  }, [chainId]);
+
+  if (!auraColor) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex items-center gap-2 mt-3"
+    >
+      <motion.div
+        className="w-3 h-3 rounded-full"
+        style={{ backgroundColor: auraColor.primary }}
+        animate={{
+          boxShadow: [
+            `0 0 4px ${auraColor.primary}`,
+            `0 0 12px ${auraColor.primary}`,
+            `0 0 4px ${auraColor.primary}`,
+          ],
+        }}
+        transition={{ duration: 1.5, repeat: Infinity }}
+      />
+      <span 
+        className="font-pixel text-[10px]"
+        style={{ color: auraColor.primary, textShadow: `0 0 8px ${auraColor.secondary}` }}
+      >
+        {auraColor.name} Realm
+      </span>
+    </motion.div>
+  );
+}
 
 // ─── Step breadcrumb ──────────────────────────────────────────────────────────
 
@@ -144,14 +386,50 @@ function SelectChainStep({
 
       <ChainSelector selected={selectedChain} onSelect={onSelect} />
 
-      {error && (
-        <motion.p
+      {/* Chain-specific aura */}
+      <ChainAura chainId={selectedChain} />
+
+      {/* Fee estimate */}
+      {selectedChain && (
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mt-3 font-pixel text-[9px] text-demon-red text-center"
+          className="mt-3 text-center"
         >
-          ⚠ {error}
-        </motion.p>
+          <span className="font-pixel text-[10px] text-faded-spirit">
+            ◎ Estimated fee: ~0.01 SOL + source chain gas
+          </span>
+        </motion.div>
+      )}
+
+      {/* Error display */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 p-3 rounded border"
+          style={{
+            background: "rgba(255, 68, 68, 0.1)",
+            border: "1px solid rgba(255, 68, 68, 0.3)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-demon-red text-sm">❌</span>
+              <span className="font-pixel text-[11px] text-demon-red">{error}</span>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                onBack();
+              }}
+              className="font-pixel text-[10px] px-3 py-1 bg-demon-red/20 border border-demon-red/50 text-demon-red hover:bg-demon-red/30"
+            >
+              Try Again
+            </motion.button>
+          </div>
+        </motion.div>
       )}
 
       <div className="flex gap-3 justify-between mt-6">
@@ -255,6 +533,15 @@ function WaitingStep({
       ? "charging"
       : "idle";
 
+  // Calculate ritual progress
+  const ritualStep = useMemo(() => {
+    if (!sealStatus) return 0;
+    if (sealStatus === "detected" || sealStatus === "fetching_metadata") return 0;
+    if (sealStatus === "uploading" || sealStatus === "minting") return 1;
+    if (sealStatus === "complete") return 3;
+    return 0;
+  }, [sealStatus]);
+
   return (
     <Panel>
       <h2 className="font-pixel text-center text-ritual-gold text-sm mb-6">
@@ -266,8 +553,11 @@ function WaitingStep({
         <SummoningCircle phase={circlePhase} size={240} />
       </div>
 
+      {/* Runic progress visualization */}
+      <RunicProgress currentStep={ritualStep} />
+
       {/* Current status text */}
-      <div className="mb-6">
+      <div className="mb-6 mt-6">
         <DialogueBox
           speaker="Ritual"
           portrait="neutral"
@@ -535,12 +825,21 @@ function CompleteStep({
 export default function SealPage() {
   const { connected, publicKey, connect } = useWalletStore();
   const flow = useSealFlow();
+  const [showBloodPact, setShowBloodPact] = useState(false);
 
   // When wallet connects, advance the flow step
   const handleWalletConnect = (pk: string) => {
     connect(pk);
     if (flow.step === "connect") {
       flow.onWalletConnected();
+    }
+  };
+
+  // Handle blood pact confirmation
+  const handleConfirmSeal = () => {
+    setShowBloodPact(false);
+    if (flow.sourceChain && publicKey) {
+      flow.selectChain(flow.sourceChain, publicKey);
     }
   };
 
@@ -592,13 +891,7 @@ export default function SealPage() {
               selectedChain={flow.sourceChain}
               onSelect={(id) => flow.selectChain(id, publicKey ?? "")}
               onConfirm={() => {
-                if (flow.sourceChain && publicKey) {
-                  // selectChain is called via onSelect; confirm just re-calls
-                  // if no pending request is in flight
-                  if (!flow.isLoading && !flow.depositAddress) {
-                    flow.selectChain(flow.sourceChain, publicKey);
-                  }
-                }
+                setShowBloodPact(true);
               }}
               isLoading={flow.isLoading}
               error={flow.error}
@@ -632,6 +925,16 @@ export default function SealPage() {
               rebornNFT={flow.rebornNFT}
               chainId={flow.sourceChain}
               onReset={flow.reset}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Blood Pact Modal */}
+        <AnimatePresence>
+          {showBloodPact && (
+            <BloodPactModal
+              onConfirm={handleConfirmSeal}
+              onCancel={() => setShowBloodPact(false)}
             />
           )}
         </AnimatePresence>

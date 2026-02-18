@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { SealIcon, SoulOrb, ShieldIcon, ChainBadge, PortalIcon, ScrollIcon, CrownIcon } from "@/components/ui/PixelSprite";
@@ -9,8 +10,171 @@ import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 import { DialogueBox } from "@/components/ui/DialogueBox";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { StatsCounter } from "@/components/ui/StatsCounter";
+import { SakuraParticles } from "@/components/ui/SakuraParticles";
+import { useKonamiCode } from "@/hooks/useKonamiCode";
+
+// ============================================================================
+// FLOATING KANJI/RUNE PARTICLES - Drifting magical particles for hero
+// ============================================================================
+const RUNE_PARTICLES = [
+  "死", "魔", "魂", "転", "生", "封印", "儀", "式", "☆", "✦", "⚡", "✧",
+  "ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ", "ᚺ", "ᚾ", "ᛁ", "ᛃ",
+  "卍", "梵", "🔯"
+];
+
+interface Particle {
+  id: number;
+  char: string;
+  x: number;
+  y: number;
+  duration: number;
+  delay: number;
+  size: number;
+  opacity: number;
+  rotation: number;
+}
+
+function FloatingRuneParticles() {
+  const [particles] = useState<Particle[]>(() => 
+    Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      char: RUNE_PARTICLES[Math.floor(Math.random() * RUNE_PARTICLES.length)],
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      duration: 10 + Math.random() * 15,
+      delay: Math.random() * 5,
+      size: 14 + Math.random() * 18,
+      opacity: 0.15 + Math.random() * 0.35,
+      rotation: -30 + Math.random() * 60,
+    }))
+  );
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-[2]">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute font-jp"
+          style={{
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            fontSize: p.size,
+            opacity: p.opacity,
+            color: Math.random() > 0.5 ? '#ffd700' : '#9b59b6',
+            textShadow: '0 0 10px currentColor',
+          }}
+          animate={{
+            y: [0, -60, 0],
+            x: [0, Math.sin(p.id) * 25, 0],
+            rotate: [p.rotation, p.rotation + 15, p.rotation],
+            opacity: [p.opacity, p.opacity * 0.4, p.opacity],
+          }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        >
+          {p.char}
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// ETHEREAL MIST - Bottom atmosphere for sections
+// ============================================================================
+function EtherealMist() {
+  return (
+    <div className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none overflow-hidden">
+      {/* Multiple layers of fog */}
+      {[0, 1, 2].map((i) => (
+        <motion.div
+          key={i}
+          className="absolute bottom-0 left-0 right-0"
+          style={{
+            height: 80 + i * 25,
+            background: `linear-gradient(to top, rgba(155, 89, 182, ${0.12 - i * 0.03}), transparent)`,
+            filter: 'blur(15px)',
+          }}
+          animate={{
+            x: [0, 80, 0],
+            opacity: [0.3, 0.5, 0.3],
+          }}
+          transition={{
+            duration: 12 + i * 4,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: i * 2,
+          }}
+        />
+      ))}
+      <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-void-purple via-mystic-purple/15 to-transparent" />
+    </div>
+  );
+}
+
+// ============================================================================
+// FILM GRAIN + VIGNETTE OVERLAY
+// ============================================================================
+function FilmGrainOverlay() {
+  return (
+    <div className="fixed inset-0 pointer-events-none z-[100]">
+      {/* Film grain texture */}
+      <div 
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          animation: 'grain 0.5s steps(1) infinite',
+        }}
+      />
+      {/* Vignette */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          background: 'radial-gradient(ellipse at center, transparent 0%, transparent 50%, rgba(5, 3, 8, 0.4) 100%)',
+        }}
+      />
+      <style jsx global>{`
+        @keyframes grain {
+          0%, 100% { transform: translate(0, 0); }
+          10% { transform: translate(-1%, -1%); }
+          20% { transform: translate(1%, 1%); }
+          30% { transform: translate(-1%, 1%); }
+          40% { transform: translate(1%, -1%); }
+          50% { transform: translate(-1%, 0%); }
+          60% { transform: translate(1%, 0%); }
+          70% { transform: translate(0%, 1%); }
+          80% { transform: translate(0%, -1%); }
+          90% { transform: translate(1%, 1%); }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 export default function Home() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Konami code easter egg
+  const { isActivated: konamiActivated } = useKonamiCode();
+  const { scrollY } = useScroll();
+  
+  // Parallax transforms for hero
+  const yBackground = useTransform(scrollY, [0, 500], [0, 80]);
+  const yMascot = useTransform(scrollY, [0, 300], [0, -40]);
+  
+  // CTA hover state for summoning circle interaction
+  const [isCtaHovered, setIsCtaHovered] = useState(false);
+
+  // Trigger pulse on mount for initial attention
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const STEPS = [
     {
       icon: <SealIcon size={48} />,
@@ -30,13 +194,71 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen relative">
+    <div ref={containerRef} className="min-h-screen relative">
       <BackgroundAtmosphere mood="calm" />
+      <FilmGrainOverlay />
+      
+      {/* Konami code easter egg overlay */}
+      {konamiActivated && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{
+            background: "rgba(5, 3, 8, 0.9)",
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.5, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            transition={{ type: "spring", damping: 12 }}
+            className="text-center"
+          >
+            {/* Rainbow glow title */}
+            <motion.h2
+              className="font-pixel text-3xl md:text-4xl mb-6"
+              animate={{
+                textShadow: [
+                  "0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000",
+                  "0 0 20px #ff8800, 0 0 40px #ff8800, 0 0 60px #ff8800",
+                  "0 0 20px #ffff00, 0 0 40px #ffff00, 0 0 60px #ffff00",
+                  "0 0 20px #00ff00, 0 0 40px #00ff00, 0 0 60px #00ff00",
+                  "0 0 20px #0088ff, 0 0 40px #0088ff, 0 0 60px #0088ff",
+                  "0 0 20px #8800ff, 0 0 40px #8800ff, 0 0 60px #8800ff",
+                  "0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000",
+                ],
+              }}
+              transition={{ duration: 3, repeat: Infinity }}
+              style={{ color: "#fff" }}
+            >
+              🦑 IKA TENSEI 🦑
+            </motion.h2>
+            
+            <DialogueBox
+              speaker="Ika"
+              portrait="excited"
+              text="You found the secret! 🦑 The ancient squid blesses you with infinite luck~"
+            />
+          </motion.div>
+        </motion.div>
+      )}
 
       {/* SECTION 1 - HERO */}
       <section className="relative flex flex-col items-center justify-center min-h-[100vh] px-4 overflow-hidden">
-        {/* Hero background art - mirrored on both sides, center clear for content */}
-        <div className="absolute inset-0 z-0 opacity-30 overflow-hidden">
+        {/* Floating rune particles */}
+        <FloatingRuneParticles />
+        
+        {/* Sakura petals - subtle background effect */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <SakuraParticles />
+        </div>
+
+        {/* Hero background art - mirrored on both sides, center clear for content - with parallax */}
+        <motion.div 
+          className="absolute inset-0 z-0 opacity-30 overflow-hidden"
+          style={{ y: yBackground }}
+        >
           {/* Left side - flipped so statue faces outward left */}
           <div className="absolute inset-y-0 left-0 w-[60%]" style={{ maskImage: 'linear-gradient(to right, black 30%, black 50%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 30%, black 50%, transparent 100%)' }}>
             <Image
@@ -59,20 +281,31 @@ export default function Home() {
             />
           </div>
           <div className="absolute inset-0 bg-gradient-to-b from-void-purple/40 via-transparent to-void-purple" />
-        </div>
+        </motion.div>
 
-        {/* Summoning Circle - centered, slightly above middle */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] z-[1]">
-          <SummoningCircle size={500} phase="idle" />
-        </div>
+        {/* Summoning Circle - centered, slightly above middle - INTERACTIVE with CTA hover */}
+        <motion.div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] z-[1]"
+          style={{ y: yBackground }}
+          animate={isCtaHovered ? {
+            scale: [1, 1.05, 1.03],
+            filter: ['drop-shadow(0 0 20px #ff3366)', 'drop-shadow(0 0 35px #ff3366)', 'drop-shadow(0 0 25px #ff3366)'],
+          } : {}}
+          transition={{ duration: 1, repeat: isCtaHovered ? Infinity : 0 }}
+        >
+          <SummoningCircle 
+            size={500} 
+            phase={isCtaHovered ? "active" : mounted ? "charging" : "idle"} 
+          />
+        </motion.div>
 
-        {/* Mascot - pixel art goddess with bobbing animation */}
+        {/* Mascot - pixel art goddess with bobbing animation + parallax */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative z-10 mb-6"
-          style={{ filter: "drop-shadow(0 8px 24px rgba(255, 51, 102, 0.3))" }}
+          style={{ y: yMascot, filter: "drop-shadow(0 8px 24px rgba(255, 51, 102, 0.3))" }}
         >
           <motion.div
             animate={{ y: [0, -10, 0] }}
@@ -102,8 +335,10 @@ export default function Home() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
             style={{
-              color: "#ff3366",
-              textShadow: "0 0 20px rgba(255, 51, 102, 0.8), 0 0 40px rgba(255, 51, 102, 0.4), 0 0 80px rgba(255, 51, 102, 0.2), 0 2px 0 #cc1144",
+              color: konamiActivated ? undefined : "#ff3366",
+              textShadow: konamiActivated 
+                ? "0 0 20px #ff0000, 0 0 40px #ff8800, 0 0 60px #ffff00, 0 0 80px #00ff00, 0 0 100px #0088ff"
+                : "0 0 20px rgba(255, 51, 102, 0.8), 0 0 40px rgba(255, 51, 102, 0.4), 0 0 80px rgba(255, 51, 102, 0.2), 0 2px 0 #cc1144",
               WebkitTextStroke: "1px rgba(255, 51, 102, 0.3)",
             }}
           >
@@ -114,8 +349,10 @@ export default function Home() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.6 }}
             style={{
-              color: "#ffd700",
-              textShadow: "0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4), 0 0 80px rgba(255, 215, 0, 0.2), 0 2px 0 #cc8800",
+              color: konamiActivated ? undefined : "#ffd700",
+              textShadow: konamiActivated
+                ? "0 0 20px #ff0000, 0 0 40px #ff8800, 0 0 60px #ffff00, 0 0 80px #00ff00, 0 0 100px #0088ff"
+                : "0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4), 0 0 80px rgba(255, 215, 0, 0.2), 0 2px 0 #cc8800",
               WebkitTextStroke: "1px rgba(255, 215, 0, 0.3)",
             }}
           >
@@ -160,12 +397,14 @@ export default function Home() {
           </p>
         </motion.div>
 
-        {/* CTA Button with pixel sparkles */}
+        {/* CTA Button - triggers summoning circle pulse on hover */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.1 }}
           className="relative z-10"
+          onMouseEnter={() => setIsCtaHovered(true)}
+          onMouseLeave={() => setIsCtaHovered(false)}
         >
           <Link href="/seal" className="relative inline-block group">
             {/* Sparkle particles around button */}
@@ -192,15 +431,13 @@ export default function Home() {
               />
             ))}
 
-            {/* Button glow backdrop */}
+            {/* Button glow backdrop - intensifies on hover */}
             <motion.div
               className="absolute inset-0 -m-2 rounded-lg"
               animate={{
-                boxShadow: [
-                  "0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)",
-                  "0 0 30px rgba(255, 51, 102, 0.4), 0 0 60px rgba(255, 51, 102, 0.2)",
-                  "0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)",
-                ],
+                boxShadow: isCtaHovered 
+                  ? ["0 0 30px rgba(255, 51, 102, 0.4), 0 0 60px rgba(255, 51, 102, 0.3)", "0 0 50px rgba(255, 51, 102, 0.6), 0 0 100px rgba(255, 51, 102, 0.4)", "0 0 30px rgba(255, 51, 102, 0.4), 0 0 60px rgba(255, 51, 102, 0.3)"]
+                  : ["0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)", "0 0 30px rgba(255, 51, 102, 0.4), 0 0 60px rgba(255, 51, 102, 0.2)", "0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)"],
               }}
               transition={{ duration: 2, repeat: Infinity }}
             />
@@ -261,6 +498,9 @@ export default function Home() {
            SECTION 2 - HOW IT WORKS (Visual Step Flow)
            ═══════════════════════════════════════════════════════════════════════ */}
       <section className="py-24 px-4 relative z-10">
+        {/* Ethereal mist at top */}
+        <EtherealMist />
+        
         {/* Section divider glow line */}
         <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
 

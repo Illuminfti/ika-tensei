@@ -1,15 +1,45 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { IkaSprite } from "./PixelSprite";
+import { IkaSprite, IkaExpression } from "./PixelSprite";
 import { PixelButton } from "./PixelButton";
 
-export type PortraitExpression = "neutral" | "excited" | "worried" | "smug" | "angry" | "sleeping";
+export type PortraitExpression = "neutral" | "excited" | "worried" | "smug" | "angry" | "sleeping" | "happy" | "sad" | "surprised" | "thinking";
 export type DialogueVariant = "normal" | "dramatic" | "system" | "warning";
 
 export interface DialogueChoice {
+  id?: string;
   text: string;
   onClick: () => void;
+  disabled?: boolean;
+}
+
+// Map PortraitExpression to IkaExpression (some portrait values don't exist in IkaSprite)
+function mapToIkaExpression(portrait?: PortraitExpression): IkaExpression | undefined {
+  if (!portrait) return undefined;
+  const mapping: Record<PortraitExpression, IkaExpression> = {
+    "neutral": "neutral",
+    "excited": "excited",
+    "worried": "worried",
+    "smug": "smug",
+    "angry": "angry",
+    "sleeping": "sleeping",
+    "happy": "happy",
+    "sad": "worried", // Map sad to worried
+    "surprised": "excited", // Map surprised to excited
+    "thinking": "thinking",
+  };
+  return mapping[portrait] as IkaExpression | undefined;
+}
+
+/** Sound effect callbacks - implement with actual audio in parent */
+export interface DialogueSoundEffects {
+  /** Called when a character is typed */
+  onType?: () => void;
+  /** Called when text completes typing */
+  onComplete?: () => void;
+  /** Called when a choice is selected */
+  onChoiceSelect?: (choiceIndex: number) => void;
 }
 
 interface DialogueBoxProps {
@@ -17,9 +47,19 @@ interface DialogueBoxProps {
   speaker?: string;
   portrait?: PortraitExpression;
   variant?: DialogueVariant;
+  /** Typewriter speed in ms per character (lower = faster) */
   speed?: number;
+  /** Enable/disable typewriter effect */
+  typewriter?: boolean;
   onComplete?: () => void;
   choices?: DialogueChoice[];
+  /** Sound effect callbacks */
+  soundEffects?: DialogueSoundEffects;
+  /** Show the continue indicator */
+  showContinue?: boolean;
+  /** Auto-advance after completion (in ms) */
+  autoAdvanceDelay?: number;
+  onAutoAdvance?: () => void;
 }
 
 export function DialogueBox({
@@ -28,31 +68,54 @@ export function DialogueBox({
   portrait = "neutral",
   variant = "normal",
   speed = 30,
+  typewriter = true,
   onComplete,
   choices,
+  soundEffects,
+  showContinue = true,
+  autoAdvanceDelay,
+  onAutoAdvance,
 }: DialogueBoxProps) {
   const [displayedText, setDisplayedText] = useState("");
   const [isTyping, setIsTyping] = useState(true);
   const [showChoices, setShowChoices] = useState(false);
   const typingRef = useRef<NodeJS.Timeout | null>(null);
+  const autoAdvanceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset state when text changes
   useEffect(() => {
     setDisplayedText("");
-    setIsTyping(true);
+    setIsTyping(typewriter);
     setShowChoices(false);
 
-    // Start typewriter effect
+    if (!typewriter) {
+      setDisplayedText(text);
+      setIsTyping(false);
+      setShowChoices(true);
+      onComplete?.();
+      return;
+    }
+
     let charIndex = 0;
 
     const typeNextChar = () => {
       if (charIndex < text.length) {
         setDisplayedText(text.slice(0, charIndex + 1));
+        soundEffects?.onType?.();
         charIndex++;
         typingRef.current = setTimeout(typeNextChar, speed);
       } else {
         setIsTyping(false);
         setShowChoices(true);
+        soundEffects?.onComplete?.();
+        
+        // Auto-advance setup
+        if (autoAdvanceDelay && onAutoAdvance) {
+          autoAdvanceRef.current = setTimeout(() => {
+            onAutoAdvance();
+          }, autoAdvanceDelay);
+        }
+        
         onComplete?.();
       }
     };
@@ -62,20 +125,29 @@ export function DialogueBox({
 
     return () => {
       if (typingRef.current) clearTimeout(typingRef.current);
+      if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current);
     };
-  }, [text, speed, onComplete]);
+  }, [text, speed, typewriter, onComplete, soundEffects, autoAdvanceDelay, onAutoAdvance]);
 
   // Handle click to skip typing
   const handleClick = useCallback(() => {
-    if (isTyping) {
+    if (isTyping && typewriter) {
       // Skip to end of text
       if (typingRef.current) clearTimeout(typingRef.current);
       setDisplayedText(text);
       setIsTyping(false);
       setShowChoices(true);
+      soundEffects?.onComplete?.();
       onComplete?.();
     }
-  }, [isTyping, text, onComplete]);
+  }, [isTyping, typewriter, text, onComplete, soundEffects]);
+
+  // Handle choice selection
+  const handleChoiceSelect = useCallback((choice: DialogueChoice, index: number) => {
+    if (choice.disabled) return;
+    soundEffects?.onChoiceSelect?.(index);
+    choice.onClick();
+  }, [soundEffects]);
 
   // Get variant-specific classes
   const getVariantClasses = () => {
@@ -101,11 +173,12 @@ export function DialogueBox({
         border-2 ${getVariantClasses()}
         transition-all duration-200
         ${variant === "dramatic" ? "dramatic-overlay" : ""}
+        ${isTyping && typewriter ? "cursor-pointer" : ""}
       `}
       onClick={handleClick}
     >
       {/* Speaker name tag */}
-      {!isSystem && (
+      {!isSystem && speaker && (
         <div className="absolute -top-3 left-4 bg-ritual-dark px-3 py-1 border-2 border-sigil-border">
           <span className="font-pixel text-[10px] text-ritual-gold tracking-wider uppercase">
             {speaker}
@@ -129,7 +202,8 @@ export function DialogueBox({
                   key={index}
                   variant="dark"
                   size="sm"
-                  onClick={choice.onClick}
+                  onClick={() => handleChoiceSelect(choice, index)}
+                  disabled={choice.disabled}
                   className="w-full text-left justify-start"
                 >
                   <span className="text-spectral-green">▸ {choice.text}</span>
@@ -139,7 +213,7 @@ export function DialogueBox({
           )}
 
           {/* Continue indicator */}
-          {!isTyping && !choices && (
+          {!isTyping && !choices && showContinue && (
             <div className="mt-3 text-right">
               <span className="font-pixel text-[8px] text-faded-spirit animate-pulse">
                 ▼ PRESS
@@ -152,7 +226,7 @@ export function DialogueBox({
         <div className="flex gap-5 items-start pt-3">
           {/* Pixel art portrait with ornate frame */}
           <div className="flex-shrink-0 bg-card-purple border-2 border-sigil-border p-2 relative">
-            <IkaSprite size={56} expression={portrait} />
+            <IkaSprite size={56} expression={mapToIkaExpression(portrait)} />
             {/* Gold corner marks */}
             <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-ritual-gold" />
             <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-ritual-gold" />
@@ -169,7 +243,7 @@ export function DialogueBox({
             `}>
               {displayedText}
               {/* Blinking cursor while typing */}
-              {isTyping && <span className="typewriter-cursor">▊</span>}
+              {isTyping && typewriter && <span className="typewriter-cursor">▊</span>}
             </p>
 
             {/* Choices appear when text is complete */}
@@ -180,7 +254,8 @@ export function DialogueBox({
                     key={index}
                     variant={variant === "warning" ? "warning" : "primary"}
                     size="sm"
-                    onClick={choice.onClick}
+                    onClick={() => handleChoiceSelect(choice, index)}
+                    disabled={choice.disabled}
                     className="w-full text-left justify-start"
                   >
                     <span className={variant === "warning" ? "text-demon-red" : ""}>
@@ -192,7 +267,7 @@ export function DialogueBox({
             )}
 
             {/* Blinking down arrow when complete (no choices) */}
-            {!isTyping && (!choices || choices.length === 0) && (
+            {!isTyping && (!choices || choices.length === 0) && showContinue && (
               <div className="mt-3 text-right">
                 <span className="font-pixel text-[8px] text-faded-spirit animate-pulse">
                   ▼ PRESS
@@ -205,3 +280,33 @@ export function DialogueBox({
     </div>
   );
 }
+
+/**
+ * Compact inline dialogue for notifications/status updates
+ */
+export function InlineDialogue({
+  text,
+  variant = "system",
+}: {
+  text: string;
+  variant?: "system" | "warning" | "success";
+}) {
+  const variantStyles = {
+    system: "border-spectral-green text-spectral-green",
+    warning: "border-demon-red text-demon-red",
+    success: "border-green-500 text-green-400",
+  };
+
+  return (
+    <div className={`
+      inline-flex items-center gap-2 px-3 py-1.5 
+      border ${variantStyles[variant]}
+      bg-black/60 text-xs font-mono
+    `}>
+      <span className="animate-pulse">●</span>
+      {text}
+    </div>
+  );
+}
+
+export default DialogueBox;

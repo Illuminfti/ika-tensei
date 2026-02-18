@@ -38,6 +38,16 @@ const config: Config = {
         "spirit-teal": "#00d4aa",
         "demon-red": "#ff4444",
         "hellfire-orange": "#ff6b35",
+        // Additional research colors
+        "neon-pink": "#ff00ff",
+        "neon-cyan": "#00ffff",
+        "midnight-purple": "#1a0a2e",
+        "occult-crimson": "#8b0000",
+        "alchemical-gold": "#d4af37",
+        "ethereal-cyan": "#00ffff",
+        "spirit-white": "#f0f0ff",
+        "crimson-dark": "#dc143c",
+        "amber-glow": "#ffaa00",
       },
       fontFamily: {
         pixel: ['"Press Start 2P"', "monospace"],
@@ -83,6 +93,19 @@ const config: Config = {
         "ritual-appear": "ritual-appear 0.6s ease-out forwards",
         "ritual-rise": "ritual-rise 0.8s ease-out forwards",
         "twinkle": "twinkle 4s ease-in-out infinite",
+        // New animations from research
+        "shimmer": "shimmer 3s ease-in-out infinite",
+        "grain": "grain 0.5s steps(10) infinite",
+        "vhs-tracking": "vhs-tracking 0.1s infinite",
+        "speed-lines": "speed-lines 0.1s infinite linear",
+        "speed-line-left": "speed-line-left 1s ease-out infinite",
+        "speed-line-right": "speed-line-right 1s ease-out infinite",
+        "mist-drift": "mist-drift 20s ease-in-out infinite",
+        "star-move": "star-move 100s linear infinite",
+        "float-up": "float-up 10s linear infinite",
+        "blood-drip-text": "blood-drip-text 1.5s ease-in-out infinite",
+        "border-glow": "border-glow 4s linear infinite",
+        "pulse-aura": "pulse-aura 1.5s ease-in-out infinite",
       },
       keyframes: {
         "pulse-glow": {
@@ -158,6 +181,72 @@ const config: Config = {
         "blink": {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0" },
+        },
+        // New keyframes from research
+        "shimmer": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+          "100%": { backgroundPosition: "0% 50%" },
+        },
+        "grain": {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "10%": { transform: "translate(-1%, -1%)" },
+          "20%": { transform: "translate(1%, 1%)" },
+          "30%": { transform: "translate(-1%, 1%)" },
+          "40%": { transform: "translate(1%, -1%)" },
+          "50%": { transform: "translate(-1%, 0%)" },
+          "60%": { transform: "translate(1%, 0%)" },
+          "70%": { transform: "translate(0%, 1%)" },
+          "80%": { transform: "translate(0%, -1%)" },
+          "90%": { transform: "translate(1%, 1%)" },
+        },
+        "vhs-tracking": {
+          "0%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(1px)" },
+          "100%": { transform: "translateY(0)" },
+        },
+        "speed-lines": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(4px)" },
+        },
+        "speed-line-left": {
+          "0%": { left: "-100px", opacity: "0" },
+          "50%": { opacity: "1" },
+          "100%": { left: "100%", opacity: "0" },
+        },
+        "speed-line-right": {
+          "0%": { right: "-100px", opacity: "0" },
+          "50%": { opacity: "1" },
+          "100%": { right: "100%", opacity: "0" },
+        },
+        "mist-drift": {
+          "0%, 100%": { transform: "translateX(0) translateY(0)" },
+          "25%": { transform: "translateX(10px) translateY(-5px)" },
+          "50%": { transform: "translateX(-5px) translateY(10px)" },
+          "75%": { transform: "translateX(5px) translateY(-10px)" },
+        },
+        "star-move": {
+          "0%": { backgroundPosition: "0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0" },
+          "100%": { backgroundPosition: "0 1000px, 0 1000px, 0 1000px, 0 1000px, 0 1000px, 0 1000px, 0 1000px, 0 1000px, 0 1000px" },
+        },
+        "float-up": {
+          "0%": { transform: "translateY(100vh) scale(0)", opacity: "0" },
+          "10%": { opacity: "0.6" },
+          "90%": { opacity: "0.6" },
+          "100%": { transform: "translateY(-100px) scale(1)", opacity: "0" },
+        },
+        "blood-drip-text": {
+          "0%": { height: "0", opacity: "1" },
+          "50%": { height: "20px", opacity: "1" },
+          "100%": { height: "30px", opacity: "0" },
+        },
+        "border-glow": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "100%": { backgroundPosition: "400% 50%" },
+        },
+        "pulse-aura": {
+          "0%, 100%": { textShadow: "0 0 10px currentColor, 0 0 20px currentColor" },
+          "50%": { textShadow: "0 0 20px currentColor, 0 0 40px currentColor, 0 0 80px currentColor" },
         },
       },
       spacing: {

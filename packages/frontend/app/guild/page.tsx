@@ -187,72 +187,380 @@ const TOP_MEMBERS: GuildMember[] = [
 ];
 
 const TREASURY_ASSETS = [
-  { symbol: "SOL", amount: "342.5", value: "$51,375", icon: "◎", color: "#9945ff" },
-  { symbol: "USDC", amount: "12,450", value: "$12,450", icon: "$", color: "#2775ca" },
-  { symbol: "Reborn NFTs", amount: "1,247", value: "Floor: 2.4 SOL", icon: "🎴", color: "#ff3366" },
+  { symbol: "SOL", amount: "342.5", value: "$51,375", icon: "◎", color: "#9945ff", coinStack: 8 },
+  { symbol: "USDC", amount: "12,450", value: "$12,450", icon: "$", color: "#2775ca", coinStack: 5 },
+  { symbol: "Reborn NFTs", amount: "1,247", value: "Floor: 2.4 SOL", icon: "🎴", color: "#ff3366", coinStack: 0 },
 ];
 
+// Guild Rank Configuration
+const RANK_CONFIG = {
+  novice: { title: "Novice", icon: "🌱", color: "text-spectral-green", minVotes: 0, maxVotes: 2 },
+  apprentice: { title: "Apprentice", icon: "🔥", color: "text-ritual-gold", minVotes: 3, maxVotes: 5 },
+  adept: { title: "Adept", icon: "⚡", color: "text-soul-cyan", minVotes: 6, maxVotes: 10 },
+  master: { title: "Master", icon: "👑", color: "text-blood-pink", minVotes: 11, maxVotes: 20 },
+  grandmaster: { title: "Grandmaster", icon: "💎", color: "text-cursed-violet-bright", minVotes: 21, maxVotes: 999 },
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// HELPER COMPONENTS
+// RESEARCH-BASED COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Guild Crest SVG from research
+const GuildCrest = () => (
+  <svg viewBox="0 0 120 120" className="w-20 h-20 md:w-24 md:h-24 mx-auto mb-4">
+    <path d="M60 10 L110 30 L100 90 Q60 115 20 90 L10 30 Z" fill="#1a1a2e" stroke="#c9a227" strokeWidth="3"/>
+    <path d="M60 20 L100 35 L92 85 Q60 105 28 85 L20 35 Z" fill="#16213e" stroke="#8b7355" strokeWidth="2"/>
+    <path d="M60 30 L60 80 M40 45 L80 45" stroke="#c9a227" strokeWidth="6" strokeLinecap="square"/>
+    <path d="M55 30 L65 30 L65 40 L55 40 Z" fill="#c9a227"/>
+    <path d="M55 75 L65 75 L60 85 Z" fill="#c9a227"/>
+    <rect x="15" y="25" width="8" height="8" fill="#8b7355"/>
+    <rect x="97" y="25" width="8" height="8" fill="#8b7355"/>
+    <rect x="25" y="90" width="8" height="8" fill="#8b7355"/>
+    <rect x="87" y="90" width="8" height="8" fill="#8b7355"/>
+  </svg>
+);
+
+// Animated Coin Stack from research
+const CoinStack = ({ count }: { count: number }) => (
+  <div className="flex items-end justify-center gap-1 h-12">
+    {Array.from({ length: count }).map((_, i) => (
+      <motion.div
+        key={i}
+        initial={{ scale: 0, y: -20 }}
+        animate={{ scale: 1, y: 0 }}
+        transition={{ delay: i * 0.1, type: "spring" }}
+        className="w-6 h-3 bg-ritual-gold border-2 border-yellow-600 rounded-full relative"
+        style={{ marginBottom: i * 2 }}
+      >
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[8px] text-yellow-800 font-bold">$</span>
+        </div>
+      </motion.div>
+    ))}
+  </div>
+);
+
+// Treasure Chest from research
+const TreasureChest = () => (
+  <div className="relative w-24 h-20 mx-auto">
+    <div className="absolute bottom-0 w-24 h-14 bg-amber-900 border-4 border-amber-700 rounded-b-lg">
+      <div className="absolute top-2 left-2 right-2 h-2 bg-amber-600"/>
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-4 h-5 bg-yellow-500 border-2 border-yellow-700 rounded">
+        <div className="w-2 h-3 bg-yellow-700 mx-auto mt-0.5"/>
+      </div>
+    </div>
+    <div className="absolute bottom-12 w-24 h-8 bg-amber-800 border-4 border-amber-600 rounded-t-lg">
+      <div className="absolute top-1 left-2 right-2 h-1 bg-amber-700"/>
+    </div>
+    <motion.div
+      animate={{ rotateX: [0, -30] }}
+      transition={{ repeat: Infinity, duration: 2, repeatDelay: 1 }}
+      className="absolute -top-4 left-2 right-2 h-6 bg-amber-700 rounded-t-xl origin-bottom"
+    />
+  </div>
+);
+
+// Wax Seal from research
+const WaxSeal = ({ status }: { status: string }) => {
+  const sealColor = status === "passed" ? "#8b0000" : status === "defeated" ? "#2f2f2f" : "#b8860b";
+  return (
+    <div className="relative w-12 h-12">
+      <svg viewBox="0 0 40 40" className="w-full h-full">
+        <circle cx="20" cy="20" r="18" fill={sealColor} stroke="#333" strokeWidth="2"/>
+        <circle cx="20" cy="20" r="12" fill={sealColor} opacity={0.7}/>
+        <path d="M20 8 L22 15 L28 12 L24 18 L30 20 L24 22 L28 28 L22 25 L20 32 L18 25 L12 28 L16 22 L10 20 L16 18 L12 12 L18 15 Z" fill="#8b0000" opacity={0.5}/>
+        <text x="20" y="24" textAnchor="middle" fill="#c9a227" fontSize="10" fontWeight="bold">
+          {status === "passed" ? "✓" : status === "defeated" ? "✗" : "⏳"}
+        </text>
+      </svg>
+    </div>
+  );
+};
+
+// Rank Badge from research
+const RankBadge = ({ rank }: { rank: keyof typeof RANK_CONFIG }) => {
+  const config = RANK_CONFIG[rank];
+  return (
+    <motion.div
+      whileHover={{ scale: 1.1 }}
+      className={`inline-flex items-center gap-1 px-2 py-1 ${config.color} bg-void-purple/50 border border-current/30`}
+    >
+      <span className="text-sm">{config.icon}</span>
+      <span className="font-pixel text-[10px]">{config.title}</span>
+    </motion.div>
+  );
+};
+
+// Wooden Sign Tab Button from research
+const WoodenSign = ({ active, onClick, label, icon, count }: { active: boolean; onClick: () => void; label: string; icon: string; count?: number }) => (
+  <motion.button
+    whileHover={{ scale: 1.05, y: -2 }}
+    whileTap={{ scale: 0.95 }}
+    onClick={onClick}
+    className={`
+      relative px-4 py-2 font-pixel text-[9px] transition-all
+      ${active 
+        ? "bg-amber-800 text-ritual-gold shadow-[0_4px_0_rgb(120,70,20),0_6px_12px_rgba(0,0,0,0.4)]" 
+        : "bg-amber-900 text-faded-spirit hover:bg-amber-800"
+      }
+    `}
+    style={{
+      clipPath: "polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px)",
+    }}
+  >
+    <span className="mr-1">{icon}</span>
+    {label}
+    {count !== undefined && (
+      <span className="ml-2 px-1.5 py-0.5 text-[7px] bg-amber-950 rounded">{count}</span>
+    )}
+  </motion.button>
+);
+
+// Parchment Quest Card from research
+const ParchmentQuestCard = ({ 
+  proposal, 
+  onVote, 
+  hasVoted 
+}: { 
+  proposal: Proposal; 
+  onVote: (id: number) => void;
+  hasVoted: boolean;
+}) => {
+  const getDifficultyColor = (cat: string) => {
+    switch (cat) {
+      case "emergency": return "text-blood-pink";
+      case "partnership": return "text-ritual-gold";
+      case "treasury": return "text-spectral-green";
+      default: return "text-faded-spirit";
+    }
+  };
+  
+  return (
+    <motion.div
+      whileHover={{ scale: 1.01 }}
+      className="relative"
+    >
+      {/* Torn paper effect */}
+      <div className="absolute inset-0 bg-stone-800 rounded transform rotate-1 translate-x-1"/>
+      <div className="absolute inset-0 bg-stone-700 rounded transform -rotate-1 -translate-x-1"/>
+      
+      {/* Main parchment */}
+      <div className={`
+        relative p-5 bg-[#f4e4bc] rounded
+        before:absolute before:top-0 before:left-0 before:right-0 before:h-2
+        before:bg-[#e8d4a8] before:clip-[polygon(0_0,5%_100%,10%_0,15%_100%,20%_0,25%_100%,30%_0,35%_100%,40%_0,45%_100%,50%_0,55%_100%,60%_0,65%_100%,70%_0,75%_100%,80%_0,85%_100%,90%_0,95%_100%,100%_0)]
+        after:absolute after:bottom-0 after:left-0 after:right-0 after:h-2
+        after:bg-[#e8d4a8] after:clip-[polygon(0_100%,5%_0,10%_100%,15%_0,20%_100%,25%_0,30%_100%,35%_0,40%_100%,45%_0,50%_100%,55%_0,60%_100%,65%_0,70%_100%,75%_0,80%_100%,85%_0,90%_100%,95%_0,100%_100%)]
+      `}>
+        {/* Quest header */}
+        <div className="flex justify-between items-start mb-3 mt-1">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`font-pixel text-[9px] px-2 py-0.5 bg-stone-800 ${getDifficultyColor(proposal.category)}`}>
+                {proposal.category.toUpperCase()}
+              </span>
+              <span className="font-silk text-[8px] text-stone-600">
+                Quest Giver: {proposal.proposer}
+              </span>
+            </div>
+            <h3 className="font-pixel text-[11px] text-stone-900 leading-tight">
+              {proposal.title}
+            </h3>
+          </div>
+          <WaxSeal status={proposal.status}/>
+        </div>
+
+        {/* Quest description */}
+        <p className="font-serif text-[9px] text-stone-700 mb-3 italic border-l-2 border-stone-400 pl-2">
+          {proposal.description}
+        </p>
+
+        {/* Vote breakdown as quest rewards */}
+        <div className="flex gap-3 mb-3 font-pixel text-[9px]">
+          <div className="flex-1 bg-stone-200 p-2 rounded text-center">
+            <span className="text-spectral-green">✓ For</span>
+            <div className="text-stone-900">{proposal.votesFor.toLocaleString()}</div>
+          </div>
+          <div className="flex-1 bg-stone-200 p-2 rounded text-center">
+            <span className="text-blood-pink">✗ Against</span>
+            <div className="text-stone-900">{proposal.votesAgainst.toLocaleString()}</div>
+          </div>
+          <div className="flex-1 bg-stone-200 p-2 rounded text-center">
+            <span className="text-faded-spirit">○ Abstain</span>
+            <div className="text-stone-900">{proposal.votesAbstain.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Quorum progress */}
+        <div className="mb-3">
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-pixel text-[8px] text-stone-600">COUNCIL QUORUM</span>
+            <span className="font-pixel text-[9px] text-stone-700">
+              {Math.round((proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain) / proposal.quorum * 100)}%
+            </span>
+          </div>
+          <div className="h-2 bg-stone-300 rounded-full overflow-hidden border border-stone-500">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, (proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain) / proposal.quorum * 100)}%` }}
+              transition={{ duration: 1, delay: 0.3 }}
+              className={`h-full ${
+                proposal.status === "passed" ? "bg-spectral-green" : 
+                proposal.status === "defeated" ? "bg-blood-pink" : "bg-ritual-gold"
+              }`}
+            />
+          </div>
+        </div>
+
+        {/* Time & Action */}
+        <div className="flex justify-between items-center">
+          <span className="font-silk text-[10px] text-stone-600">
+            ⏱ {proposal.timeRemaining}
+          </span>
+          
+          {proposal.status === "active" && !hasVoted && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onVote(proposal.id)}
+              className="relative px-4 py-2 bg-amber-700 text-ritual-gold font-pixel text-[9px] rounded border-2 border-amber-500 shadow-[2px_2px_0_#5c4020]"
+            >
+              <span className="mr-1">🩸</span>CAST VOTE
+            </motion.button>
+          )}
+          
+          {hasVoted && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="flex items-center gap-1 text-spectral-green font-pixel text-[9px]"
+            >
+              <span>✓</span> Vote Recorded
+            </motion.div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// Vote Ceremony Modal from research
+const VoteCeremonyModal = ({ 
+  isOpen, 
+  proposal, 
+  onVote, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  proposal: Proposal | null;
+  onVote: (proposalId: number, _choice: "for" | "against" | "abstain") => void;
+  onClose: () => void;
+}) => (
+  <AnimatePresence>
+    {isOpen && proposal && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.8, y: 50 }}
+          animate={{ scale: 1, y: 0 }}
+          exit={{ scale: 0.8, y: 50 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-[#1a1a2e] border-4 border-ritual-gold rounded-lg p-6 max-w-md w-full"
+        >
+          <div className="text-center mb-6">
+            <h3 className="font-pixel text-sm text-ritual-gold mb-2">🩸 CAST YOUR VOTE 🩸</h3>
+            <p className="font-serif text-xs text-faded-spirit italic">
+              {proposal.title}
+            </p>
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <motion.button
+              whileHover={{ scale: 1.02, x: 10 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onVote(proposal.id, "for")}
+              className="w-full p-3 bg-spectral-green/20 border-2 border-spectral-green rounded-lg flex items-center gap-3 group"
+            >
+              <div className="w-10 h-10 bg-spectral-green rounded-full flex items-center justify-center">
+                <span className="text-xl">⚔️</span>
+              </div>
+              <div className="text-left">
+                <div className="font-pixel text-[10px] text-spectral-green">FORGE AHEAD</div>
+                <div className="font-silk text-[9px] text-faded-spirit">Support this quest</div>
+              </div>
+              <span className="ml-auto text-xl group-hover:rotate-12 transition-transform">→</span>
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02, x: 10 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onVote(proposal.id, "against")}
+              className="w-full p-3 bg-blood-pink/20 border-2 border-blood-pink rounded-lg flex items-center gap-3 group"
+            >
+              <div className="w-10 h-10 bg-blood-pink rounded-full flex items-center justify-center">
+                <span className="text-xl">🛡️</span>
+              </div>
+              <div className="text-left">
+                <div className="font-pixel text-[10px] text-blood-pink">STAND GROUND</div>
+                <div className="font-silk text-[9px] text-faded-spirit">Oppose this quest</div>
+              </div>
+              <span className="ml-auto text-xl group-hover:rotate-12 transition-transform">→</span>
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02, x: 10 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onVote(proposal.id, "abstain")}
+              className="w-full p-3 bg-faded-spirit/20 border-2 border-faded-spirit rounded-lg flex items-center gap-3 group"
+            >
+              <div className="w-10 h-10 bg-faded-spirit rounded-full flex items-center justify-center">
+                <span className="text-xl">🏳️</span>
+              </div>
+              <div className="text-left">
+                <div className="font-pixel text-[10px] text-faded-spirit">RAISE THE FLAG</div>
+                <div className="font-silk text-[9px] text-faded-spirit">Abstain from this decision</div>
+              </div>
+              <span className="ml-auto text-xl group-hover:rotate-12 transition-transform">→</span>
+            </motion.button>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full py-2 font-silk text-[9px] text-faded-spirit hover:text-ghost-white"
+          >
+            Cancel Ritual
+          </button>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPER COMPONENTS (keeping from original)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`relative p-6 ${className}`}
+      className={`relative p-5 ${className}`}
       style={{
         background: "rgba(13, 10, 26, 0.85)",
         border: "1px solid #3a285066",
         backdropFilter: "blur(8px)",
       }}
     >
-      {/* Corner decorations */}
       <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-ritual-gold/40" />
       <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-ritual-gold/40" />
       <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-ritual-gold/40" />
       <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-ritual-gold/40" />
       {children}
     </div>
-  );
-}
-
-function GuildTabButton({
-  label,
-  icon,
-  active,
-  onClick,
-  count,
-}: {
-  label: string;
-  icon: string;
-  active: boolean;
-  onClick: () => void;
-  count?: number;
-}) {
-  return (
-    <motion.button
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={onClick}
-      className="relative px-4 py-3 font-pixel text-[9px] transition-all duration-200"
-      style={{
-        background: active ? "rgba(255, 215, 0, 0.1)" : "rgba(13, 10, 26, 0.6)",
-        border: active ? "1px solid #ffd70066" : "1px solid #3a285044",
-        color: active ? "#ffd700" : "#8a7a9a",
-        boxShadow: active ? "0 0 12px rgba(255, 215, 0, 0.15)" : "none",
-      }}
-    >
-      <span className="mr-1">{icon}</span>
-      {label}
-      {count !== undefined && (
-        <span
-          className="ml-2 px-1.5 py-0.5 text-[7px] rounded-full"
-          style={{ background: active ? "#ffd70033" : "#3a285066" }}
-        >
-          {count}
-        </span>
-      )}
-    </motion.button>
   );
 }
 
@@ -267,7 +575,7 @@ function DifficultyBadge({ difficulty }: { difficulty: string }) {
   const c = colors[difficulty] || colors.D;
   return (
     <span
-      className="font-pixel text-[10px] px-2 py-1 inline-block"
+      className="font-pixel text-[9px] px-2 py-1 inline-block"
       style={{ background: c.bg, color: c.text, boxShadow: c.glow, border: `1px solid ${c.text}33` }}
     >
       Rank {difficulty}
@@ -288,22 +596,12 @@ function StatusBadge({ status }: { status: string }) {
   const s = styles[status] || styles.pending;
   return (
     <span
-      className="font-pixel text-[8px] px-2 py-1 uppercase tracking-wider"
+      className="font-pixel text-[7px] px-2 py-1 uppercase tracking-wider"
       style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}33` }}
     >
       {status.replace("_", " ")}
     </span>
   );
-}
-
-function CategoryIcon({ category }: { category: string }) {
-  const icons: Record<string, string> = {
-    treasury: "💰",
-    protocol: "⚙️",
-    partnership: "🤝",
-    emergency: "🚨",
-  };
-  return <span>{icons[category] || "📜"}</span>;
 }
 
 function ClassIcon({ cls }: { cls: string }) {
@@ -327,14 +625,13 @@ export default function GuildPage() {
   const [votedProposals, setVotedProposals] = useState<Set<number>>(new Set());
   const [joinedQuests, setJoinedQuests] = useState<Set<number>>(new Set());
   const [guildLevel, setGuildLevel] = useState(0);
+  const [votingProposal, setVotingProposal] = useState<Proposal | null>(null);
 
-  // Animate guild level on mount
   useEffect(() => {
     const timer = setTimeout(() => setGuildLevel(7), 500);
     return () => clearTimeout(timer);
   }, []);
 
-  // User mock stats
   const userStats = {
     name: "Reborn Hero",
     title: "Adventurer",
@@ -348,13 +645,32 @@ export default function GuildPage() {
     joinDate: "Today",
   };
 
+  const handleVoteClick = (proposalId: number) => {
+    const proposal = PROPOSALS.find(p => p.id === proposalId);
+    if (proposal) setVotingProposal(proposal);
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleVote = (proposalId: number, _choice: "for" | "against" | "abstain") => {
+    // In production, this would submit the vote choice to the blockchain
+    setVotedProposals((prev) => new Set(prev).add(proposalId));
+    setVotingProposal(null);
+  };
+
+  const getRankFromVotes = (votes: number): keyof typeof RANK_CONFIG => {
+    if (votes >= 21) return "grandmaster";
+    if (votes >= 11) return "master";
+    if (votes >= 6) return "adept";
+    if (votes >= 3) return "apprentice";
+    return "novice";
+  };
+
   return (
     <div className="min-h-screen relative">
       <BackgroundAtmosphere mood="mystical" />
 
-      {/* ─── GUILD HALL HEADER ─────────────────────────────────────────── */}
+      {/* ─── GUILD HEADER ────────────────────────────────────────────────── */}
       <section className="relative pt-8 pb-6 px-4 overflow-hidden">
-        {/* Subtle summoning circle in background */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10">
           <SummoningCircle size={400} phase="idle" />
         </div>
@@ -373,28 +689,21 @@ export default function GuildPage() {
               className="mb-3"
               style={{ filter: "drop-shadow(0 4px 16px rgba(255, 215, 0, 0.3))" }}
             >
-              <Image
-                src="/art/guild-banner.png"
-                alt="Guild Banner"
-                width={100}
-                height={100}
-                className="pixelated"
-                style={{ imageRendering: "pixelated" }}
-              />
+              <GuildCrest />
             </motion.div>
 
-            <h1 className="font-pixel text-2xl md:text-3xl text-ritual-gold text-glow-gold mb-1">
+            <h1 className="font-pixel text-xl md:text-2xl text-ritual-gold text-glow-gold mb-1">
               冒険者ギルド
             </h1>
-            <p className="font-pixel text-[9px] tracking-[0.3em] text-faded-spirit mb-4">
+            <p className="font-pixel text-[8px] tracking-[0.3em] text-faded-spirit mb-4">
               ADVENTURER&apos;S GUILD
             </p>
 
             {/* Guild Level Bar */}
             <div className="w-full max-w-xs">
               <div className="flex justify-between mb-1">
-                <span className="font-pixel text-[8px] text-faded-spirit">Guild Lv.</span>
-                <span className="font-pixel text-[8px] text-ritual-gold">{guildLevel}</span>
+                <span className="font-pixel text-[7px] text-faded-spirit">Guild Lv.</span>
+                <span className="font-pixel text-[7px] text-ritual-gold">{guildLevel}</span>
               </div>
               <div className="h-2 w-full" style={{ background: "#1a1025", border: "1px solid #3a2850" }}>
                 <motion.div
@@ -426,17 +735,17 @@ export default function GuildPage() {
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.4 + i * 0.1, type: "spring" }}
-                  className="font-pixel text-lg md:text-xl"
+                  className="font-pixel text-base md:text-lg"
                   style={{ color: stat.color }}
                 >
                   {stat.value}
                 </motion.div>
-                <div className="font-pixel text-[7px] text-faded-spirit uppercase tracking-wider">{stat.label}</div>
+                <div className="font-pixel text-[6px] text-faded-spirit uppercase tracking-wider">{stat.label}</div>
               </div>
             ))}
           </motion.div>
 
-          {/* User's Guild Card (compact) */}
+          {/* User's Guild Card */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -458,19 +767,18 @@ export default function GuildPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <ClassIcon cls={userStats.class} />
-                    <span className="font-pixel text-[10px] text-ghost-white">{userStats.name}</span>
-                    <span className="font-pixel text-[7px] text-faded-spirit">Rank #{userStats.rank}</span>
+                    <span className="font-pixel text-[9px] text-ghost-white">{userStats.name}</span>
+                    <RankBadge rank={getRankFromVotes(userStats.votes)} />
                   </div>
-                  <div className="flex items-center gap-3 text-[8px]">
+                  <div className="flex items-center gap-3 text-[7px]">
                     <span className="font-pixel text-ritual-gold">{userStats.nfts} NFTs</span>
                     <span className="font-pixel text-blood-pink">{userStats.votes} Votes</span>
                     <span className="font-pixel text-soul-cyan">{userStats.questsCompleted} Quests</span>
                   </div>
-                  {/* XP bar */}
                   <div className="mt-2">
                     <div className="flex justify-between mb-0.5">
-                      <span className="font-pixel text-[7px] text-faded-spirit">XP</span>
-                      <span className="font-pixel text-[7px] text-faded-spirit">{userStats.xp}/{userStats.xpToNext}</span>
+                      <span className="font-pixel text-[6px] text-faded-spirit">XP</span>
+                      <span className="font-pixel text-[6px] text-faded-spirit">{userStats.xp}/{userStats.xpToNext}</span>
                     </div>
                     <div className="h-1.5 w-full" style={{ background: "#1a1025", border: "1px solid #3a2850" }}>
                       <div
@@ -489,22 +797,21 @@ export default function GuildPage() {
         </div>
       </section>
 
-      {/* ─── TAB NAVIGATION ───────────────────────────────────────────── */}
+      {/* ─── TAB NAVIGATION (Wooden Signs from Research) ─────────────────── */}
       <div className="sticky top-0 z-30 px-4 py-3" style={{ background: "rgba(13, 10, 26, 0.95)", borderBottom: "1px solid #3a285033", backdropFilter: "blur(12px)" }}>
-        <div className="max-w-5xl mx-auto flex gap-2 overflow-x-auto scrollbar-hide justify-center">
-          <GuildTabButton icon="🏰" label="Hall" active={activeTab === "hall"} onClick={() => setActiveTab("hall")} />
-          <GuildTabButton icon="⚔️" label="Quests" active={activeTab === "quests"} onClick={() => setActiveTab("quests")} count={QUESTS.filter((q) => q.status === "open").length} />
-          <GuildTabButton icon="💰" label="Vault" active={activeTab === "vault"} onClick={() => setActiveTab("vault")} />
-          <GuildTabButton icon="📜" label="Council" active={activeTab === "council"} onClick={() => setActiveTab("council")} count={PROPOSALS.filter((p) => p.status === "active").length} />
-          <GuildTabButton icon="🏆" label="Rankings" active={activeTab === "rankings"} onClick={() => setActiveTab("rankings")} />
+        <div className="max-w-5xl mx-auto flex gap-2 overflow-x-auto scrollbar-hide justify-center flex-wrap">
+          <WoodenSign icon="🏰" label="Hall" active={activeTab === "hall"} onClick={() => setActiveTab("hall")} />
+          <WoodenSign icon="⚔️" label="Quests" active={activeTab === "quests"} onClick={() => setActiveTab("quests")} count={QUESTS.filter((q) => q.status === "open").length} />
+          <WoodenSign icon="💰" label="Vault" active={activeTab === "vault"} onClick={() => setActiveTab("vault")} />
+          <WoodenSign icon="📜" label="Council" active={activeTab === "council"} onClick={() => setActiveTab("council")} count={PROPOSALS.filter((p) => p.status === "active").length} />
+          <WoodenSign icon="🏆" label="Rankings" active={activeTab === "rankings"} onClick={() => setActiveTab("rankings")} />
         </div>
       </div>
 
-      {/* ─── TAB CONTENT ──────────────────────────────────────────────── */}
+      {/* ─── TAB CONTENT ──────────────────────────────────────────────────── */}
       <div className="px-4 py-8 relative z-10">
         <div className="max-w-5xl mx-auto">
           <AnimatePresence mode="wait">
-            {/* ═══ HALL TAB ═══════════════════════════════════════════════ */}
             {activeTab === "hall" && (
               <motion.div
                 key="hall"
@@ -513,14 +820,12 @@ export default function GuildPage() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                {/* Welcome Dialogue */}
                 <DialogueBox
                   speaker="Guild Master"
                   portrait="neutral"
                   text="Welcome to the Adventurer's Guild, traveler. Here, reborn souls gather to shape the future of cross-chain NFTs. Browse the quest board, vote in council, or check your standing in the rankings."
                 />
 
-                {/* Quick Actions Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
                     { icon: "⚔️", label: "Accept Quest", desc: "Browse available missions", tab: "quests" as GuildTab },
@@ -549,10 +854,9 @@ export default function GuildPage() {
                   ))}
                 </div>
 
-                {/* Recent Activity Feed */}
                 <Panel>
-                  <h3 className="font-pixel text-[10px] text-ritual-gold mb-4">📋 Recent Guild Activity</h3>
-                  <div className="space-y-3">
+                  <h3 className="font-pixel text-[9px] text-ritual-gold mb-4">📋 Recent Guild Activity</h3>
+                  <div className="space-y-2">
                     {[
                       { time: "2m ago", text: "SolArchon sealed a Bored Ape from Ethereum", color: "#ff3366" },
                       { time: "15m ago", text: "Proposal #2 reached 66% quorum", color: "#ffd700" },
@@ -569,21 +873,20 @@ export default function GuildPage() {
                       >
                         <div className="w-1.5 h-1.5 mt-1.5 rounded-full flex-shrink-0" style={{ background: event.color }} />
                         <div className="flex-1">
-                          <p className="font-silk text-[10px] text-ghost-white">{event.text}</p>
+                          <p className="font-silk text-[9px] text-ghost-white">{event.text}</p>
                         </div>
-                        <span className="font-pixel text-[7px] text-faded-spirit flex-shrink-0">{event.time}</span>
+                        <span className="font-pixel text-[6px] text-faded-spirit flex-shrink-0">{event.time}</span>
                       </motion.div>
                     ))}
                   </div>
                 </Panel>
 
-                {/* CTA */}
                 <div className="text-center">
                   <Link href="/seal">
                     <motion.button
                       whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(255, 51, 102, 0.3)" }}
                       whileTap={{ scale: 0.95 }}
-                      className="font-pixel text-[10px] px-8 py-3 text-ghost-white"
+                      className="font-pixel text-[9px] px-8 py-3 text-ghost-white"
                       style={{ background: "linear-gradient(135deg, #ff3366, #cc1144)", border: "2px solid #ff336666" }}
                     >
                       ⚔ Seal an NFT to Join
@@ -594,7 +897,6 @@ export default function GuildPage() {
               </motion.div>
             )}
 
-            {/* ═══ QUESTS TAB ═════════════════════════════════════════════ */}
             {activeTab === "quests" && (
               <motion.div
                 key="quests"
@@ -605,7 +907,7 @@ export default function GuildPage() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-pixel text-sm text-ritual-gold">Quest Board</h2>
-                  <span className="font-pixel text-[8px] text-faded-spirit">
+                  <span className="font-pixel text-[7px] text-faded-spirit">
                     {QUESTS.filter((q) => q.status === "open").length} open quests
                   </span>
                 </div>
@@ -624,13 +926,13 @@ export default function GuildPage() {
                             <DifficultyBadge difficulty={quest.difficulty} />
                             <StatusBadge status={quest.status} />
                           </div>
-                          <h3 className="font-pixel text-[11px] text-ghost-white">{quest.title}</h3>
+                          <h3 className="font-pixel text-[10px] text-ghost-white">{quest.title}</h3>
                         </div>
                       </div>
 
-                      <p className="font-silk text-[10px] text-faded-spirit mb-3 leading-relaxed">{quest.description}</p>
+                      <p className="font-silk text-[9px] text-faded-spirit mb-3 leading-relaxed">{quest.description}</p>
 
-                      <div className="flex flex-wrap items-center gap-4 mb-3 text-[8px]">
+                      <div className="flex flex-wrap items-center gap-4 mb-3 text-[7px]">
                         <span className="font-pixel text-ritual-gold">🏆 {quest.reward}</span>
                         <span className="font-pixel text-faded-spirit">⏱ {quest.timeLimit}</span>
                         <span className="font-pixel text-faded-spirit">
@@ -638,7 +940,6 @@ export default function GuildPage() {
                         </span>
                       </div>
 
-                      {/* Progress bar for in_progress quests */}
                       {quest.status === "in_progress" && quest.maxParticipants > 0 && (
                         <div className="mb-3">
                           <PixelProgress value={(quest.participants / quest.maxParticipants) * 100} />
@@ -667,7 +968,6 @@ export default function GuildPage() {
               </motion.div>
             )}
 
-            {/* ═══ VAULT TAB ══════════════════════════════════════════════ */}
             {activeTab === "vault" && (
               <motion.div
                 key="vault"
@@ -676,22 +976,28 @@ export default function GuildPage() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <h2 className="font-pixel text-sm text-ritual-gold text-center">Guild Vault</h2>
+                <h2 className="font-pixel text-sm text-ritual-gold text-center">Guild Treasury</h2>
+
+                {/* Treasure Chest Display */}
+                <motion.div className="text-center">
+                  <TreasureChest/>
+                  <p className="font-silk text-[9px] text-faded-spirit mt-2">Accumulated from completed quests</p>
+                </motion.div>
 
                 {/* Total Value */}
                 <Panel className="text-center">
-                  <span className="font-pixel text-[8px] text-faded-spirit uppercase tracking-widest">Total Value</span>
+                  <span className="font-pixel text-[7px] text-faded-spirit uppercase tracking-widest">Total Value</span>
                   <motion.div
                     initial={{ scale: 0.8 }}
                     animate={{ scale: 1 }}
-                    className="font-pixel text-3xl text-ritual-gold mt-2 mb-1"
+                    className="font-pixel text-2xl text-ritual-gold mt-2 mb-1"
                   >
                     $63,825
                   </motion.div>
                   <p className="font-silk text-[9px] text-faded-spirit">Managed by Realms DAO multisig</p>
                 </Panel>
 
-                {/* Asset Cards */}
+                {/* Asset Cards with Coin Stacks */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {TREASURY_ASSETS.map((asset, i) => (
                     <motion.div
@@ -701,8 +1007,10 @@ export default function GuildPage() {
                       transition={{ delay: 0.2 + i * 0.1 }}
                     >
                       <Panel className="text-center !p-5">
-                        <div className="text-3xl mb-2">{asset.icon}</div>
-                        <div className="font-pixel text-xl" style={{ color: asset.color }}>{asset.amount}</div>
+                        {asset.coinStack > 0 && <CoinStack count={asset.coinStack} />}
+                        {asset.coinStack === 0 && <div className="text-3xl mb-2 h-12 flex items-center justify-center">{asset.icon}</div>}
+                        {asset.coinStack > 0 && <div className="text-3xl mb-2">{asset.icon}</div>}
+                        <div className="font-pixel text-lg" style={{ color: asset.color }}>{asset.amount}</div>
                         <div className="font-pixel text-[9px] text-faded-spirit mb-1">{asset.symbol}</div>
                         <div className="font-silk text-[9px] text-faded-spirit">{asset.value}</div>
                       </Panel>
@@ -712,7 +1020,7 @@ export default function GuildPage() {
 
                 {/* Revenue Breakdown */}
                 <Panel>
-                  <h3 className="font-pixel text-[10px] text-ritual-gold mb-4">Revenue Sources</h3>
+                  <h3 className="font-pixel text-[9px] text-ritual-gold mb-4">Revenue Sources</h3>
                   {[
                     { label: "Seal Fees", value: "78%", color: "#ff3366", width: 78 },
                     { label: "NFT Royalties", value: "15%", color: "#a855f7", width: 15 },
@@ -720,8 +1028,8 @@ export default function GuildPage() {
                   ].map((source) => (
                     <div key={source.label} className="mb-3">
                       <div className="flex justify-between mb-1">
-                        <span className="font-pixel text-[8px] text-faded-spirit">{source.label}</span>
-                        <span className="font-pixel text-[8px]" style={{ color: source.color }}>{source.value}</span>
+                        <span className="font-pixel text-[7px] text-faded-spirit">{source.label}</span>
+                        <span className="font-pixel text-[7px]" style={{ color: source.color }}>{source.value}</span>
                       </div>
                       <div className="h-2" style={{ background: "#1a1025", border: "1px solid #3a285044" }}>
                         <motion.div
@@ -738,135 +1046,35 @@ export default function GuildPage() {
               </motion.div>
             )}
 
-            {/* ═══ COUNCIL TAB ════════════════════════════════════════════ */}
             {activeTab === "council" && (
               <motion.div
                 key="council"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-4"
+                className="space-y-6"
               >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-pixel text-sm text-ritual-gold">Guild Council</h2>
-                  <span className="font-pixel text-[8px] text-faded-spirit">
+                  <span className="font-pixel text-[7px] text-faded-spirit">
                     {PROPOSALS.filter((p) => p.status === "active").length} active proposals
                   </span>
                 </div>
 
-                {PROPOSALS.map((proposal, i) => (
-                  <motion.div
-                    key={proposal.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.08 }}
-                  >
-                    <Panel className="!p-5">
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <CategoryIcon category={proposal.category} />
-                            <StatusBadge status={proposal.status} />
-                            <span className="font-pixel text-[7px] text-faded-spirit">#{proposal.id}</span>
-                          </div>
-                          <h3 className="font-pixel text-[11px] text-ghost-white">{proposal.title}</h3>
-                        </div>
-                      </div>
-
-                      <p className="font-silk text-[10px] text-faded-spirit mb-4 leading-relaxed">{proposal.description}</p>
-
-                      {/* Vote bars */}
-                      <div className="space-y-2 mb-4">
-                        {[
-                          { label: "For", value: proposal.votesFor, color: "#00ff88" },
-                          { label: "Against", value: proposal.votesAgainst, color: "#ff3366" },
-                          { label: "Abstain", value: proposal.votesAbstain, color: "#8a7a9a" },
-                        ].map((vote) => {
-                          const total = proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain;
-                          const pct = total > 0 ? (vote.value / total) * 100 : 0;
-                          return (
-                            <div key={vote.label} className="flex items-center gap-3">
-                              <span className="font-pixel text-[8px] w-12" style={{ color: vote.color }}>{vote.label}</span>
-                              <div className="flex-1 h-2" style={{ background: "#1a1025", border: "1px solid #3a285033" }}>
-                                <motion.div
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${pct}%` }}
-                                  transition={{ duration: 0.8 }}
-                                  className="h-full"
-                                  style={{ background: vote.color }}
-                                />
-                              </div>
-                              <span className="font-pixel text-[8px] text-faded-spirit w-16 text-right">{vote.value.toLocaleString()}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Quorum progress */}
-                      <div className="mb-3">
-                        <div className="flex justify-between mb-1">
-                          <span className="font-pixel text-[7px] text-faded-spirit">Quorum</span>
-                          <span className="font-pixel text-[7px] text-faded-spirit">
-                            {((proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain) / proposal.quorum * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="h-1.5" style={{ background: "#1a1025", border: "1px solid #3a285033" }}>
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min(100, (proposal.votesFor + proposal.votesAgainst + proposal.votesAbstain) / proposal.quorum * 100)}%` }}
-                            transition={{ duration: 1 }}
-                            className="h-full"
-                            style={{ background: "linear-gradient(90deg, #ffd700, #ffaa00)" }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Footer */}
-                      <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid #3a285033" }}>
-                        <div className="flex items-center gap-3">
-                          <span className="font-pixel text-[7px] text-faded-spirit">by {proposal.proposer}</span>
-                          <span className="font-pixel text-[7px] text-faded-spirit">⏱ {proposal.timeRemaining}</span>
-                        </div>
-
-                        {proposal.status === "active" && !votedProposals.has(proposal.id) && (
-                          <div className="flex gap-2">
-                            {["For", "Against", "Abstain"].map((option) => (
-                              <motion.button
-                                key={option}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => setVotedProposals((prev) => new Set(prev).add(proposal.id))}
-                                className="font-pixel text-[8px] px-3 py-1.5"
-                                style={{
-                                  background: option === "For" ? "rgba(0,255,136,0.1)" : option === "Against" ? "rgba(255,51,102,0.1)" : "rgba(138,122,154,0.1)",
-                                  border: `1px solid ${option === "For" ? "#00ff8833" : option === "Against" ? "#ff336633" : "#8a7a9a33"}`,
-                                  color: option === "For" ? "#00ff88" : option === "Against" ? "#ff3366" : "#8a7a9a",
-                                }}
-                              >
-                                {option}
-                              </motion.button>
-                            ))}
-                          </div>
-                        )}
-
-                        {votedProposals.has(proposal.id) && (
-                          <motion.span
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="font-pixel text-[9px] text-spectral-green"
-                          >
-                            ✓ Voted
-                          </motion.span>
-                        )}
-                      </div>
-                    </Panel>
-                  </motion.div>
-                ))}
+                {/* Parchment-style Proposal Cards */}
+                <div className="space-y-6">
+                  {PROPOSALS.map((proposal) => (
+                    <ParchmentQuestCard
+                      key={proposal.id}
+                      proposal={proposal}
+                      onVote={handleVoteClick}
+                      hasVoted={votedProposals.has(proposal.id)}
+                    />
+                  ))}
+                </div>
               </motion.div>
             )}
 
-            {/* ═══ RANKINGS TAB ═══════════════════════════════════════════ */}
             {activeTab === "rankings" && (
               <motion.div
                 key="rankings"
@@ -894,9 +1102,9 @@ export default function GuildPage() {
                         <div className="text-2xl mb-2">{medals[i]}</div>
                         <ClassIcon cls={member.class} />
                         <div className="font-pixel text-[9px] text-ghost-white mt-1">{member.name}</div>
-                        <div className="font-pixel text-[7px] text-faded-spirit mb-2">{member.title}</div>
+                        <RankBadge rank={getRankFromVotes(member.votes)} />
                         <div
-                          className="w-20 mx-auto flex items-end justify-center"
+                          className="w-16 mx-auto flex items-end justify-center mt-2"
                           style={{
                             height: heights[i],
                             background: `linear-gradient(to top, ${colors[i]}22, transparent)`,
@@ -904,7 +1112,7 @@ export default function GuildPage() {
                             borderBottom: "none",
                           }}
                         >
-                          <span className="font-pixel text-[10px] pb-2" style={{ color: colors[i] }}>{member.nfts}</span>
+                          <span className="font-pixel text-[9px] pb-2" style={{ color: colors[i] }}>{member.nfts}</span>
                         </div>
                       </motion.div>
                     );
@@ -914,13 +1122,12 @@ export default function GuildPage() {
                 {/* Full Leaderboard */}
                 <Panel>
                   <div className="space-y-0">
-                    {/* Header */}
-                    <div className="flex items-center gap-3 px-3 py-2 text-[7px] font-pixel text-faded-spirit uppercase tracking-wider" style={{ borderBottom: "1px solid #3a285033" }}>
+                    <div className="flex items-center gap-3 px-3 py-2 text-[6px] font-pixel text-faded-spirit uppercase tracking-wider" style={{ borderBottom: "1px solid #3a285033" }}>
                       <span className="w-8">#</span>
                       <span className="flex-1">Name</span>
                       <span className="w-12 text-center">NFTs</span>
                       <span className="w-12 text-center">Votes</span>
-                      <span className="w-14 text-center">Quests</span>
+                      <span className="w-12 text-center">Quests</span>
                     </div>
 
                     {TOP_MEMBERS.map((member, i) => (
@@ -942,12 +1149,12 @@ export default function GuildPage() {
                           <ClassIcon cls={member.class} />
                           <div>
                             <span className="font-pixel text-[9px] text-ghost-white">{member.name}</span>
-                            <span className="font-pixel text-[7px] text-faded-spirit ml-2">{member.title}</span>
+                            <span className="font-pixel text-[6px] text-faded-spirit ml-2">{member.title}</span>
                           </div>
                         </div>
                         <span className="w-12 text-center font-pixel text-[9px] text-blood-pink">{member.nfts}</span>
                         <span className="w-12 text-center font-pixel text-[9px] text-ritual-gold">{member.votes}</span>
-                        <span className="w-14 text-center font-pixel text-[9px] text-soul-cyan">{member.questsCompleted}</span>
+                        <span className="w-12 text-center font-pixel text-[9px] text-soul-cyan">{member.questsCompleted}</span>
                       </motion.div>
                     ))}
 
@@ -958,12 +1165,12 @@ export default function GuildPage() {
                         <ClassIcon cls={userStats.class} />
                         <div>
                           <span className="font-pixel text-[9px] text-ghost-white">{userStats.name}</span>
-                          <span className="font-pixel text-[7px] text-blood-pink ml-2">YOU</span>
+                          <span className="font-pixel text-[6px] text-blood-pink ml-2">YOU</span>
                         </div>
                       </div>
                       <span className="w-12 text-center font-pixel text-[9px] text-blood-pink">{userStats.nfts}</span>
                       <span className="w-12 text-center font-pixel text-[9px] text-ritual-gold">{userStats.votes}</span>
-                      <span className="w-14 text-center font-pixel text-[9px] text-soul-cyan">{userStats.questsCompleted}</span>
+                      <span className="w-12 text-center font-pixel text-[9px] text-soul-cyan">{userStats.questsCompleted}</span>
                     </div>
                   </div>
                 </Panel>
@@ -972,6 +1179,14 @@ export default function GuildPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Vote Ceremony Modal */}
+      <VoteCeremonyModal
+        isOpen={!!votingProposal}
+        proposal={votingProposal}
+        onVote={handleVote}
+        onClose={() => setVotingProposal(null)}
+      />
     </div>
   );
 }

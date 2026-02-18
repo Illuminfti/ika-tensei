@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { SummoningCircle, CirclePhase } from './SummoningCircle';
 
 // ============================================================================
 // TYPES
@@ -9,6 +10,7 @@ import { motion } from 'framer-motion';
 
 interface FullPageLoaderProps {
   message?: string;
+  phase?: CirclePhase;
 }
 
 interface SkeletonCardProps {
@@ -22,10 +24,17 @@ interface SkeletonTextProps {
 
 interface ButtonSpinnerProps {
   className?: string;
+  phase?: CirclePhase;
 }
 
 interface InlineLoaderProps {
   className?: string;
+  variant?: "dots" | "runes" | "orbs";
+}
+
+interface LoadingMessageProps {
+  message?: string;
+  variant?: "gathering" | "summoning" | "channeling" | "binding";
 }
 
 // ============================================================================
@@ -60,7 +69,8 @@ const spinnerKeyframes = `
 // ============================================================================
 
 export const FullPageLoader: React.FC<FullPageLoaderProps> = ({
-  message = "Channeling mana..."
+  message = "Channeling mana...",
+  phase = "charging",
 }) => {
   const [displayedText, setDisplayedText] = useState('');
 
@@ -73,8 +83,6 @@ export const FullPageLoader: React.FC<FullPageLoaderProps> = ({
       return () => clearTimeout(timeout);
     }
   }, [displayedText, message]);
-
-  const runes = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᚾ', 'ᛁ', 'ᛃ'];
 
   return (
     <>
@@ -101,76 +109,7 @@ export const FullPageLoader: React.FC<FullPageLoaderProps> = ({
 
         {/* Summoning Circle */}
         <div className="relative w-64 h-64 md:w-80 md:h-80">
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 200 200">
-            {/* Outer ring */}
-            <circle
-              cx="100"
-              cy="100"
-              r="95"
-              fill="none"
-              stroke="#8b5cf6"
-              strokeWidth="2"
-              strokeDasharray="8 4"
-              style={{ animation: 'summon-pulse 3s ease-in-out infinite' }}
-            />
-            {/* Middle ring */}
-            <circle
-              cx="100"
-              cy="100"
-              r="70"
-              fill="none"
-              stroke="#a78bfa"
-              strokeWidth="1.5"
-              strokeDasharray="4 8"
-              style={{ animation: 'summon-pulse 3s ease-in-out infinite 0.5s' }}
-            />
-            {/* Inner ring */}
-            <circle
-              cx="100"
-              cy="100"
-              r="45"
-              fill="none"
-              stroke="#c4b5fd"
-              strokeWidth="1"
-              style={{ animation: 'summon-pulse 3s ease-in-out infinite 1s' }}
-            />
-            {/* Pentagram */}
-            <g stroke="#c4b5fd" strokeWidth="1.5" fill="none">
-              <path d="M100 20 L125 80 L190 80 L140 120 L160 180 L100 145 L40 180 L60 120 L10 80 L75 80 Z" />
-            </g>
-            {/* Runes around circle */}
-            {runes.map((rune, i) => {
-              const angle = (i * 30 - 90) * (Math.PI / 180);
-              const x = 100 + 85 * Math.cos(angle);
-              const y = 100 + 85 * Math.sin(angle);
-              return (
-                <text
-                  key={i}
-                  x={x}
-                  y={y}
-                  fill="#a78bfa"
-                  fontSize="11"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  style={{
-                    animation: `summon-pulse ${1.5 + i * 0.08}s ease-in-out infinite`,
-                    animationDelay: `${i * 0.15}s`,
-                  }}
-                >
-                  {rune}
-                </text>
-              );
-            })}
-          </svg>
-
-          {/* Center glow */}
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center"
-            animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.7, 0.4] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-indigo-700 rounded-full blur-xl" />
-          </motion.div>
+          <SummoningCircle phase={phase} size={280} intensity={0.8} />
         </div>
 
         {/* Typewriter text */}
@@ -248,37 +187,84 @@ export const SkeletonText: React.FC<SkeletonTextProps> = ({
 };
 
 // ============================================================================
-// BUTTON SPINNER (Small Spinning Rune Icon)
+// BUTTON SPINNER (Summoning Circle Mini)
 // ============================================================================
 
-export const ButtonSpinner: React.FC<ButtonSpinnerProps> = ({ className = '' }) => {
+export const ButtonSpinner: React.FC<ButtonSpinnerProps> = ({ 
+  className = '',
+  phase = "charging" 
+}) => {
   return (
-    <>
-      <style>{spinnerKeyframes}</style>
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={`text-ghost-white ${className}`}
-        style={{ animation: 'spin-rune 1s linear infinite' }}
-      >
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v6l4 2" />
-      </svg>
-    </>
+    <div className={`inline-flex items-center justify-center ${className}`}>
+      <SummoningCircle phase={phase} size={32} intensity={0.7} />
+    </div>
   );
 };
 
 // ============================================================================
-// INLINE LOADER (Bouncing Pixel Dots)
+// INLINE LOADER (Bouncing Pixel Dots / Runes / Orbs)
 // ============================================================================
 
-export const InlineLoader: React.FC<InlineLoaderProps> = ({ className = '' }) => {
+export const InlineLoader: React.FC<InlineLoaderProps> = ({ 
+  className = '',
+  variant = "dots" 
+}) => {
+  const runes = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ'];
+  const orbs = ['●', '○', '◐', '◑'];
+
+  if (variant === "runes") {
+    return (
+      <>
+        <style>{spinnerKeyframes}</style>
+        <div className={`flex gap-1 ${className}`}>
+          {runes.map((rune, i) => (
+            <motion.span
+              key={i}
+              className="text-purple-400"
+              animate={{ opacity: [0.3, 1, 0.3], rotate: [0, 180, 360] }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                delay: i * 0.15,
+                ease: "linear",
+              }}
+            >
+              {rune}
+            </motion.span>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  if (variant === "orbs") {
+    return (
+      <>
+        <style>{spinnerKeyframes}</style>
+        <div className={`flex gap-1 ${className}`}>
+          {orbs.map((orb, i) => (
+            <motion.span
+              key={i}
+              className="text-soul-cyan"
+              animate={{ 
+                scale: [0.8, 1.2, 0.8],
+                opacity: [0.5, 1, 0.5],
+              }}
+              transition={{
+                duration: 0.8,
+                repeat: Infinity,
+                delay: i * 0.1,
+              }}
+            >
+              {orb}
+            </motion.span>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  // Default dots
   return (
     <>
       <style>{spinnerKeyframes}</style>
@@ -302,6 +288,114 @@ export const InlineLoader: React.FC<InlineLoaderProps> = ({ className = '' }) =>
 };
 
 // ============================================================================
+// LOADING MESSAGES (Typewriter style)
+// ============================================================================
+
+const LOADING_MESSAGES = {
+  gathering: [
+    "Gathering souls...",
+    "Collecting ethereal energy...",
+    "Summoning spirits from the void...",
+    "Weaving the spiritual threads...",
+    "Calling forth from beyond...",
+  ],
+  summoning: [
+    "Preparing the ritual...",
+    "Drawing the pentagram...",
+    "Channeling ancient power...",
+    "The spirits are listening...",
+    "Ritual in progress...",
+  ],
+  channeling: [
+    "Channeling mana...",
+    "Aligning the cosmic energies...",
+    "Flowing with the arcane...",
+    "Mana circulation complete...",
+    "Power accumulating...",
+  ],
+  binding: [
+    "Binding the contract...",
+    "Sealing the pact...",
+    "Forging the connection...",
+    "The binding strengthens...",
+    "Contract validated...",
+  ],
+};
+
+export const LoadingMessage: React.FC<LoadingMessageProps> = ({
+  message,
+  variant = "gathering",
+}) => {
+  const [displayedText, setDisplayedText] = useState('');
+  const messages = LOADING_MESSAGES[variant];
+  const currentMessage = message || messages[Math.floor(Math.random() * messages.length)];
+
+  useEffect(() => {
+    if (displayedText.length < currentMessage.length) {
+      const timeout = setTimeout(() => {
+        setDisplayedText(currentMessage.slice(0, displayedText.length + 1));
+      }, 30 + Math.random() * 40);
+      return () => clearTimeout(timeout);
+    }
+  }, [displayedText, currentMessage]);
+
+  return (
+    <>
+      <style>{spinnerKeyframes}</style>
+      <div className="flex items-center gap-3">
+        <InlineLoader variant="runes" />
+        <p className="text-purple-300 text-sm font-mono">
+          {displayedText}
+          <span
+            className="inline-block w-0.5 h-4 bg-purple-400 ml-0.5"
+            style={{ animation: 'typewriter-cursor 0.7s steps(1) infinite' }}
+          />
+        </p>
+      </div>
+    </>
+  );
+};
+
+// ============================================================================
+// PAGE-LEVEL LOADER (Full page overlay)
+// ============================================================================
+
+interface PageLoaderProps {
+  variant?: "gathering" | "summoning" | "channeling" | "binding";
+  customMessage?: string;
+}
+
+export const PageLoader: React.FC<PageLoaderProps> = ({
+  variant = "gathering",
+  customMessage,
+}) => {
+  const messages = LOADING_MESSAGES[variant];
+  const message = customMessage || messages[Math.floor(Math.random() * messages.length)];
+
+  return (
+    <FullPageLoader message={message} phase="active" />
+  );
+};
+
+// ============================================================================
+// COMPONENT-LEVEL LOADER
+// ============================================================================
+
+interface ComponentLoaderProps {
+  message?: string;
+}
+
+export const ComponentLoader: React.FC<ComponentLoaderProps> = ({
+  message = "Loading...",
+}) => {
+  return (
+    <div className="flex items-center justify-center p-4">
+      <LoadingMessage variant="gathering" />
+    </div>
+  );
+};
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -311,4 +405,7 @@ export default {
   SkeletonText,
   ButtonSpinner,
   InlineLoader,
+  LoadingMessage,
+  PageLoader,
+  ComponentLoader,
 };

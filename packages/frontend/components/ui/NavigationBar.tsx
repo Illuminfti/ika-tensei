@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +13,9 @@ const NAV_LINKS = [
   { href: "/guild", label: "Guild" },
   { href: "/profile", label: "Profile" },
 ];
+
+// Decorative runes for nav
+const RUNE_DECORATIONS = ["ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ", "ᚷ", "ᚹ"];
 
 function HamburgerIcon({ isOpen }: { isOpen: boolean }) {
   return (
@@ -71,23 +74,29 @@ function NavLink({ href, label }: { href: string; label: string }) {
     <Link
       href={href}
       className={`
-        font-silk text-xs transition-all duration-200 relative
+        font-silk text-xs transition-all duration-200 relative group
         ${isActive 
           ? "text-ghost-white" 
           : "text-faded-spirit hover:text-ghost-white"
         }
       `}
     >
-      {label}
+      {/* Glow effect on active */}
       {isActive && (
         <motion.div
           layoutId="navIndicator"
-          className="absolute -bottom-1 left-0 right-0 h-0.5 bg-blood-pink"
+          className="absolute -bottom-1 left-0 right-0 h-0.5"
           style={{
+            background: "linear-gradient(90deg, transparent, #ff3366, transparent)",
             boxShadow: "0 0 10px #ff6b9d, 0 0 20px #ff6b9d80",
           }}
         />
       )}
+      {/* Rune appears on hover */}
+      <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-ritual-gold" style={{ textShadow: "0 0 8px #ffd700" }}>
+        {RUNE_DECORATIONS[Math.floor(Math.random() * RUNE_DECORATIONS.length)]}
+      </span>
+      {label}
     </Link>
   );
 }
@@ -121,15 +130,119 @@ function MobileNavLink({
   );
 }
 
+// Animated wallet indicator with pulse when connected
+function WalletIndicator() {
+  const [isConnected, setIsConnected] = useState(false);
+  const [address, setAddress] = useState("");
+
+  // Check for wallet connection (simplified - in real app would use wallet adapter)
+  useEffect(() => {
+    // This would normally check the wallet state
+    const checkWallet = () => {
+      // Placeholder for wallet state check
+      if (typeof window !== "undefined") {
+        // Check for wallet in localStorage or state
+        const stored = localStorage.getItem("walletConnected");
+        if (stored) {
+          setIsConnected(true);
+          setAddress(stored);
+        }
+      }
+    };
+    checkWallet();
+  }, []);
+
+  if (isConnected) {
+    return (
+      <motion.div
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+        style={{
+          background: "linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(124, 58, 237, 0.3))",
+          border: "1px solid rgba(167, 139, 250, 0.4)",
+          boxShadow: "0 0 15px rgba(167, 139, 250, 0.3)",
+        }}
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+      >
+        {/* Pulsing indicator */}
+        <motion.div
+          className="w-2 h-2 rounded-full bg-soul-cyan"
+          animate={{
+            boxShadow: ["0 0 4px #00ccff", "0 0 8px #00ccff", "0 0 12px #00ccff", "0 0 4px #00ccff"],
+          }}
+          transition={{
+            duration: 1.5,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        />
+        <span className="font-silk text-xs text-soul-cyan">
+          {address ? `${address.slice(0, 4)}...${address.slice(-4)}` : "Connected"}
+        </span>
+      </motion.div>
+    );
+  }
+
+  return null;
+}
+
 export function NavigationBar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // Handle scroll for background opacity
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 30);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   return (
     <>
       {/* Desktop & Mobile Top Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-void-purple/90 backdrop-blur-sm border-b-2 border-sigil-border py-3 px-4">
+      <motion.nav
+        className="fixed top-0 left-0 right-0 z-50 border-b-2 border-sigil-border py-3 px-4"
+        animate={{
+          backgroundColor: isScrolled ? "rgba(15, 15, 35, 0.85)" : "rgba(15, 15, 35, 0.95)",
+          backdropFilter: isScrolled ? "blur(12px)" : "blur(8px)",
+          paddingTop: isScrolled ? "0.5rem" : "0.75rem",
+          paddingBottom: isScrolled ? "0.5rem" : "0.75rem",
+        }}
+        transition={{ duration: 0.3 }}
+      >
+        {/* Decorative top runes - only show when not scrolled */}
+        <AnimatePresence>
+          {!isScrolled && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute top-full left-0 right-0 flex justify-center gap-4 pointer-events-none"
+            >
+              {RUNE_DECORATIONS.map((rune, i) => (
+                <motion.span
+                  key={i}
+                  className="text-[8px] text-sigil-border"
+                  animate={{
+                    opacity: [0.3, 0.6, 0.3],
+                  }}
+                  transition={{
+                    duration: 3,
+                    delay: i * 0.3,
+                    repeat: Infinity,
+                  }}
+                >
+                  {rune}
+                </motion.span>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Left: Logo */}
           <Link href="/" className="flex items-center gap-2">
@@ -149,21 +262,30 @@ export function NavigationBar() {
             ))}
           </div>
 
-          {/* Right: Connect Button (Desktop) + Hamburger (Mobile) */}
-          <div className="hidden md:block">
+          {/* Right: Connect Button (Desktop) + Wallet Indicator + Hamburger (Mobile) */}
+          <div className="hidden md:flex items-center gap-3">
+            <WalletIndicator />
             <ConnectButton />
           </div>
           <button
-            className="md:hidden p-2"
+            className="md:hidden p-2 relative"
             onClick={() => setIsMobileMenuOpen(true)}
             aria-label="Open menu"
           >
             <HamburgerIcon isOpen={false} />
+            {/* Small rune decoration */}
+            <motion.span
+              className="absolute -top-1 -right-1 text-[8px] text-blood-pink"
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              ⚡
+            </motion.span>
           </button>
         </div>
-      </nav>
+      </motion.nav>
 
-      {/* Mobile Menu */}
+      {/* Mobile Menu - Occult-themed slide panel */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
@@ -176,7 +298,7 @@ export function NavigationBar() {
               onClick={closeMobileMenu}
             />
 
-            {/* Slide-down Panel */}
+            {/* Slide-down Panel with occult styling */}
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -184,6 +306,13 @@ export function NavigationBar() {
               transition={{ duration: 0.2 }}
               className="fixed top-[57px] left-0 right-0 z-50 md:hidden bg-ritual-dark border-b border-sigil-border"
             >
+              {/* Decorative border with runes */}
+              <div className="flex justify-center py-2 border-b border-sigil-border/30">
+                {RUNE_DECORATIONS.slice(0, 4).map((rune, i) => (
+                  <span key={i} className="text-[10px] text-blood-pink/50 mx-1">{rune}</span>
+                ))}
+              </div>
+
               {/* Mobile Nav Links */}
               <div className="py-2">
                 {NAV_LINKS.map((link) => (
@@ -199,6 +328,13 @@ export function NavigationBar() {
               {/* Connect Button (Mobile) */}
               <div className="p-6 border-t border-sigil-border">
                 <ConnectButton />
+              </div>
+
+              {/* Decorative footer */}
+              <div className="flex justify-center pb-4">
+                {RUNE_DECORATIONS.slice(4).map((rune, i) => (
+                  <span key={i} className="text-[10px] text-blood-pink/50 mx-1">{rune}</span>
+                ))}
               </div>
             </motion.div>
           </>
