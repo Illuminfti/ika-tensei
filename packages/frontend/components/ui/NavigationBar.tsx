@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { IkaSprite } from "@/components/ui/PixelSprite";
+import Image from "next/image";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 
 const NAV_LINKS = [
@@ -250,7 +250,7 @@ export function NavigationBar() {
               whileHover={{ y: -2 }}
               transition={{ type: "spring", stiffness: 400, damping: 17 }}
             >
-              <IkaSprite size={24} expression="neutral" />
+              <Image src="/art/ika-mascot-v2.png" alt="Ika" width={24} height={24} className="pixelated" />
             </motion.div>
             <span className="font-pixel text-blood-pink text-sm">イカ転生</span>
           </Link>

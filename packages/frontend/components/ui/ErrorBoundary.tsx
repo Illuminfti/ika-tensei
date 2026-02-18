@@ -3,7 +3,7 @@
 import React, { Component, ErrorInfo, ReactNode, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { IkaSprite } from "@/components/ui/PixelSprite";
+import Image from "next/image";
 import { PixelButton } from "@/components/ui/PixelButton";
 
 interface Props {
@@ -143,11 +143,7 @@ function ErrorDisplay({
             ease: "easeInOut",
           }}
         >
-          <IkaSprite 
-            size={96} 
-            expression="worried" 
-            animate={true}
-          />
+          <Image src="/art/ika-mascot-v2.png" alt="Ika" width={96} height={96} className="pixelated" />
         </motion.div>
 
         {/* Glitch effect title */}
@@ -266,7 +262,7 @@ export function InlineError({
 }) {
   return (
     <div className="flex items-center gap-4 p-4 bg-red-950/30 border border-red-800 rounded">
-      <IkaSprite size={32} expression="worried" />
+      <Image src="/art/ika-mascot-v2.png" alt="Ika" width={32} height={32} className="pixelated" />
       <div className="flex-1">
         <p className="text-red-400 text-sm font-medium">Ritual Failed</p>
         <p className="text-faded-spirit text-xs">{message || "An error occurred"}</p>

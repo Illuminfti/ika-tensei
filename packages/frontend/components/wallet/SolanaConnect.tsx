@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useDynamicContext } from "@dynamic-labs/sdk-react-core";
 import { isSolanaWallet } from "@dynamic-labs/solana";
 import { motion } from "framer-motion";
-import { IkaSprite } from "@/components/ui/PixelSprite";
+import Image from "next/image";
 
 /**
  * SolanaConnectInner — uses useDynamicContext (must be inside DynamicContextProvider).
@@ -37,7 +37,7 @@ export function SolanaConnectInner({ onConnect }: SolanaConnectProps) {
           animate={{ y: [0, -8, 0] }}
           transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         >
-          <IkaSprite size={72} expression="neutral" />
+          <Image src="/art/ika-mascot-v2.png" alt="Ika" width={72} height={72} className="pixelated" />
         </motion.div>
       </div>
 
@@ -86,7 +86,7 @@ export function DevModeConnect({ onConnect }: SolanaConnectProps) {
           animate={{ y: [0, -8, 0] }}
           transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         >
-          <IkaSprite size={72} expression="smug" />
+          <Image src="/art/ika-mascot-v2.png" alt="Ika" width={72} height={72} className="pixelated" />
         </motion.div>
       </div>
 
