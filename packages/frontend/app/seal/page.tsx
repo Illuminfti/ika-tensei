@@ -243,7 +243,7 @@ export default function SealPage() {
             className="max-w-2xl mx-auto px-4 pb-8 relative z-10"
           >
             {/* Summoning Circle */}
-            <div className="py-4">
+            <div className="py-4 flex justify-center">
               <SummoningCircle 
                 phase={getCirclePhase()}
                 size={280}

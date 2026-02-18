@@ -42,12 +42,12 @@ export function PixelProgress({
           </span>
         </div>
       )}
-      <div className="nes-progress">
+      <div className="w-full h-6 border-2 border-faded-spirit/40 bg-void-purple/80 relative overflow-hidden">
         <motion.div
-          className={`${colorClass} ${glowClass}`}
+          className={`h-full ${colorClass} ${glowClass}`}
           initial={{ width: 0 }}
           animate={{ width: `${clampedValue}%` }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
         />
       </div>
     </div>
