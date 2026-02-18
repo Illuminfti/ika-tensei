@@ -2,9 +2,9 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import PixelSprites from "@/components/ui/PixelSprite";
+import Image from "next/image";
 
-const { IkaSprite } = PixelSprites;
+// Using ika-mascot-v2.png directly
 
 // ============================================================================
 // TYPES
@@ -377,7 +377,7 @@ export default function ProfilePage() {
             {/* Character Portrait */}
             <CharacterFrame>
               <div className="w-28 h-28 bg-gradient-to-br from-purple-900/50 to-pink-900/50 border border-ritual-gold/30 flex items-center justify-center">
-                <IkaSprite size={80} expression="neutral" />
+                <Image src="/art/ika-mascot-v2.png" alt="Ika" width={80} height={80} className="pixelated" />
               </div>
             </CharacterFrame>
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { IkaSprite } from "@/components/ui/PixelSprite";
+import Image from "next/image";
 import { PixelButton } from "@/components/ui/PixelButton";
 import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 
@@ -67,11 +67,7 @@ export default function NotFound() {
             ease: "easeInOut",
           }}
         >
-          <IkaSprite
-            size={96}
-            expression="worried"
-            animate={true}
-          />
+          <Image src="/art/ika-mascot-v2.png" alt="Ika" width={96} height={96} className="pixelated" />
         </motion.div>
 
         {/* 404 text with glitch effect */}

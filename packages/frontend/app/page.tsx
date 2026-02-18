@@ -285,7 +285,7 @@ export default function Home() {
 
         {/* Summoning Circle - centered, slightly above middle - INTERACTIVE with CTA hover */}
         <motion.div 
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] z-[1]"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1]"
           style={{ y: yBackground }}
           animate={isCtaHovered ? {
             scale: [1, 1.05, 1.03],

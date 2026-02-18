@@ -12,7 +12,7 @@ import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 import { ChainSelector } from "@/components/ui/ChainSelector";
 import { DepositAddress } from "@/components/ui/DepositAddress";
 import { SolanaConnectInner, DevModeConnect } from "@/components/wallet/SolanaConnect";
-import { IkaSprite } from "@/components/ui/PixelSprite";
+import Image from "next/image";
 
 // ─── Blood Pact Modal ──────────────────────────────────────────────────────────
 
@@ -721,7 +721,7 @@ function CompleteStep({
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 2, repeat: Infinity }}
         >
-          <IkaSprite size={80} expression="excited" />
+          <Image src="/art/ika-mascot-v2.png" alt="Ika" width={80} height={80} className="pixelated" />
         </motion.div>
       </div>
 
