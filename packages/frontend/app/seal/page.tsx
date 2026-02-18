@@ -234,10 +234,12 @@ function WaitingStep({
   sealStatus,
   chainId,
   depositAddress,
+  onSimulate,
 }: {
   sealStatus: string | null;
   chainId: string | null;
   depositAddress: string | null;
+  onSimulate?: () => void;
 }) {
   const currentStatusIdx = sealStatus
     ? STATUS_ORDER.indexOf(sealStatus as (typeof STATUS_ORDER)[number])
@@ -353,6 +355,16 @@ function WaitingStep({
             {depositAddress.slice(0, 10)}...{depositAddress.slice(-8)}
           </p>
         </div>
+      )}
+
+      {/* Demo: Simulate full flow */}
+      {onSimulate && (
+        <button
+          onClick={onSimulate}
+          className="mt-4 nes-btn is-warning font-pixel text-[9px] w-full"
+        >
+          ⚡ Demo: Simulate Full Ritual
+        </button>
       )}
     </Panel>
   );
@@ -610,6 +622,7 @@ export default function SealPage() {
               sealStatus={flow.sealStatus}
               chainId={flow.sourceChain}
               depositAddress={flow.depositAddress}
+              onSimulate={flow.simulateProgress}
             />
           )}
 

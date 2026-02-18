@@ -178,6 +178,46 @@ export function useSealFlow() {
     });
   }, []);
 
+  // ── Demo/Simulation: advance through all states for testing ──────────────────
+  const simulateProgress = useCallback(() => {
+    if (!state.depositAddress || !state.dwalletId) return;
+    
+    const statuses: SealStatusValue[] = [
+      "detected",
+      "fetching_metadata", 
+      "uploading",
+      "minting",
+      "complete",
+    ];
+
+    let i = 0;
+    const advance = () => {
+      if (i >= statuses.length) {
+        // Complete!
+        setState((s) => ({
+          ...s,
+          step: "complete",
+          sealStatus: "complete",
+          rebornNFT: {
+            mint: "7x9Y2Zk...demo123",
+            name: "My NFT ✦ Reborn",
+            image: "https://placehold.co/400x400/ff3366/ffd700?text=REBORN",
+          },
+        }));
+        return;
+      }
+
+      setState((s) => ({ ...s, sealStatus: statuses[i] }));
+      i++;
+      setTimeout(advance, 1500); // 1.5s per stage
+    };
+
+    // Start at detected
+    setState((s) => ({ ...s, sealStatus: "detected", step: "waiting" }));
+    i = 1;
+    setTimeout(advance, 1500);
+  }, [state.depositAddress, state.dwalletId]);
+
   return {
     ...state,
     onWalletConnected,
@@ -185,5 +225,6 @@ export function useSealFlow() {
     startWaiting,
     reset,
     goBack,
+    simulateProgress,
   };
 }
