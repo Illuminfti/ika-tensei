@@ -90,7 +90,7 @@ export default function Home() {
           </motion.div>
         </motion.div>
 
-        {/* Title with staggered entrance */}
+        {/* Title with staggered entrance + strong visibility */}
         <motion.h1
           initial={{ opacity: 0, scale: 0.5 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -101,7 +101,11 @@ export default function Home() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="text-blood-pink text-glow-pink"
+            style={{
+              color: "#ff3366",
+              textShadow: "0 0 20px rgba(255, 51, 102, 0.8), 0 0 40px rgba(255, 51, 102, 0.4), 0 0 80px rgba(255, 51, 102, 0.2), 0 2px 0 #cc1144",
+              WebkitTextStroke: "1px rgba(255, 51, 102, 0.3)",
+            }}
           >
             イカ
           </motion.span>
@@ -109,21 +113,34 @@ export default function Home() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.6 }}
-            className="text-ritual-gold text-glow-gold"
+            style={{
+              color: "#ffd700",
+              textShadow: "0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.4), 0 0 80px rgba(255, 215, 0, 0.2), 0 2px 0 #cc8800",
+              WebkitTextStroke: "1px rgba(255, 215, 0, 0.3)",
+            }}
           >
             転生
           </motion.span>
         </motion.h1>
 
-        {/* Subtitle */}
-        <motion.p
+        {/* Subtitle with background pill for readability */}
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.7 }}
-          className="font-pixel text-[10px] tracking-[0.3em] text-faded-spirit mb-6 relative z-10"
+          className="relative z-10 mb-6"
         >
-          NFT REINCARNATION PROTOCOL
-        </motion.p>
+          <p
+            className="font-pixel text-[10px] tracking-[0.3em] text-ghost-white/90 px-4 py-1.5 inline-block"
+            style={{
+              background: "rgba(13, 10, 26, 0.7)",
+              border: "1px solid rgba(255, 215, 0, 0.2)",
+              textShadow: "0 0 8px rgba(255, 215, 0, 0.3)",
+            }}
+          >
+            NFT REINCARNATION PROTOCOL
+          </p>
+        </motion.div>
 
         {/* Description */}
         <motion.div
@@ -132,25 +149,83 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 0.9 }}
           className="text-center mb-10 relative z-10"
         >
-          <p className="font-silk text-base text-ghost-white">
+          <p
+            className="font-silk text-base md:text-lg"
+            style={{
+              color: "#e8e0f0",
+              textShadow: "0 0 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.9)",
+            }}
+          >
             Seal your NFTs from any chain. Reborn them on Solana.
           </p>
         </motion.div>
 
-        {/* CTA with pulse-glow wrapper */}
+        {/* CTA Button with pixel sparkles */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.1 }}
           className="relative z-10"
         >
-          <div className="animate-pulse-glow rounded-lg">
-            <Link href="/seal">
-              <PixelButton variant="primary" size="lg">
-                ⚔ Begin the Ritual
-              </PixelButton>
-            </Link>
-          </div>
+          <Link href="/seal" className="relative inline-block group">
+            {/* Sparkle particles around button */}
+            {[...Array(6)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-1 h-1"
+                style={{
+                  background: i % 2 === 0 ? "#ffd700" : "#ff3366",
+                  boxShadow: `0 0 4px ${i % 2 === 0 ? "#ffd700" : "#ff3366"}`,
+                  left: `${10 + i * 16}%`,
+                  top: i % 2 === 0 ? "-8px" : "calc(100% + 4px)",
+                }}
+                animate={{
+                  y: [0, -8, 0],
+                  opacity: [0, 1, 0],
+                  scale: [0.5, 1.2, 0.5],
+                }}
+                transition={{
+                  duration: 1.5 + i * 0.2,
+                  repeat: Infinity,
+                  delay: i * 0.3,
+                }}
+              />
+            ))}
+
+            {/* Button glow backdrop */}
+            <motion.div
+              className="absolute inset-0 -m-2 rounded-lg"
+              animate={{
+                boxShadow: [
+                  "0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)",
+                  "0 0 30px rgba(255, 51, 102, 0.4), 0 0 60px rgba(255, 51, 102, 0.2)",
+                  "0 0 20px rgba(255, 51, 102, 0.2), 0 0 40px rgba(255, 51, 102, 0.1)",
+                ],
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
+
+            <motion.button
+              whileHover={{ scale: 1.08, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative font-pixel text-sm md:text-base px-8 md:px-12 py-4 text-ghost-white"
+              style={{
+                background: "linear-gradient(135deg, #ff3366, #cc1144, #ff3366)",
+                backgroundSize: "200% 200%",
+                border: "2px solid #ff336688",
+                boxShadow: "0 4px 0 #880022, 0 0 20px rgba(255, 51, 102, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
+                textShadow: "0 1px 2px rgba(0, 0, 0, 0.5)",
+                animation: "shimmer 3s ease infinite",
+              }}
+            >
+              {/* Pixel corner decorations */}
+              <span className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-ritual-gold/60" />
+              <span className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-ritual-gold/60" />
+              <span className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-ritual-gold/60" />
+              <span className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-ritual-gold/60" />
+              ⚔ Begin the Ritual
+            </motion.button>
+          </Link>
         </motion.div>
 
         {/* Stats row */}
