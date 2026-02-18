@@ -15,7 +15,7 @@ The protocol makes the following trust assumptions:
 | # | Trust Assumption | Implication if Violated |
 |---|-----------------|------------------------|
 | 1 | **Wormhole Guardians (13/19)** — Trustless deposit verification via VAA signatures | Fake deposits could be forged, enabling worthless NFT rebirth |
-| 2 | **IKA Network Validators (2PC-MPC)** — dWallet signing is honest | Colluding validators could sign to extract sealed NFTs |
+| 2 | **IKA Network Validators (2PC-MPC)** — 2-of-2 threshold (user share + network share required) | Network CANNOT sign without user's encrypted share; DoS only risk if validators refuse to participate |
 | 3 | **Relayer Liveness** — Relayer processes all NFTSealed events | Orphaned seals, NFTs permanently locked with no reborn |
 | 4 | **Admin Key Security** — AdminCap not compromised | Protocol pause, treasury hijacking possible |
 | 5 | **Solana Program Authority** — Upgrade authority trusted | Program could be upgraded to mint unauthorized NFTs |
@@ -60,7 +60,7 @@ The protocol makes the following trust assumptions:
 │  │                              IKA NETWORK                                  │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────────────────────────────┐ │   │
 │  │  │    DKG    │  │   Signing  │  │  2PC-MPC Key Extraction           │ │   │
-│  │  │(Honest)   │  │(Collusion)│  │  (Validator compromise)            │ │   │
+│  │  │(2-of-2)   │  │(DoS only) │  │  (Liveness, not signing trust)     │ │   │
 │  │  └────────────┘  └────────────┘  └────────────────────────────────────┘ │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                 │
@@ -517,7 +517,7 @@ If relayer is down, no new reborn NFTs can be created.
 #### L-002: IKA Network Trust Model Not Documented
 
 **Description:**
-PRD states: "Trustless: Doesn't rely on IKA validators behaving honestly" but doesn't explain what happens if IKA validators collude.
+PRD correctly states: "Trustless: Doesn't rely on IKA validators behaving honestly" — this is accurate because 2PC-MPC is 2-of-2, meaning the network share alone cannot produce signatures. Validators can only DoS (refuse to participate), not steal funds.
 
 **Recommendation:**
 - Document exact IKA validator set and trust assumptions
@@ -576,33 +576,28 @@ If a user believes their NFT was incorrectly sealed or reborn, there's no on-cha
 
 ## 5. IKA Network Trust Model
 
-### What Happens if IKA Validators Collude?
+### IKA 2PC-MPC Security Model
 
-**Current Trust Model:**
-- IKA uses 2PC-MPC (2-Party Computation Multi-Party Computation)
-- Threshold signatures require participation from both user share and validator share
-- PRD claims: "Without DWalletCap, nobody can call approve_message"
+**How IKA dWallets Actually Work:**
+- IKA uses **2-of-2 2PC-MPC** (Two-Party Computation). Both shares are REQUIRED to produce a signature.
+- **User share**: encrypted, held by the user/protocol. Without it, the network CANNOT sign.
+- **Network share**: held by IKA validators. Without it, the user CANNOT sign alone.
+- The DWalletCap on Sui controls who can call `approve_message` — transferring it to SealVault permanently prevents signing.
+- Even if ALL IKA validators collude, they hold only ONE share. They cannot produce a valid signature without the user's share.
 
-**If Validators Collude:**
+**Corrected Threat Analysis:**
 
-| Scenario | Impact | Mitigation |
-|----------|--------|-------------|
-| Validators sign without user share | Can sign arbitrary messages | User must provide their share for every sign |
-| Validators steal user share | Could impersonate user | Shares are encrypted, distributed |
-| Validators refuse to sign | DoS only | User can't move funds (by design) |
-| Full validator compromise + user share theft | Can sign ANY message | **NO MITIGATION** |
+| Scenario | Impact | Reality |
+|----------|--------|---------|
+| Validators try to sign without user share | **IMPOSSIBLE** | 2-of-2 requires both shares. Network share alone is useless. |
+| Validators steal encrypted user share | Share is encrypted with user's key | Would need to break encryption (computationally infeasible) |
+| Validators refuse to sign (DoS) | User cannot move sealed NFTs | By design — sealed NFTs are permanently locked anyway |
+| DWalletCap transferred to SealVault | No one can call approve_message | **This is the seal mechanism — working as intended** |
 
-### Critical Vulnerability:
+**Conclusion:**
+IKA's 2PC-MPC model is NOT a trust assumption in the traditional sense. The network is cryptographically prevented from signing without user participation. The only realistic attack vector is liveness (DoS), which is irrelevant for sealed NFTs since they're meant to be permanently locked.
 
-The SealVault only prevents signing via DWalletCap. But if IKA validators are fully compromised:
-1. They can produce signatures for ANY dWallet without the cap
-2. The cap only exists in the contract, not in IKA's signing protocol
-3. IKA could sign a transaction to transfer the NFT out of the dWallet address
-
-**Recommendation:**
-- Document this limitation clearly
-- Consider "observer" mode where external parties can challenge suspicious signatures
-- Accept that IKA Network security is a fundamental trust assumption
+**Previous audit finding about "validator collusion extracting sealed NFTs" was INCORRECT.** The 2PC-MPC protocol makes this cryptographically impossible.
 
 ---
 
@@ -664,7 +659,7 @@ The SealVault only prevents signing via DWalletCap. But if IKA validators are fu
 
 **Trust Assumptions to Communicate:**
 1. Wormhole 13/19 guardian threshold is trusted
-2. IKA validator set is trusted for signing
+2. IKA validator set provides liveness (2-of-2 requires network participation, but network CANNOT sign alone)
 3. Relayer liveness is critical
 4. Admin keys are secured via multi-sig
 
