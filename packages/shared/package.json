@@ -1,0 +1,66 @@
+{
+  "name": "@ika-tensei/shared",
+  "version": "3.0.0",
+  "description": "Shared types, constants, and utilities for Ika Tensei v3",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    },
+    "./chains": {
+      "import": "./dist/chains.js",
+      "types": "./dist/chains.d.ts"
+    },
+    "./seal-hash": {
+      "import": "./dist/seal-hash.js",
+      "types": "./dist/seal-hash.d.ts"
+    },
+    "./wormhole": {
+      "import": "./dist/wormhole.js",
+      "types": "./dist/wormhole.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "types": "./dist/types.d.ts"
+    },
+    "./constants": {
+      "import": "./dist/constants.js",
+      "types": "./dist/constants.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "ika-tensei",
+    "nft",
+    "reincarnation",
+    "wormhole",
+    "cross-chain"
+  ],
+  "author": "Ika Tensei",
+  "license": "MIT",
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^20.0.0",
+    "tweetnacl": "^1.0.3",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "@irys/sdk": "^0.2.11",
+    "@solana/spl-governance": "^0.3.28",
+    "bn.js": "^5.2.2"
+  }
+}
