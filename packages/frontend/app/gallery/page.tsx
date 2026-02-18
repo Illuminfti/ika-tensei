@@ -376,11 +376,11 @@ export default function GalleryPage() {
         {/* Header content */}
         <div className="relative z-10 text-center px-4">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-            <h1 className="font-pixel text-ritual-gold text-xl md:text-2xl mb-2">
+            <h1 className="font-pixel text-ritual-gold text-xl md:text-2xl mb-2" style={{ textShadow: "0 0 20px rgba(255,215,0,0.6), 0 0 40px rgba(255,215,0,0.3), 0 2px 8px rgba(0,0,0,0.8)" }}>
               ✦ 転生の書庫 ✦
             </h1>
-            <p className="font-pixel text-blood-pink text-sm mb-1">REBORN GALLERY</p>
-            <p className="font-silk text-faded-spirit text-xs max-w-md mx-auto">
+            <p className="font-pixel text-blood-pink text-sm mb-1" style={{ textShadow: "0 0 15px rgba(255,51,102,0.5), 0 2px 6px rgba(0,0,0,0.8)" }}>REBORN GALLERY</p>
+            <p className="font-silk text-ghost-white/80 text-xs max-w-md mx-auto" style={{ textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
               Your sealed and reincarnated NFTs, preserved forever on Solana
             </p>
           </motion.div>
