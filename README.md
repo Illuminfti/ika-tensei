@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat" alt="License" />
 </p>
 
-> **Seal your NFTs from any chain. Reborn them on Solana.**
+> **Seal your NFTs from any chain. Reborn on Solana.**
 
 A permissionless cross-chain NFT reincarnation protocol powered by IKA Network's 2PC-MPC dWallets. Deposit an NFT into a cryptographic vault on any supported chain, and mint a provably-linked reborn copy on Solana.
 

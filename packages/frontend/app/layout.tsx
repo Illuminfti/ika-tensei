@@ -9,12 +9,12 @@ import { EasterEggs } from "@/components/ui/EasterEggs";
 
 export const metadata: Metadata = {
   title: "イカ転生 | Ika Tensei - NFT Reincarnation Protocol",
-  description: "Seal your NFTs. Reborn them on Solana. Join the Adventurer's Guild.",
+  description: "Seal your NFTs from any chain. Reborn on Solana. Join the Adventurer's Guild.",
   keywords: ["NFT", "cross-chain", "Solana", "Ethereum", "Sui", "reincarnation", "bridge"],
   authors: [{ name: "Ika Tensei Team", url: "https://github.com/Illuminfti/ika-tensei" }],
   openGraph: {
     title: "イカ転生 | Ika Tensei - NFT Reincarnation Protocol",
-    description: "Seal your NFTs. Reborn them on Solana. Join the Adventurer's Guild.",
+    description: "Seal your NFTs from any chain. Reborn on Solana. Join the Adventurer's Guild.",
     url: "https://frontend-phi-nine-12.vercel.app",
     siteName: "Ika Tensei",
     locale: "en_US",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "イカ転生 | Ika Tensei",
-    description: "Seal your NFTs. Reborn them on Solana. Join the Adventurer's Guild.",
+    description: "Seal your NFTs from any chain. Reborn on Solana. Join the Adventurer's Guild.",
     creator: "@IkaTensei",
   },
   robots: {
