@@ -323,8 +323,7 @@ export const NFTCard: React.FC<NFTCardProps> = ({
   // Full-size card
   return (
     <motion.div
-      className="relative cursor-pointer"
-      style={{ width: 200 }}
+      className="relative cursor-pointer w-full max-w-[200px] mx-auto"
       onClick={onClick}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}

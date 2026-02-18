@@ -164,7 +164,7 @@ export default function SealPage() {
               portrait="neutral"
             />
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8">
               {MOCK_NFTS.map((nft, index) => (
                 <motion.div
                   key={nft.id}
