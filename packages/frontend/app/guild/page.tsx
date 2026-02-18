@@ -207,17 +207,9 @@ const RANK_CONFIG = {
 
 // Guild Crest SVG from research
 const GuildCrest = () => (
-  <svg viewBox="0 0 120 120" className="w-20 h-20 md:w-24 md:h-24 mx-auto mb-4">
-    <path d="M60 10 L110 30 L100 90 Q60 115 20 90 L10 30 Z" fill="#1a1a2e" stroke="#c9a227" strokeWidth="3"/>
-    <path d="M60 20 L100 35 L92 85 Q60 105 28 85 L20 35 Z" fill="#16213e" stroke="#8b7355" strokeWidth="2"/>
-    <path d="M60 30 L60 80 M40 45 L80 45" stroke="#c9a227" strokeWidth="6" strokeLinecap="square"/>
-    <path d="M55 30 L65 30 L65 40 L55 40 Z" fill="#c9a227"/>
-    <path d="M55 75 L65 75 L60 85 Z" fill="#c9a227"/>
-    <rect x="15" y="25" width="8" height="8" fill="#8b7355"/>
-    <rect x="97" y="25" width="8" height="8" fill="#8b7355"/>
-    <rect x="25" y="90" width="8" height="8" fill="#8b7355"/>
-    <rect x="87" y="90" width="8" height="8" fill="#8b7355"/>
-  </svg>
+  <div className="mx-auto mb-4 w-28 h-28 md:w-36 md:h-36 relative">
+    <Image src="/art/guild-banner.png" alt="Guild" fill className="object-contain pixelated" />
+  </div>
 );
 
 // Animated Coin Stack from research
