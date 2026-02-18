@@ -41,16 +41,28 @@ export default function Home() {
 
       {/* SECTION 1 - HERO */}
       <section className="relative flex flex-col items-center justify-center min-h-[100vh] px-4 overflow-hidden">
-        {/* Hero background art */}
-        <div className="absolute inset-0 z-0 opacity-30">
-          <Image
-            src="/art/hero-wide.png"
-            alt=""
-            fill
-            className="object-cover object-center"
-            priority
-          />
+        {/* Hero background art - mirrored on both sides, center clear for content */}
+        <div className="absolute inset-0 z-0 opacity-30 overflow-hidden">
+          <div className="absolute inset-y-0 left-0 w-1/2">
+            <Image
+              src="/art/hero-wide.png"
+              alt=""
+              fill
+              className="object-cover object-right"
+              priority
+            />
+          </div>
+          <div className="absolute inset-y-0 right-0 w-1/2">
+            <Image
+              src="/art/hero-wide.png"
+              alt=""
+              fill
+              className="object-cover object-left scale-x-[-1]"
+              priority
+            />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-b from-void-purple/40 via-transparent to-void-purple" />
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-void-purple/70 to-transparent" />
         </div>
 
         {/* Summoning Circle - centered, slightly above middle */}
