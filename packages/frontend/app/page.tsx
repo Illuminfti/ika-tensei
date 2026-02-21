@@ -947,62 +947,11 @@ export default function Home() {
            SECTION 4 - SUPPORTED CHAINS (DIMENSIONAL RIFT PORTAL)
            ═══════════════════════════════════════════════════════════════════════ */}
       <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
-        {/* Portal vortex background */}
-        <div className="absolute inset-0 overflow-hidden">
-          {/* Swirling portal effect */}
-          <motion.div
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(ellipse at center, rgba(153, 69, 255, 0.08) 0%, transparent 60%)',
-            }}
-            animate={{
-              scale: [1, 1.1, 1],
-              opacity: [0.5, 0.8, 0.5],
-            }}
-            transition={{ duration: 8, repeat: Infinity }}
-          />
-          
-          {/* Rotating portal rings - reduced for performance */}
-          {[0, 1].map((i) => (
-            <motion.div
-              key={i}
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-              style={{
-                width: 500 - i * 180,
-                height: 500 - i * 180,
-                border: '1px solid',
-                borderColor: i === 1 ? '#9945ff33' : '#6fb8ff22',
-              }}
-              animate={{ rotate: i % 2 === 0 ? 360 : -360 }}
-              transition={{ duration: 30 + i * 10, repeat: Infinity, ease: "linear" }}
-            />
-          ))}
-          
-          {/* Portal particles - reduced count */}
-          {Array.from({ length: 12 }).map((_, i) => (
-            <motion.div
-              key={i}
-              className="absolute w-1.5 h-1.5 rounded-full"
-              style={{
-                background: i % 2 === 0 ? '#9945ff' : '#6fb8ff',
-                left: '50%',
-                top: '50%',
-                transformOrigin: 'center',
-                boxShadow: i % 2 === 0 ? '0 0 6px #9945ff' : '0 0 6px #6fb8ff',
-              }}
-              animate={{
-                rotate: [0, 720],
-                scale: [0, 1.5, 0],
-                opacity: [0, 0.8, 0],
-              }}
-              transition={{
-                duration: 8 + Math.random() * 4,
-                repeat: Infinity,
-                delay: Math.random() * 4,
-                ease: "easeInOut",
-              }}
-            />
-          ))}
+        {/* Subtle background glow */}
+        <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{
+            background: 'radial-gradient(ellipse at center, rgba(153, 69, 255, 0.06) 0%, transparent 60%)',
+          }} />
         </div>
 
         {/* Portal divider */}
@@ -1047,93 +996,12 @@ export default function Home() {
           マルチバースへの扉 --- Gateway to the Multiverse
         </motion.p>
 
-        {/* DIMENSIONAL RIFT DISPLAY */}
-        <div className="max-w-4xl mx-auto">
-          {/* Central portal display */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="relative mb-12 p-8"
-            style={{
-              background: 'radial-gradient(ellipse at center, rgba(153, 69, 255, 0.1) 0%, rgba(13, 10, 26, 0.8) 70%)',
-              border: '2px solid #9945ff33',
-              borderRadius: '50%',
-            }}
-          >
-            {/* Orbiting chain icons */}
-            <div className="relative w-full aspect-square max-w-[300px] mx-auto">
-              {[
-                { name: "Ethereum", abbr: "ETH", color: "#627eea", angle: 0 },
-                { name: "Polygon", abbr: "POL", color: "#8247e5", angle: 30 },
-                { name: "Arbitrum", abbr: "ARB", color: "#28a0f0", angle: 60 },
-                { name: "Base", abbr: "BASE", color: "#0052ff", angle: 90 },
-                { name: "Sui", abbr: "SUI", color: "#6fb8ff", angle: 120 },
-                { name: "Aptos", abbr: "APT", color: "#00d4c2", angle: 150 },
-                { name: "Solana", abbr: "SOL", color: "#9945ff", angle: 180 },
-                { name: "NEAR", abbr: "NEAR", color: "#00c08b", angle: 210 },
-                { name: "Optimism", abbr: "OP", color: "#ff0420", angle: 240 },
-                { name: "Avalanche", abbr: "AVAX", color: "#e84142", angle: 270 },
-                { name: "BNB", abbr: "BNB", color: "#f0b90b", angle: 300 },
-                { name: "Fantom", abbr: "FTM", color: "#1969ff", angle: 330 },
-              ].map((chain, idx) => (
-                <motion.div
-                  key={chain.name}
-                  className="absolute flex items-center gap-2 px-3 py-2 cursor-pointer"
-                  style={{
-                    left: '50%',
-                    top: '50%',
-                    transform: `translate(-50%, -50%) rotate(${chain.angle}deg) translateY(-120px) rotate(-${chain.angle}deg)`,
-                  }}
-                  initial={{ opacity: 0, scale: 0 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3 + idx * 0.05 }}
-                  whileHover={{ scale: 1.2 }}
-                >
-                  <div
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ background: chain.color, boxShadow: `0 0 8px ${chain.color}66` }}
-                  />
-                  <span className="font-pixel text-[9px]" style={{ color: chain.color }}>
-                    {chain.abbr}
-                  </span>
-                </motion.div>
-              ))}
-              
-              {/* Center core */}
-              <motion.div
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full flex items-center justify-center"
-                style={{
-                  background: 'radial-gradient(circle, #9945ff44, transparent 70%)',
-                  border: '2px solid #9945ff66',
-                }}
-                animate={{
-                  boxShadow: ['0 0 20px #9945ff44', '0 0 40px #9945ff66', '0 0 20px #9945ff44'],
-                }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-                  className="text-2xl"
-                >
-                  🌀
-                </motion.div>
-              </motion.div>
-            </div>
-          </motion.div>
-
-          {/* Extended chain list with glow */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.5 }}
-            className="flex flex-wrap justify-center gap-2 md:gap-3 mb-8 px-4"
-          >
+        {/* CHAIN GRID - Clean, readable, works on all screens */}
+        <div className="max-w-3xl mx-auto">
+          {/* EVM chains */}
+          <div className="flex flex-wrap justify-center gap-3 mb-6">
             {[
+              { name: "Ethereum", abbr: "ETH", color: "#627eea" },
               { name: "Polygon", abbr: "POL", color: "#8247e5" },
               { name: "Arbitrum", abbr: "ARB", color: "#28a0f0" },
               { name: "Base", abbr: "BASE", color: "#0052ff" },
@@ -1150,27 +1018,61 @@ export default function Home() {
             ].map((chain, i) => (
               <motion.div
                 key={chain.name}
-                initial={{ opacity: 0, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ delay: 0.6 + i * 0.03 }}
+                transition={{ delay: i * 0.03, type: "spring", stiffness: 300 }}
                 whileHover={{ scale: 1.08 }}
-                className="flex items-center gap-2 px-3 py-2 transition-all"
+                className="flex items-center gap-2 px-3 py-2"
                 style={{
                   background: `${chain.color}10`,
                   border: `1px solid ${chain.color}33`,
                 }}
               >
                 <div
-                  className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
-                  style={{ background: chain.color, boxShadow: `0 0 4px ${chain.color}` }}
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ background: chain.color, boxShadow: `0 0 6px ${chain.color}66` }}
                 />
-                <span className="font-pixel text-[9px]" style={{ color: chain.color }}>
-                  {chain.abbr}
-                </span>
+                <span className="font-pixel text-[8px]" style={{ color: chain.color }}>{chain.abbr}</span>
               </motion.div>
             ))}
-          </motion.div>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex-1 h-px bg-sigil-border/40" />
+            <span className="font-pixel text-[8px] text-faded-spirit">+</span>
+            <div className="flex-1 h-px bg-sigil-border/40" />
+          </div>
+
+          {/* Non-EVM chains - larger */}
+          <div className="flex flex-wrap justify-center gap-4 mb-8">
+            {[
+              { name: "Sui", color: "#6fb8ff" },
+              { name: "Aptos", color: "#00d4c2" },
+              { name: "NEAR", color: "#00c08b" },
+              { name: "Solana", color: "#9945ff" },
+            ].map((chain, i) => (
+              <motion.div
+                key={chain.name}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.4 + i * 0.1 }}
+                className="flex items-center gap-2 px-4 py-3"
+                style={{
+                  background: `${chain.color}10`,
+                  border: `1px solid ${chain.color}44`,
+                }}
+              >
+                <div
+                  className="w-4 h-4 rounded-full"
+                  style={{ background: chain.color, boxShadow: `0 0 8px ${chain.color}66` }}
+                />
+                <span className="font-pixel text-[10px]" style={{ color: chain.color }}>{chain.name}</span>
+              </motion.div>
+            ))}
+          </div>
 
           {/* Destination */}
           <motion.div
