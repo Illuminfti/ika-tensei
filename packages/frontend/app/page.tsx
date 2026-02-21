@@ -497,13 +497,13 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            SECTION 2 - HOW IT WORKS (TAROT RITUAL PROGRESSION)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10 overflow-hidden">
+      <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
         {/* Deep shrine atmosphere */}
         <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-ritual-dark to-void-purple" />
         
-        {/* Floating ritual particles */}
+        {/* Floating ritual particles - reduced count */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {Array.from({ length: 15 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <motion.div
               key={i}
               className="absolute font-pixel text-xs"
@@ -511,16 +511,15 @@ export default function Home() {
                 left: `${10 + Math.random() * 80}%`,
                 top: `${Math.random() * 100}%`,
                 color: i % 3 === 0 ? '#ffd700' : i % 3 === 1 ? '#ff3366' : '#9b59b6',
-                opacity: 0.1 + Math.random() * 0.2,
+                opacity: 0.15 + Math.random() * 0.15,
               }}
               animate={{
-                y: [0, -80, 0],
-                x: [0, Math.sin(i) * 30, 0],
-                rotate: [0, 180, 360],
-                opacity: [0.1, 0.3, 0.1],
+                y: [0, -50, 0],
+                x: [0, Math.sin(i) * 20, 0],
+                opacity: [0.15, 0.25, 0.15],
               }}
               transition={{
-                duration: 8 + Math.random() * 8,
+                duration: 10 + Math.random() * 6,
                 repeat: Infinity,
                 delay: Math.random() * 5,
               }}
@@ -693,7 +692,7 @@ export default function Home() {
                   <h4 className="font-pixel text-sm text-ghost-white text-center mb-3">{step.title}</h4>
 
                   {/* Meaning */}
-                  <p className="font-pixel text-[8px] text-faded-spirit text-center mb-4 uppercase tracking-wider">
+                  <p className="font-pixel text-[9px] text-faded-spirit text-center mb-4 uppercase tracking-wider">
                     {step.meaning}
                   </p>
 
@@ -701,7 +700,7 @@ export default function Home() {
                   <div className="w-12 h-px mx-auto mb-4" style={{ background: `${step.accentColor}44` }} />
 
                   {/* Description */}
-                  <p className="font-silk text-xs text-faded-spirit text-center leading-relaxed flex-1">
+                  <p className="font-silk text-[11px] text-spirit-silver text-center leading-relaxed flex-1">
                     {step.desc}
                   </p>
 
@@ -734,34 +733,34 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            SECTION 3 - WHY IKA TENSEI (OCCULT SHRINE GRID)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10 overflow-hidden">
+      <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
         {/* Darker atmosphere for depth */}
         <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-void-black to-void-purple" />
         
-        {/* Animated rune pillars on sides */}
-        <div className="absolute left-0 top-0 bottom-0 w-20 opacity-20 pointer-events-none">
-          {Array.from({ length: 8 }).map((_, i) => (
+        {/* Animated rune pillars on sides - reduced */}
+        <div className="absolute left-0 top-0 bottom-0 w-16 opacity-15 pointer-events-none">
+          {Array.from({ length: 5 }).map((_, i) => (
             <motion.div
               key={i}
-              className="absolute font-pixel text-2xl text-blood-pink"
-              style={{ top: `${i * 12 + 5}%`, left: 8 }}
-              animate={{ opacity: [0.2, 0.5, 0.2], y: [0, -10, 0] }}
-              transition={{ duration: 3 + i * 0.3, repeat: Infinity, delay: i * 0.2 }}
+              className="absolute font-pixel text-xl text-blood-pink"
+              style={{ top: `${i * 18 + 10}%`, left: 6 }}
+              animate={{ opacity: [0.2, 0.4, 0.2] }}
+              transition={{ duration: 4 + i * 0.4, repeat: Infinity, delay: i * 0.3 }}
             >
-              {["封", "魔", "魂", "死", "黒", "呪", "陣", "杯"][i]}
+              {["封", "魔", "魂", "死", "黒"][i]}
             </motion.div>
           ))}
         </div>
-        <div className="absolute right-0 top-0 bottom-0 w-20 opacity-20 pointer-events-none">
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className="absolute right-0 top-0 bottom-0 w-16 opacity-15 pointer-events-none">
+          {Array.from({ length: 5 }).map((_, i) => (
             <motion.div
               key={i}
-              className="absolute font-pixel text-2xl text-ritual-gold"
-              style={{ top: `${i * 12 + 5}%`, right: 8 }}
-              animate={{ opacity: [0.2, 0.5, 0.2], y: [0, -10, 0] }}
-              transition={{ duration: 3 + i * 0.3, repeat: Infinity, delay: i * 0.2 + 0.5 }}
+              className="absolute font-pixel text-xl text-ritual-gold"
+              style={{ top: `${i * 18 + 10}%`, right: 6 }}
+              animate={{ opacity: [0.2, 0.4, 0.2] }}
+              transition={{ duration: 4 + i * 0.4, repeat: Infinity, delay: i * 0.3 + 0.5 }}
             >
-              {["金", "光", "星", "天", "神", "聖", "印", "符"][i]}
+              {["金", "光", "星", "天", "神"][i]}
             </motion.div>
           ))}
         </div>
@@ -918,15 +917,15 @@ export default function Home() {
 
                   <div className="flex-1 min-w-0">
                     {/* Japanese kanji above title */}
-                    <div className="font-jp text-[10px] mb-1" style={{ color: feature.accent }}>
+                    <div className="font-jp text-xs mb-1" style={{ color: feature.accent }}>
                       {feature.japanese}
                     </div>
                     
-                    <h3 className="font-pixel text-[11px] mb-2" style={{ color: feature.accent }}>
+                    <h3 className="font-pixel text-xs mb-2" style={{ color: feature.accent }}>
                       {feature.title}
                     </h3>
                     
-                    <p className="font-silk text-[11px] text-faded-spirit leading-relaxed">
+                    <p className="font-silk text-[12px] text-spirit-silver leading-relaxed">
                       {feature.desc}
                     </p>
                   </div>
@@ -947,7 +946,7 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            SECTION 4 - SUPPORTED CHAINS (DIMENSIONAL RIFT PORTAL)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-28 px-4 relative z-10 overflow-hidden">
+      <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
         {/* Portal vortex background */}
         <div className="absolute inset-0 overflow-hidden">
           {/* Swirling portal effect */}
@@ -963,27 +962,27 @@ export default function Home() {
             transition={{ duration: 8, repeat: Infinity }}
           />
           
-          {/* Rotating portal rings */}
-          {[0, 1, 2].map((i) => (
+          {/* Rotating portal rings - reduced for performance */}
+          {[0, 1].map((i) => (
             <motion.div
               key={i}
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
               style={{
-                width: 600 - i * 150,
-                height: 600 - i * 150,
+                width: 500 - i * 180,
+                height: 500 - i * 180,
                 border: '1px solid',
                 borderColor: i === 1 ? '#9945ff33' : '#6fb8ff22',
               }}
               animate={{ rotate: i % 2 === 0 ? 360 : -360 }}
-              transition={{ duration: 20 + i * 5, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 30 + i * 10, repeat: Infinity, ease: "linear" }}
             />
           ))}
           
-          {/* Portal particles */}
-          {Array.from({ length: 20 }).map((_, i) => (
+          {/* Portal particles - reduced count */}
+          {Array.from({ length: 12 }).map((_, i) => (
             <motion.div
               key={i}
-              className="absolute w-1 h-1 rounded-full"
+              className="absolute w-1.5 h-1.5 rounded-full"
               style={{
                 background: i % 2 === 0 ? '#9945ff' : '#6fb8ff',
                 left: '50%',
@@ -992,14 +991,14 @@ export default function Home() {
                 boxShadow: i % 2 === 0 ? '0 0 6px #9945ff' : '0 0 6px #6fb8ff',
               }}
               animate={{
-                rotate: [0, 1080],
-                scale: [0, 2, 0],
-                opacity: [0, 1, 0],
+                rotate: [0, 720],
+                scale: [0, 1.5, 0],
+                opacity: [0, 0.8, 0],
               }}
               transition={{
-                duration: 6 + Math.random() * 4,
+                duration: 8 + Math.random() * 4,
                 repeat: Infinity,
-                delay: Math.random() * 3,
+                delay: Math.random() * 4,
                 ease: "easeInOut",
               }}
             />
@@ -1132,7 +1131,7 @@ export default function Home() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.5 }}
-            className="flex flex-wrap justify-center gap-3 mb-8"
+            className="flex flex-wrap justify-center gap-2 md:gap-3 mb-8 px-4"
           >
             {[
               { name: "Polygon", abbr: "POL", color: "#8247e5" },
@@ -1155,7 +1154,7 @@ export default function Home() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.6 + i * 0.03 }}
-                whileHover={{ scale: 1.1, boxShadow: `0 0 15px ${chain.color}44` }}
+                whileHover={{ scale: 1.08 }}
                 className="flex items-center gap-2 px-3 py-2 transition-all"
                 style={{
                   background: `${chain.color}10`,
@@ -1163,10 +1162,10 @@ export default function Home() {
                 }}
               >
                 <div
-                  className="w-2.5 h-2.5 rounded-full"
+                  className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full"
                   style={{ background: chain.color, boxShadow: `0 0 4px ${chain.color}` }}
                 />
-                <span className="font-pixel text-[8px]" style={{ color: chain.color }}>
+                <span className="font-pixel text-[9px]" style={{ color: chain.color }}>
                   {chain.abbr}
                 </span>
               </motion.div>
@@ -1216,16 +1215,15 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            SECTION 5 - SECURITY & TRUST (SACRED PROTECTION)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-28 px-4 relative z-10 overflow-hidden">
+      <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
         {/* Deep security atmosphere */}
         <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-void-black to-ritual-dark" />
         
-        {/* Protective sigils */}
-        <div className="absolute inset-0 pointer-events-none opacity-10">
-          <div className="absolute top-10 left-10 font-pixel text-6xl text-spectral-green">⛧</div>
-          <div className="absolute top-20 right-20 font-pixel text-4xl text-spectral-green">✧</div>
-          <div className="absolute bottom-20 left-1/4 font-pixel text-5xl text-spectral-green">⛧</div>
-          <div className="absolute bottom-10 right-1/3 font-pixel text-4xl text-spectral-green">✦</div>
+        {/* Protective sigils - reduced */}
+        <div className="absolute inset-0 pointer-events-none opacity-8">
+          <div className="absolute top-12 left-8 font-pixel text-5xl text-spectral-green">⛧</div>
+          <div className="absolute top-24 right-12 font-pixel text-3xl text-spectral-green">✧</div>
+          <div className="absolute bottom-16 left-1/4 font-pixel text-4xl text-spectral-green">⛧</div>
         </div>
 
         {/* Sacred divider */}
@@ -1341,12 +1339,12 @@ export default function Home() {
                   </motion.div>
                   
                   {/* Japanese */}
-                  <div className="font-jp text-[10px] text-spectral-green/50 mb-1">
+                  <div className="font-jp text-xs text-spectral-green/50 mb-1">
                     {item.japanese}
                   </div>
                   
-                  <h3 className="font-pixel text-[11px] text-spectral-green mb-2">{item.label}</h3>
-                  <p className="font-silk text-[10px] text-faded-spirit leading-relaxed">
+                  <h3 className="font-pixel text-xs text-spectral-green mb-2">{item.label}</h3>
+                  <p className="font-silk text-[11px] text-spirit-silver leading-relaxed">
                     {item.detail}
                   </p>
                 </motion.div>
@@ -1392,33 +1390,33 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            SECTION 6 - DIALOGUE + FINAL CTA (SHRINE GATE)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-28 px-4 relative z-10 overflow-hidden">
+      <section className="py-20 md:py-28 px-4 relative z-10 overflow-hidden">
         {/* Portal to CTA atmosphere */}
         <div className="absolute inset-0 bg-gradient-to-b from-ritual-dark via-void-purple to-void-black" />
         
-        {/* Gate-like decorations */}
-        <div className="absolute left-0 top-0 bottom-0 w-32 pointer-events-none">
-          {Array.from({ length: 6 }).map((_, i) => (
+        {/* Gate-like decorations - simplified */}
+        <div className="absolute left-0 top-0 bottom-0 w-20 pointer-events-none">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
               className="absolute right-0 w-px"
               style={{
-                top: `${i * 16 + 10}%`,
-                height: '8%',
-                background: `linear-gradient(to bottom, transparent, #ffd700${Math.floor(20 + i * 10).toString(16)}, transparent)`,
+                top: `${i * 20 + 15}%`,
+                height: '10%',
+                background: `linear-gradient(to bottom, transparent, #ffd70033, transparent)`,
               }}
             />
           ))}
         </div>
-        <div className="absolute right-0 top-0 bottom-0 w-32 pointer-events-none">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="absolute right-0 top-0 bottom-0 w-20 pointer-events-none">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
               className="absolute left-0 w-px"
               style={{
-                top: `${i * 16 + 10}%`,
-                height: '8%',
-                background: `linear-gradient(to bottom, transparent, #ffd700${Math.floor(20 + i * 10).toString(16)}, transparent)`,
+                top: `${i * 20 + 15}%`,
+                height: '10%',
+                background: `linear-gradient(to bottom, transparent, #ffd70033, transparent)`,
               }}
             />
           ))}
@@ -1513,15 +1511,15 @@ export default function Home() {
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
               transition={{ delay: 0.5 }}
-              className="font-silk text-[10px] text-faded-spirit mt-6 flex flex-col md:flex-row items-center justify-center gap-2"
+              className="font-silk text-[11px] text-faded-spirit mt-6 flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4 flex-wrap"
             >
-              <span>Connect your Solana wallet.</span>
-              <span className="hidden md:inline text-blood-pink/30">│</span>
-              <span>Select a chain.</span>
-              <span className="hidden md:inline text-blood-pink/30">│</span>
-              <span>Seal your NFT.</span>
-              <span className="hidden md:inline text-blood-pink/30">│</span>
-              <span className="text-spectral-green">Done.</span>
+              <span>Connect your Solana wallet</span>
+              <span className="hidden md:inline text-blood-pink/30">|</span>
+              <span>Select a chain</span>
+              <span className="hidden md:inline text-blood-pink/30">|</span>
+              <span>Seal your NFT</span>
+              <span className="hidden md:inline text-blood-pink/30">|</span>
+              <span className="text-spectral-green">Done</span>
             </motion.p>
           </motion.div>
         </div>
@@ -1530,35 +1528,35 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════════════════════
            FOOTER (ORNATE SHRINE BASE)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <footer className="py-16 px-4 relative z-10 overflow-hidden">
+      <footer className="py-12 md:py-16 px-4 relative z-10 overflow-hidden">
         {/* Footer atmosphere */}
         <div className="absolute inset-0 bg-gradient-to-b from-void-black to-void-purple" />
         
         {/* Decorative top border */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-sigil-border to-transparent" />
         
-        {/* Floating footer particles */}
-        <div className="absolute inset-0 pointer-events-none opacity-30">
-          {Array.from({ length: 8 }).map((_, i) => (
+        {/* Floating footer particles - reduced */}
+        <div className="absolute inset-0 pointer-events-none opacity-25">
+          {Array.from({ length: 5 }).map((_, i) => (
             <motion.div
               key={i}
-              className="absolute font-pixel text-sm"
+              className="absolute font-pixel text-xs"
               style={{
-                left: `${10 + i * 12}%`,
+                left: `${15 + i * 16}%`,
                 bottom: '100%',
                 color: i % 2 === 0 ? '#ffd700' : '#ff3366',
               }}
               animate={{
-                y: [0, -100],
+                y: [0, -80],
                 opacity: [0.3, 0],
               }}
               transition={{
-                duration: 4 + i * 0.5,
+                duration: 5 + i * 0.4,
                 repeat: Infinity,
-                delay: i * 0.5,
+                delay: i * 0.6,
               }}
             >
-              {["✦", "◆", "☆", "✧", "⚔", "封", "☆", "✦"][i]}
+              {["✦", "◆", "☆", "✧", "⚔"][i]}
             </motion.div>
           ))}
         </div>
@@ -1657,8 +1655,8 @@ export default function Home() {
 
           {/* Bottom row */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-center">
-            <p className="font-silk text-[9px] text-faded-spirit/50">
-              Powered by IKA dWallet Network · Metaplex Core · Arweave
+            <p className="font-silk text-[10px] text-faded-spirit/60">
+              Powered by IKA dWallet Network | Metaplex Core | Arweave
             </p>
             
             {/* Version and status */}
