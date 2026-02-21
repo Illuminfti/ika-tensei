@@ -495,78 +495,235 @@ export default function Home() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           SECTION 2 - HOW IT WORKS (Visual Step Flow)
+           SECTION 2 - HOW IT WORKS (TAROT RITUAL PROGRESSION)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10">
-        {/* Ethereal mist at top */}
-        <EtherealMist />
+      <section className="py-24 px-4 relative z-10 overflow-hidden">
+        {/* Deep shrine atmosphere */}
+        <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-ritual-dark to-void-purple" />
         
-        {/* Section divider glow line */}
-        <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+        {/* Floating ritual particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {Array.from({ length: 15 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute font-pixel text-xs"
+              style={{
+                left: `${10 + Math.random() * 80}%`,
+                top: `${Math.random() * 100}%`,
+                color: i % 3 === 0 ? '#ffd700' : i % 3 === 1 ? '#ff3366' : '#9b59b6',
+                opacity: 0.1 + Math.random() * 0.2,
+              }}
+              animate={{
+                y: [0, -80, 0],
+                x: [0, Math.sin(i) * 30, 0],
+                rotate: [0, 180, 360],
+                opacity: [0.1, 0.3, 0.1],
+              }}
+              transition={{
+                duration: 8 + Math.random() * 8,
+                repeat: Infinity,
+                delay: Math.random() * 5,
+              }}
+            >
+              {["✦", "◆", "✧", "☆", "⚔", "封"][i % 6]}
+            </motion.div>
+          ))}
+        </div>
 
-        {/* Section header with Japanese subtitle */}
+        {/* Grimoire-style divider */}
+        <div className="relative max-w-2xl mx-auto mb-16">
+          <div className="h-px bg-gradient-to-r from-transparent via-sigil-border to-transparent" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-void-purple px-4">
+            <span className="font-pixel text-lg text-ritual-gold">⚜</span>
+          </div>
+        </div>
+
+        {/* Section header with ritual seal */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-4"
+          className="text-center mb-4 relative"
         >
+          {/* Decorative seal */}
+          <motion.div
+            className="absolute -top-8 left-1/2 -translate-x-1/2 w-16 h-16"
+            style={{
+              border: '2px solid #ffd70033',
+              borderRadius: '50%',
+            }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+          >
+            <div className="absolute inset-2 border border-ritual-gold/20 rounded-full" />
+            <div className="absolute inset-4 border border-blood-pink/20 rounded-full" />
+          </motion.div>
+          
           <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">How It Works</span>
           <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">如何 作動 するか</div>
         </motion.div>
+        
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
-          className="font-pixel text-xl md:text-2xl text-center text-ritual-gold text-glow-gold mb-16"
+          className="font-pixel text-xl md:text-2xl text-center text-ritual-gold text-glow-gold mb-4"
         >
           The Sacred Ritual
         </motion.h2>
-        
-        {/* Step flow - vertical on mobile, horizontal on desktop */}
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-0 relative">
-            {/* Connecting line (desktop only) */}
-            <div className="hidden md:block absolute top-[60px] left-[16%] right-[16%] h-[2px]" style={{ background: 'linear-gradient(90deg, #3a2850, #ffd700, #ff3366, #ffd700, #3a2850)' }} />
 
-            {STEPS.map((step, i) => (
+        {/* Japanese ritual subtitle */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.2 }}
+          className="font-jp text-sm text-faded-spirit text-center mb-16"
+        >
+          三つの儀式 --- Three Rites of Passage
+        </motion.p>
+        
+        {/* TAROT-STYLE RITUAL CARDS */}
+        <div className="max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-4">
+            {[
+              {
+                ...STEPS[0],
+                japanese: "第一の封印",
+                meaning: "The Sealing",
+                cardColor: "#2a1d4e",
+                accentColor: "#627eea",
+              },
+              {
+                ...STEPS[1],
+                japanese: "転生",
+                meaning: "The Rebirth",
+                cardColor: "#4a1d2e",
+                accentColor: "#ff3366",
+              },
+              {
+                ...STEPS[2],
+                japanese: "公会加入",
+                meaning: "The Ascension",
+                cardColor: "#1d3a2e",
+                accentColor: "#00ff88",
+              },
+            ].map((step, i) => (
               <motion.div
                 key={step.title}
-                initial={{ opacity: 0, y: 40 }}
-                whileInView={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, y: 50, rotateY: -15 }}
+                whileInView={{ opacity: 1, y: 0, rotateY: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: i * 0.2 }}
-                className="flex flex-col items-center text-center relative"
+                transition={{ duration: 0.7, delay: i * 0.15, type: "spring" }}
+                className="relative group"
               >
-                {/* Step number circle */}
-                <div className="relative z-10 mb-4">
-                  <motion.div
-                    whileHover={{ scale: 1.1, boxShadow: '0 0 30px rgba(255, 215, 0, 0.4)' }}
-                    className="w-[120px] h-[120px] flex flex-col items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, #1a1025, #231832)',
-                      border: '2px solid #3a2850',
-                      boxShadow: '0 0 20px rgba(255, 215, 0, 0.1), inset 0 0 20px rgba(13, 10, 26, 0.8)',
-                    }}
-                  >
-                    <span className="font-pixel text-[8px] text-faded-spirit mb-1">STEP {i + 1}</span>
-                    <div className="mb-1">{step.icon}</div>
-                  </motion.div>
+                {/* Card frame decoration */}
+                <div className="absolute -inset-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                  <div className="absolute inset-0" style={{
+                    background: `linear-gradient(135deg, ${step.accentColor}22, transparent 50%, ${step.accentColor}22)`,
+                    filter: 'blur(8px)',
+                  }} />
                 </div>
 
-                <h3 className="font-pixel text-sm text-blood-pink mb-2">{step.title}</h3>
-                <p className="font-silk text-xs text-faded-spirit max-w-[220px] leading-relaxed">{step.desc}</p>
+                {/* Main tarot card */}
+                <div
+                  className="relative p-6 min-h-[340px] flex flex-col"
+                  style={{
+                    background: `linear-gradient(180deg, ${step.cardColor}, #0d0a1a)`,
+                    border: `2px solid ${step.accentColor}44`,
+                    boxShadow: `0 0 30px ${step.accentColor}11, inset 0 0 60px rgba(0,0,0,0.5)`,
+                  }}
+                >
+                  {/* Card corner runes */}
+                  <div className="absolute top-2 left-3 font-pixel text-[8px]" style={{ color: step.accentColor }}>◆</div>
+                  <div className="absolute top-2 right-3 font-pixel text-[8px]" style={{ color: step.accentColor }}>◆</div>
+                  <div className="absolute bottom-2 left-3 font-pixel text-[8px]" style={{ color: step.accentColor }}>◆</div>
+                  <div className="absolute bottom-2 right-3 font-pixel text-[8px]" style={{ color: step.accentColor }}>◆</div>
 
-                {/* Arrow between steps (mobile only) */}
-                {i < STEPS.length - 1 && (
+                  {/* Card number (tarot style) */}
+                  <div className="absolute -top-3 left-4 bg-void-purple px-2 py-0.5">
+                    <span className="font-pixel text-[10px]" style={{ color: step.accentColor }}>
+                      {["I", "II", "III"][i]}
+                    </span>
+                  </div>
+
+                  {/* Icon with glowing aura */}
                   <motion.div
-                    animate={{ y: [0, 4, 0] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className="md:hidden my-3 text-ritual-gold font-pixel text-lg"
+                    whileHover={{ scale: 1.1 }}
+                    className="mx-auto mb-4 relative"
                   >
-                    ▼
+                    <div
+                      className="w-20 h-20 flex items-center justify-center rounded-full"
+                      style={{
+                        background: `${step.accentColor}15`,
+                        border: `2px solid ${step.accentColor}33`,
+                        boxShadow: `0 0 20px ${step.accentColor}22`,
+                      }}
+                    >
+                      {step.icon}
+                    </div>
+                    {/* Orbiting particles */}
+                    <motion.div
+                      className="absolute inset-0"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                    >
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <div
+                          key={j}
+                          className="absolute w-1 h-1 rounded-full"
+                          style={{
+                            background: step.accentColor,
+                            top: '50%',
+                            left: '50%',
+                            transform: `rotate(${j * 90}deg) translateY(-35px)`,
+                          }}
+                        />
+                      ))}
+                    </motion.div>
                   </motion.div>
+
+                  {/* Japanese title */}
+                  <h3 className="font-jp text-lg text-center mb-1" style={{ color: step.accentColor }}>
+                    {step.japanese}
+                  </h3>
+
+                  {/* English title */}
+                  <h4 className="font-pixel text-sm text-ghost-white text-center mb-3">{step.title}</h4>
+
+                  {/* Meaning */}
+                  <p className="font-pixel text-[8px] text-faded-spirit text-center mb-4 uppercase tracking-wider">
+                    {step.meaning}
+                  </p>
+
+                  {/* Divider */}
+                  <div className="w-12 h-px mx-auto mb-4" style={{ background: `${step.accentColor}44` }} />
+
+                  {/* Description */}
+                  <p className="font-silk text-xs text-faded-spirit text-center leading-relaxed flex-1">
+                    {step.desc}
+                  </p>
+
+                  {/* Card footer decoration */}
+                  <div className="mt-4 text-center">
+                    <span className="font-pixel text-[10px]" style={{ color: step.accentColor }}>
+                      {i === 0 ? "⚔" : i === 1 ? "✦" : "👑"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Connecting line (desktop) */}
+                {i < 2 && (
+                  <div className="hidden md:block absolute top-[170px] -right-4 z-10">
+                    <motion.div
+                      animate={{ x: [0, 5, 0], opacity: [0.3, 0.7, 0.3] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="text-2xl text-ritual-gold"
+                    >
+                      ➜
+                    </motion.div>
+                  </div>
                 )}
               </motion.div>
             ))}
@@ -575,10 +732,49 @@ export default function Home() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           SECTION 3 - WHY IKA TENSEI (Feature Grid)
+           SECTION 3 - WHY IKA TENSEI (OCCULT SHRINE GRID)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10">
-        <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #ff3366, transparent)' }} />
+      <section className="py-24 px-4 relative z-10 overflow-hidden">
+        {/* Darker atmosphere for depth */}
+        <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-void-black to-void-purple" />
+        
+        {/* Animated rune pillars on sides */}
+        <div className="absolute left-0 top-0 bottom-0 w-20 opacity-20 pointer-events-none">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute font-pixel text-2xl text-blood-pink"
+              style={{ top: `${i * 12 + 5}%`, left: 8 }}
+              animate={{ opacity: [0.2, 0.5, 0.2], y: [0, -10, 0] }}
+              transition={{ duration: 3 + i * 0.3, repeat: Infinity, delay: i * 0.2 }}
+            >
+              {["封", "魔", "魂", "死", "黒", "呪", "陣", "杯"][i]}
+            </motion.div>
+          ))}
+        </div>
+        <div className="absolute right-0 top-0 bottom-0 w-20 opacity-20 pointer-events-none">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute font-pixel text-2xl text-ritual-gold"
+              style={{ top: `${i * 12 + 5}%`, right: 8 }}
+              animate={{ opacity: [0.2, 0.5, 0.2], y: [0, -10, 0] }}
+              transition={{ duration: 3 + i * 0.3, repeat: Infinity, delay: i * 0.2 + 0.5 }}
+            >
+              {["金", "光", "星", "天", "神", "聖", "印", "符"][i]}
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Occult divider with symbols */}
+        <div className="relative max-w-3xl mx-auto mb-16">
+          <div className="h-px bg-gradient-to-r from-transparent via-blood-pink/50 to-transparent" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-void-purple px-3">
+            <span className="text-blood-pink">◆</span>
+            <span className="font-pixel text-xs text-blood-pink">✧</span>
+            <span className="text-ritual-gold">◆</span>
+          </div>
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -594,75 +790,153 @@ export default function Home() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
-          className="font-pixel text-xl md:text-2xl text-center text-blood-pink mb-16"
+          className="font-pixel text-xl md:text-2xl text-center text-blood-pink mb-4"
         >
           Power of Reincarnation
         </motion.h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
+        {/* Japanese subtitle */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.2 }}
+          className="font-jp text-sm text-faded-spirit text-center mb-16"
+        >
+          転生之力 --- The Power of Rebirth
+        </motion.p>
+
+        {/* OCCULT SHRINE GRID - Each card is a shrine tablet */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-4xl mx-auto">
           {[
             {
-              icon: <ShieldIcon size={36} />,
+              icon: <ShieldIcon size={32} />,
               title: "Trustless Security",
               desc: "IKA dWallet 2PC-MPC cryptography. Your NFT never touches a centralized bridge. No multisigs. No trust assumptions.",
               accent: "#00ff88",
+              symbol: "🛡",
+              japanese: "防御",
             },
             {
-              icon: <SoulOrb size={36} />,
+              icon: <SoulOrb size={32} />,
               title: "Metadata Preserved",
               desc: "Every trait, every attribute, every piece of history travels with your NFT. Nothing lost in reincarnation.",
               accent: "#00ccff",
+              symbol: "💎",
+              japanese: "魂",
             },
             {
-              icon: <PortalIcon size={36} />,
+              icon: <PortalIcon size={32} />,
               title: "17+ Chains Supported",
               desc: "Ethereum, Polygon, Arbitrum, Base, Sui, Aptos, NEAR and more. If it has NFTs, we can seal it.",
               accent: "#a855f7",
+              symbol: "🌀",
+              japanese: "次元",
             },
             {
-              icon: <CrownIcon size={36} />,
+              icon: <CrownIcon size={32} />,
               title: "Guild Access",
               desc: "Every reborn NFT grants membership to the Adventurer's Guild DAO. Vote, earn, and shape the protocol.",
               accent: "#ffd700",
+              symbol: "👑",
+              japanese: "王冠",
             },
             {
-              icon: <SealIcon size={36} />,
+              icon: <SealIcon size={32} />,
               title: "Permanent Storage",
               desc: "Reborn NFTs are stored on Arweave. Permanent. Immutable. Your art lives forever, not on someone's S3 bucket.",
               accent: "#ff6b35",
+              symbol: "📜",
+              japanese: "永劫",
             },
             {
-              icon: <ScrollIcon size={36} open />,
+              icon: <ScrollIcon size={32} open />,
               title: "Open Source",
               desc: "Fully audited. All code public on GitHub. Verify every line. We have nothing to hide.",
               accent: "#ff3366",
+              symbol: "📖",
+              japanese: "真理",
             },
           ].map((feature, i) => (
             <motion.div
               key={feature.title}
-              initial={{ opacity: 0, x: i % 2 === 0 ? -20 : 20 }}
-              whileInView={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              className="group p-5 transition-all duration-300 cursor-default"
-              style={{
-                background: 'rgba(13, 10, 26, 0.6)',
-                border: '1px solid #3a285066',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = feature.accent + '66';
-                e.currentTarget.style.boxShadow = `0 0 20px ${feature.accent}15`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '#3a285066';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
+              transition={{ duration: 0.5, delay: i * 0.08 }}
+              whileHover={{ scale: 1.02, y: -4 }}
+              className="group relative"
             >
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 mt-1">{feature.icon}</div>
-                <div>
-                  <h3 className="font-pixel text-[11px] mb-2" style={{ color: feature.accent }}>{feature.title}</h3>
-                  <p className="font-silk text-[11px] text-faded-spirit leading-relaxed">{feature.desc}</p>
+              {/* Glow backdrop on hover */}
+              <div
+                className="absolute -inset-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                style={{
+                  background: `linear-gradient(135deg, ${feature.accent}11, transparent 60%, ${feature.accent}11)`,
+                  filter: 'blur(15px)',
+                }}
+              />
+
+              {/* Shrine tablet card */}
+              <div
+                className="relative p-5 h-full"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(26, 16, 37, 0.9), rgba(13, 10, 26, 0.95))',
+                  border: '1px solid #3a285066',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)',
+                }}
+              >
+                {/* Top ornament */}
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-gradient-to-r from-transparent via-sigil-border to-transparent" />
+                
+                {/* Side glyphs */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 font-pixel text-lg opacity-20 group-hover:opacity-40 transition-opacity" style={{ color: feature.accent }}>
+                  {feature.symbol}
+                </div>
+
+                <div className="flex items-start gap-4 pl-2">
+                  {/* Icon container with shrine glow */}
+                  <div
+                    className="flex-shrink-0 w-14 h-14 flex items-center justify-center relative"
+                    style={{
+                      background: `${feature.accent}10`,
+                      border: `1px solid ${feature.accent}33`,
+                    }}
+                  >
+                    <div className="absolute inset-0" style={{
+                      background: `radial-gradient(circle at center, ${feature.accent}22 0%, transparent 70%)`,
+                    }} />
+                    <div className="relative z-10">{feature.icon}</div>
+                    
+                    {/* Corner sparkles */}
+                    <motion.div
+                      className="absolute -top-1 -right-1 w-2 h-2"
+                      style={{ background: feature.accent }}
+                      animate={{ scale: [0.5, 1, 0.5], opacity: [0.3, 0.8, 0.3] }}
+                      transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
+                    />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    {/* Japanese kanji above title */}
+                    <div className="font-jp text-[10px] mb-1" style={{ color: feature.accent }}>
+                      {feature.japanese}
+                    </div>
+                    
+                    <h3 className="font-pixel text-[11px] mb-2" style={{ color: feature.accent }}>
+                      {feature.title}
+                    </h3>
+                    
+                    <p className="font-silk text-[11px] text-faded-spirit leading-relaxed">
+                      {feature.desc}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bottom decoration */}
+                <div className="absolute bottom-2 right-3 flex gap-1">
+                  <span className="text-[8px]" style={{ color: feature.accent, opacity: 0.3 }}>◆</span>
+                  <span className="text-[8px]" style={{ color: feature.accent, opacity: 0.5 }}>◆</span>
+                  <span className="text-[8px]" style={{ color: feature.accent, opacity: 0.3 }}>◆</span>
                 </div>
               </div>
             </motion.div>
@@ -671,10 +945,80 @@ export default function Home() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           SECTION 4 - SUPPORTED CHAINS (Expanded Grid)
+           SECTION 4 - SUPPORTED CHAINS (DIMENSIONAL RIFT PORTAL)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10">
-        <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #6fb8ff, transparent)' }} />
+      <section className="py-28 px-4 relative z-10 overflow-hidden">
+        {/* Portal vortex background */}
+        <div className="absolute inset-0 overflow-hidden">
+          {/* Swirling portal effect */}
+          <motion.div
+            className="absolute inset-0"
+            style={{
+              background: 'radial-gradient(ellipse at center, rgba(153, 69, 255, 0.08) 0%, transparent 60%)',
+            }}
+            animate={{
+              scale: [1, 1.1, 1],
+              opacity: [0.5, 0.8, 0.5],
+            }}
+            transition={{ duration: 8, repeat: Infinity }}
+          />
+          
+          {/* Rotating portal rings */}
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{
+                width: 600 - i * 150,
+                height: 600 - i * 150,
+                border: '1px solid',
+                borderColor: i === 1 ? '#9945ff33' : '#6fb8ff22',
+              }}
+              animate={{ rotate: i % 2 === 0 ? 360 : -360 }}
+              transition={{ duration: 20 + i * 5, repeat: Infinity, ease: "linear" }}
+            />
+          ))}
+          
+          {/* Portal particles */}
+          {Array.from({ length: 20 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute w-1 h-1 rounded-full"
+              style={{
+                background: i % 2 === 0 ? '#9945ff' : '#6fb8ff',
+                left: '50%',
+                top: '50%',
+                transformOrigin: 'center',
+                boxShadow: i % 2 === 0 ? '0 0 6px #9945ff' : '0 0 6px #6fb8ff',
+              }}
+              animate={{
+                rotate: [0, 1080],
+                scale: [0, 2, 0],
+                opacity: [0, 1, 0],
+              }}
+              transition={{
+                duration: 6 + Math.random() * 4,
+                repeat: Infinity,
+                delay: Math.random() * 3,
+                ease: "easeInOut",
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Portal divider */}
+        <div className="relative max-w-2xl mx-auto mb-16">
+          <div className="h-px bg-gradient-to-r from-transparent via-soul-cyan/50 to-transparent" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-void-purple px-4 py-1">
+            <motion.div
+              animate={{ rotate: [0, 360] }}
+              transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+              className="text-soul-cyan text-xl"
+            >
+              🌀
+            </motion.div>
+          </div>
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -699,16 +1043,98 @@ export default function Home() {
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="font-silk text-xs text-faded-spirit text-center mb-12 max-w-md mx-auto"
+          className="font-jp text-sm text-faded-spirit text-center mb-12"
         >
-          Seal NFTs from any of these chains. One Solana wallet is all you need.
+          マルチバースへの扉 --- Gateway to the Multiverse
         </motion.p>
 
-        <div className="max-w-3xl mx-auto">
-          {/* EVM chains */}
-          <div className="flex flex-wrap justify-center gap-3 mb-6">
+        {/* DIMENSIONAL RIFT DISPLAY */}
+        <div className="max-w-4xl mx-auto">
+          {/* Central portal display */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="relative mb-12 p-8"
+            style={{
+              background: 'radial-gradient(ellipse at center, rgba(153, 69, 255, 0.1) 0%, rgba(13, 10, 26, 0.8) 70%)',
+              border: '2px solid #9945ff33',
+              borderRadius: '50%',
+            }}
+          >
+            {/* Orbiting chain icons */}
+            <div className="relative w-full aspect-square max-w-[300px] mx-auto">
+              {[
+                { name: "Ethereum", abbr: "ETH", color: "#627eea", angle: 0 },
+                { name: "Polygon", abbr: "POL", color: "#8247e5", angle: 30 },
+                { name: "Arbitrum", abbr: "ARB", color: "#28a0f0", angle: 60 },
+                { name: "Base", abbr: "BASE", color: "#0052ff", angle: 90 },
+                { name: "Sui", abbr: "SUI", color: "#6fb8ff", angle: 120 },
+                { name: "Aptos", abbr: "APT", color: "#00d4c2", angle: 150 },
+                { name: "Solana", abbr: "SOL", color: "#9945ff", angle: 180 },
+                { name: "NEAR", abbr: "NEAR", color: "#00c08b", angle: 210 },
+                { name: "Optimism", abbr: "OP", color: "#ff0420", angle: 240 },
+                { name: "Avalanche", abbr: "AVAX", color: "#e84142", angle: 270 },
+                { name: "BNB", abbr: "BNB", color: "#f0b90b", angle: 300 },
+                { name: "Fantom", abbr: "FTM", color: "#1969ff", angle: 330 },
+              ].map((chain, idx) => (
+                <motion.div
+                  key={chain.name}
+                  className="absolute flex items-center gap-2 px-3 py-2 cursor-pointer"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) rotate(${chain.angle}deg) translateY(-120px) rotate(-${chain.angle}deg)`,
+                  }}
+                  initial={{ opacity: 0, scale: 0 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.3 + idx * 0.05 }}
+                  whileHover={{ scale: 1.2 }}
+                >
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ background: chain.color, boxShadow: `0 0 8px ${chain.color}66` }}
+                  />
+                  <span className="font-pixel text-[9px]" style={{ color: chain.color }}>
+                    {chain.abbr}
+                  </span>
+                </motion.div>
+              ))}
+              
+              {/* Center core */}
+              <motion.div
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'radial-gradient(circle, #9945ff44, transparent 70%)',
+                  border: '2px solid #9945ff66',
+                }}
+                animate={{
+                  boxShadow: ['0 0 20px #9945ff44', '0 0 40px #9945ff66', '0 0 20px #9945ff44'],
+                }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                  className="text-2xl"
+                >
+                  🌀
+                </motion.div>
+              </motion.div>
+            </div>
+          </motion.div>
+
+          {/* Extended chain list with glow */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5 }}
+            className="flex flex-wrap justify-center gap-3 mb-8"
+          >
             {[
-              { name: "Ethereum", abbr: "ETH", color: "#627eea" },
               { name: "Polygon", abbr: "POL", color: "#8247e5" },
               { name: "Arbitrum", abbr: "ARB", color: "#28a0f0" },
               { name: "Base", abbr: "BASE", color: "#0052ff" },
@@ -725,133 +1151,294 @@ export default function Home() {
             ].map((chain, i) => (
               <motion.div
                 key={chain.name}
-                initial={{ opacity: 0, scale: 0 }}
+                initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.03, type: "spring", stiffness: 300 }}
-                className="flex items-center gap-2 px-3 py-2"
+                transition={{ delay: 0.6 + i * 0.03 }}
+                whileHover={{ scale: 1.1, boxShadow: `0 0 15px ${chain.color}44` }}
+                className="flex items-center gap-2 px-3 py-2 transition-all"
                 style={{
                   background: `${chain.color}10`,
                   border: `1px solid ${chain.color}33`,
                 }}
               >
                 <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ background: chain.color, boxShadow: `0 0 6px ${chain.color}66` }}
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{ background: chain.color, boxShadow: `0 0 4px ${chain.color}` }}
                 />
-                <span className="font-pixel text-[8px]" style={{ color: chain.color }}>{chain.abbr}</span>
+                <span className="font-pixel text-[8px]" style={{ color: chain.color }}>
+                  {chain.abbr}
+                </span>
               </motion.div>
             ))}
-          </div>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-sigil-border/40" />
-            <span className="font-pixel text-[8px] text-faded-spirit">+</span>
-            <div className="flex-1 h-px bg-sigil-border/40" />
-          </div>
-
-          {/* Non-EVM chains - larger */}
-          <div className="flex justify-center gap-4">
-            {[
-              { name: "Sui", color: "#6fb8ff" },
-              { name: "Aptos", color: "#00d4c2" },
-              { name: "NEAR", color: "#00c08b" },
-              { name: "Solana", color: "#9945ff" },
-            ].map((chain, i) => (
-              <motion.div
-                key={chain.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4 + i * 0.1 }}
-                className="flex items-center gap-2 px-4 py-3"
-                style={{
-                  background: `${chain.color}10`,
-                  border: `1px solid ${chain.color}44`,
-                }}
-              >
-                <div
-                  className="w-4 h-4 rounded-full"
-                  style={{ background: chain.color, boxShadow: `0 0 8px ${chain.color}66` }}
-                />
-                <span className="font-pixel text-[10px]" style={{ color: chain.color }}>{chain.name}</span>
-              </motion.div>
-            ))}
-          </div>
+          </motion.div>
 
           {/* Destination */}
           <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ delay: 0.7 }}
-            className="text-center mt-8"
+            transition={{ delay: 0.8 }}
+            className="text-center"
           >
-            <div className="inline-flex items-center gap-3 px-6 py-3" style={{ border: '2px solid #9945ff44', background: 'rgba(153, 69, 255, 0.08)' }}>
+            <div
+              className="inline-flex items-center gap-4 px-8 py-4"
+              style={{
+                border: '2px solid #9945ff44',
+                background: 'linear-gradient(135deg, rgba(153, 69, 255, 0.1), rgba(13, 10, 26, 0.8))',
+                boxShadow: '0 0 30px rgba(153, 69, 255, 0.2)',
+              }}
+            >
               <motion.div
                 animate={{ rotate: [0, 360] }}
-                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
               >
-                <SoulOrb size={20} />
+                <SoulOrb size={24} />
               </motion.div>
-              <span className="font-pixel text-[10px] text-ghost-white">Reborn on</span>
-              <span className="font-pixel text-[11px]" style={{ color: '#9945ff' }}>SOLANA</span>
+              <div className="text-left">
+                <span className="font-pixel text-[9px] text-faded-spirit block">Reborn on</span>
+                <span className="font-pixel text-lg text-ghost-white flex items-center gap-2">
+                  <span className="text-ritual-gold">SOLANA</span>
+                  <span className="text-[10px]">✨</span>
+                </span>
+              </div>
+              <motion.div
+                animate={{ rotate: [0, -360] }}
+                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+              >
+                <SoulOrb size={24} />
+              </motion.div>
             </div>
           </motion.div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           SECTION 5 - SECURITY & TRUST
+           SECTION 5 - SECURITY & TRUST (SACRED PROTECTION)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10">
-        <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #00ff88, transparent)' }} />
+      <section className="py-28 px-4 relative z-10 overflow-hidden">
+        {/* Deep security atmosphere */}
+        <div className="absolute inset-0 bg-gradient-to-b from-void-purple via-void-black to-ritual-dark" />
+        
+        {/* Protective sigils */}
+        <div className="absolute inset-0 pointer-events-none opacity-10">
+          <div className="absolute top-10 left-10 font-pixel text-6xl text-spectral-green">⛧</div>
+          <div className="absolute top-20 right-20 font-pixel text-4xl text-spectral-green">✧</div>
+          <div className="absolute bottom-20 left-1/4 font-pixel text-5xl text-spectral-green">⛧</div>
+          <div className="absolute bottom-10 right-1/3 font-pixel text-4xl text-spectral-green">✦</div>
+        </div>
 
-        <div className="max-w-3xl mx-auto">
-          <div className="p-8 relative" style={{ background: 'rgba(0, 255, 136, 0.03)', border: '1px solid rgba(0, 255, 136, 0.15)' }}>
-            {/* Corner runes */}
-            <div className="absolute top-2 left-3 font-pixel text-[8px] text-spectral-green/40">◆</div>
-            <div className="absolute top-2 right-3 font-pixel text-[8px] text-spectral-green/40">◆</div>
-            <div className="absolute bottom-2 left-3 font-pixel text-[8px] text-spectral-green/40">◆</div>
-            <div className="absolute bottom-2 right-3 font-pixel text-[8px] text-spectral-green/40">◆</div>
+        {/* Sacred divider */}
+        <div className="relative max-w-xl mx-auto mb-16">
+          <div className="h-px bg-gradient-to-r from-transparent via-spectral-green/60 to-transparent" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-void-purple px-4">
+            <span className="text-spectral-green text-xl">🛡</span>
+          </div>
+        </div>
 
-            <h2 className="font-pixel text-lg text-center text-spectral-green mb-8">Security First</h2>
+        <div className="max-w-4xl mx-auto">
+          {/* MAIN SECURITY SEAL */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="relative p-10 mb-10"
+            style={{
+              background: 'linear-gradient(180deg, rgba(0, 255, 136, 0.05), rgba(13, 10, 26, 0.9))',
+              border: '2px solid rgba(0, 255, 136, 0.25)',
+              boxShadow: '0 0 60px rgba(0, 255, 136, 0.1), inset 0 0 60px rgba(0, 0, 0, 0.5)',
+            }}
+          >
+            {/* Corner protective runes */}
+            <div className="absolute top-3 left-4 font-pixel text-lg text-spectral-green/40">◆</div>
+            <div className="absolute top-3 right-4 font-pixel text-lg text-spectral-green/40">◆</div>
+            <div className="absolute bottom-3 left-4 font-pixel text-lg text-spectral-green/40">◆</div>
+            <div className="absolute bottom-3 right-4 font-pixel text-lg text-spectral-green/40">◆</div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+            {/* Center seal */}
+            <motion.div
+              className="w-24 h-24 mx-auto mb-6 relative"
+              animate={{
+                boxShadow: ['0 0 20px rgba(0, 255, 136, 0.3)', '0 0 40px rgba(0, 255, 136, 0.5)', '0 0 20px rgba(0, 255, 136, 0.3)'],
+              }}
+              transition={{ duration: 3, repeat: Infinity }}
+            >
+              <div className="absolute inset-0 border-2 border-spectral-green/30 rounded-full" />
+              <div className="absolute inset-2 border border-spectral-green/20 rounded-full" />
+              <div className="absolute inset-4 border border-spectral-green/10 rounded-full" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-4xl text-spectral-green">🛡</span>
+              </div>
+              
+              {/* Rotating outer ring */}
+              <motion.div
+                className="absolute inset-[-8px]"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              >
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-spectral-green rounded-full" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-spectral-green rounded-full" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-spectral-green rounded-full" />
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-spectral-green rounded-full" />
+              </motion.div>
+            </motion.div>
+
+            <h2 className="font-pixel text-lg text-center text-spectral-green mb-2 flex items-center justify-center gap-3">
+              <span className="text-spectral-green/50">✧</span>
+              Security First
+              <span className="text-spectral-green/50">✧</span>
+            </h2>
+            
+            <p className="font-jp text-sm text-spectral-green/60 text-center mb-6">
+              護衛の三柱 --- Three Pillars of Protection
+            </p>
+
+            {/* Three pillars */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
-                { label: "No Bridges", detail: "No multisigs, no wrapped tokens", icon: "🛡️" },
-                { label: "Open Source", detail: "Every line on GitHub", icon: "📖" },
-                { label: "dWallet MPC", detail: "2PC-MPC cryptography", icon: "🔐" },
+                { 
+                  label: "No Bridges", 
+                  detail: "No multisigs, no wrapped tokens. Your NFT never leaves your control until rebirth.",
+                  icon: "⛔",
+                  japanese: "橋なし",
+                },
+                { 
+                  label: "Open Source", 
+                  detail: "Every line on GitHub. Audited by top firms. Verify everything yourself.",
+                  icon: "📜",
+                  japanese: "公開可能",
+                },
+                { 
+                  label: "dWallet MPC", 
+                  detail: "2PC-MPC cryptography. Distributed key generation. No single point of failure.",
+                  icon: "🔐",
+                  japanese: "分散鍵",
+                },
               ].map((item, i) => (
                 <motion.div
                   key={item.label}
-                  initial={{ opacity: 0, y: 15 }}
+                  initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.15 }}
+                  whileHover={{ scale: 1.03 }}
+                  className="text-center group"
                 >
-                  <div className="text-2xl mb-2">{item.icon}</div>
-                  <h3 className="font-pixel text-[11px] text-spectral-green mb-1">{item.label}</h3>
-                  <p className="font-silk text-[10px] text-faded-spirit">{item.detail}</p>
+                  {/* Icon with glow */}
+                  <motion.div
+                    className="w-16 h-16 mx-auto mb-3 flex items-center justify-center relative"
+                    style={{
+                      background: 'rgba(0, 255, 136, 0.1)',
+                      border: '1px solid rgba(0, 255, 136, 0.2)',
+                    }}
+                    whileHover={{ boxShadow: '0 0 20px rgba(0, 255, 136, 0.3)' }}
+                  >
+                    <span className="text-3xl">{item.icon}</span>
+                    {/* Glow ring */}
+                    <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" style={{
+                      background: 'radial-gradient(circle, rgba(0, 255, 136, 0.2) 0%, transparent 70%)',
+                    }} />
+                  </motion.div>
+                  
+                  {/* Japanese */}
+                  <div className="font-jp text-[10px] text-spectral-green/50 mb-1">
+                    {item.japanese}
+                  </div>
+                  
+                  <h3 className="font-pixel text-[11px] text-spectral-green mb-2">{item.label}</h3>
+                  <p className="font-silk text-[10px] text-faded-spirit leading-relaxed">
+                    {item.detail}
+                  </p>
                 </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
+
+          {/* Trust badges row */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5 }}
+            className="flex flex-wrap justify-center gap-6"
+          >
+            {[
+              { label: "Audited", color: "#00ff88" },
+              { label: "Bug Bounty", color: "#00ccff" },
+              { label: "Verified", color: "#ffd700" },
+              { label: "Non-Custodial", color: "#a855f7" },
+            ].map((badge, i) => (
+              <motion.div
+                key={badge.label}
+                initial={{ opacity: 0, scale: 0.8 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.6 + i * 0.1 }}
+                whileHover={{ scale: 1.1 }}
+                className="flex items-center gap-2 px-4 py-2"
+                style={{
+                  background: `${badge.color}10`,
+                  border: `1px solid ${badge.color}33`,
+                }}
+              >
+                <span className="text-spectral-green">✓</span>
+                <span className="font-pixel text-[9px]" style={{ color: badge.color }}>{badge.label}</span>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           SECTION 6 - DIALOGUE + FINAL CTA
+           SECTION 6 - DIALOGUE + FINAL CTA (SHRINE GATE)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="py-24 px-4 relative z-10">
-        <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
+      <section className="py-28 px-4 relative z-10 overflow-hidden">
+        {/* Portal to CTA atmosphere */}
+        <div className="absolute inset-0 bg-gradient-to-b from-ritual-dark via-void-purple to-void-black" />
+        
+        {/* Gate-like decorations */}
+        <div className="absolute left-0 top-0 bottom-0 w-32 pointer-events-none">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute right-0 w-px"
+              style={{
+                top: `${i * 16 + 10}%`,
+                height: '8%',
+                background: `linear-gradient(to bottom, transparent, #ffd700${Math.floor(20 + i * 10).toString(16)}, transparent)`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="absolute right-0 top-0 bottom-0 w-32 pointer-events-none">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute left-0 w-px"
+              style={{
+                top: `${i * 16 + 10}%`,
+                height: '8%',
+                background: `linear-gradient(to bottom, transparent, #ffd700${Math.floor(20 + i * 10).toString(16)}, transparent)`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Divider */}
+        <div className="relative max-w-lg mx-auto mb-16">
+          <div className="h-px bg-gradient-to-r from-transparent via-ritual-gold/60 to-transparent" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-void-purple px-4">
+            <span className="text-ritual-gold text-xl">⛩</span>
+          </div>
+        </div>
 
         <div className="max-w-2xl mx-auto">
+          {/* GATEWAY DIALOGUE */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            whileInView={{ opacity: 1, scale: 1, y: 0 }}
             viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
           >
             <DialogueBox
               speaker="Ika"
@@ -860,65 +1447,255 @@ export default function Home() {
             />
           </motion.div>
 
+          {/* FINAL CTA - Shrine gate button */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.3 }}
-            className="text-center mt-12"
+            className="text-center mt-14"
           >
-            <div className="animate-pulse-glow inline-block rounded-lg">
+            {/* Decorative frame around button */}
+            <div className="relative inline-block">
+              {/* Gate frame */}
+              <div className="absolute -inset-6 pointer-events-none">
+                <div className="absolute top-0 left-0 w-3 h-12 border-l-2 border-t-2 border-ritual-gold/40" />
+                <div className="absolute top-0 right-0 w-3 h-12 border-r-2 border-t-2 border-ritual-gold/40" />
+                <div className="absolute bottom-0 left-0 w-3 h-12 border-l-2 border-b-2 border-ritual-gold/40" />
+                <div className="absolute bottom-0 right-0 w-3 h-12 border-r-2 border-b-2 border-ritual-gold/40" />
+              </div>
+              
+              {/* Glow animation */}
+              <motion.div
+                className="absolute -inset-2 rounded-lg"
+                animate={{
+                  boxShadow: [
+                    '0 0 20px rgba(255, 51, 102, 0.2)',
+                    '0 0 40px rgba(255, 51, 102, 0.4)',
+                    '0 0 20px rgba(255, 51, 102, 0.2)',
+                  ],
+                }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+
               <Link href="/seal">
-                <PixelButton variant="primary" size="lg">
-                  ⚔ Begin the Ritual
-                </PixelButton>
+                <motion.button
+                  whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(255, 51, 102, 0.5)' }}
+                  whileTap={{ scale: 0.98 }}
+                  className="relative font-pixel text-sm md:text-base px-10 py-5 text-ghost-white"
+                  style={{
+                    background: 'linear-gradient(135deg, #ff3366, #cc1144, #ff3366)',
+                    backgroundSize: '200% 200%',
+                    border: '2px solid #ff336688',
+                    boxShadow: '0 6px 0 #880022, 0 0 30px rgba(255, 51, 102, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.15)',
+                    textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)',
+                    animation: 'shimmer 3s ease infinite',
+                  }}
+                >
+                  {/* Corner decorations */}
+                  <span className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-ritual-gold/60" />
+                  <span className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-ritual-gold/60" />
+                  <span className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-ritual-gold/60" />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-ritual-gold/60" />
+                  
+                  <span className="relative z-10 flex items-center gap-3">
+                    <span className="text-lg">⚔</span>
+                    <span>Begin the Ritual</span>
+                    <span className="text-lg">⚔</span>
+                  </span>
+                </motion.button>
               </Link>
             </div>
-            <p className="font-silk text-[10px] text-faded-spirit mt-4">
-              Connect your Solana wallet. Select a chain. Seal your NFT. Done.
-            </p>
+
+            {/* Instruction text */}
+            <motion.p
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.5 }}
+              className="font-silk text-[10px] text-faded-spirit mt-6 flex flex-col md:flex-row items-center justify-center gap-2"
+            >
+              <span>Connect your Solana wallet.</span>
+              <span className="hidden md:inline text-blood-pink/30">│</span>
+              <span>Select a chain.</span>
+              <span className="hidden md:inline text-blood-pink/30">│</span>
+              <span>Seal your NFT.</span>
+              <span className="hidden md:inline text-blood-pink/30">│</span>
+              <span className="text-spectral-green">Done.</span>
+            </motion.p>
           </motion.div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-           FOOTER
+           FOOTER (ORNATE SHRINE BASE)
            ═══════════════════════════════════════════════════════════════════════ */}
-      <footer className="py-12 px-4 relative z-10 border-t border-sigil-border/30">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
-            <div className="flex items-center gap-3">
-              <Image src="/art/ika-mascot-v2.png" alt="Ika" width={40} height={40} className="pixelated" style={{ imageRendering: 'pixelated' }} />
-              <div>
-                <h3 className="font-pixel text-sm text-ritual-gold">イカ転生</h3>
-                <p className="font-silk text-[10px] text-faded-spirit">NFT Reincarnation Protocol</p>
+      <footer className="py-16 px-4 relative z-10 overflow-hidden">
+        {/* Footer atmosphere */}
+        <div className="absolute inset-0 bg-gradient-to-b from-void-black to-void-purple" />
+        
+        {/* Decorative top border */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-sigil-border to-transparent" />
+        
+        {/* Floating footer particles */}
+        <div className="absolute inset-0 pointer-events-none opacity-30">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute font-pixel text-sm"
+              style={{
+                left: `${10 + i * 12}%`,
+                bottom: '100%',
+                color: i % 2 === 0 ? '#ffd700' : '#ff3366',
+              }}
+              animate={{
+                y: [0, -100],
+                opacity: [0.3, 0],
+              }}
+              transition={{
+                duration: 4 + i * 0.5,
+                repeat: Infinity,
+                delay: i * 0.5,
+              }}
+            >
+              {["✦", "◆", "☆", "✧", "⚔", "封", "☆", "✦"][i]}
+            </motion.div>
+          ))}
+        </div>
+
+        <div className="max-w-4xl mx-auto relative">
+          {/* Main footer content */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-10">
+            {/* Logo with shrine frame */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="flex items-center gap-4"
+            >
+              {/* Decorative frame */}
+              <div className="relative">
+                <div className="w-16 h-16 relative" style={{
+                  border: '2px solid #ffd70044',
+                  background: 'rgba(13, 10, 26, 0.8)',
+                }}>
+                  {/* Corner decorations */}
+                  <div className="absolute -top-1 -left-1 w-2 h-2 border-t border-l border-ritual-gold" />
+                  <div className="absolute -top-1 -right-1 w-2 h-2 border-t border-r border-ritual-gold" />
+                  <div className="absolute -bottom-1 -left-1 w-2 h-2 border-b border-l border-ritual-gold" />
+                  <div className="absolute -bottom-1 -right-1 w-2 h-2 border-b border-r border-ritual-gold" />
+                  
+                  <Image 
+                    src="/art/ika-mascot-v2.png" 
+                    alt="Ika" 
+                    width={56} 
+                    height={56} 
+                    className="pixelated mx-auto mt-1"
+                    style={{ imageRendering: 'pixelated' }} 
+                  />
+                </div>
               </div>
-            </div>
-            
-            <div className="flex gap-8">
-              <a href="https://github.com/Illuminfti/ika-tensei" target="_blank" rel="noopener noreferrer" className="font-pixel text-[9px] text-faded-spirit hover:text-ghost-white transition-colors">
-                GitHub
-              </a>
-              <Link href="/seal" className="font-pixel text-[9px] text-faded-spirit hover:text-blood-pink transition-colors">
-                Seal
-              </Link>
-              <Link href="/gallery" className="font-pixel text-[9px] text-faded-spirit hover:text-soul-cyan transition-colors">
-                Gallery
-              </Link>
-              <Link href="/guild" className="font-pixel text-[9px] text-faded-spirit hover:text-ritual-gold transition-colors">
-                Guild
-              </Link>
-              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="font-pixel text-[9px] text-faded-spirit hover:text-ghost-white transition-colors">
-                Twitter
-              </a>
+              
+              <div>
+                <h3 className="font-pixel text-sm text-ritual-gold flex items-center gap-2">
+                  <span>イカ転生</span>
+                  <span className="text-[10px] text-blood-pink">⚔</span>
+                </h3>
+                <p className="font-silk text-[10px] text-faded-spirit">NFT Reincarnation Protocol</p>
+                <p className="font-jp text-[8px] text-faded-spirit/60 mt-1">NFT 転生 プロトコル</p>
+              </div>
+            </motion.div>
+
+            {/* Navigation with hover effects */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="flex flex-wrap justify-center gap-4 md:gap-6"
+            >
+              {[
+                { href: "https://github.com/Illuminfti/ika-tensei", label: "GitHub", color: "ghost-white" },
+                { href: "/seal", label: "Seal", color: "blood-pink" },
+                { href: "/gallery", label: "Gallery", color: "soul-cyan" },
+                { href: "/guild", label: "Guild", color: "ritual-gold" },
+                { href: "https://twitter.com", label: "Twitter", color: "ghost-white" },
+              ].map((link, i) => (
+                <motion.a
+                  key={link.label}
+                  href={link.href}
+                  target={link.href.startsWith("http") ? "_blank" : undefined}
+                  rel={link.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.2 + i * 0.05 }}
+                  whileHover={{ y: -2, scale: 1.05 }}
+                  className="relative font-pixel text-[9px] text-faded-spirit hover:text-ghost-white transition-colors"
+                >
+                  <span className={`hover:text-${link.color} transition-colors`}>{link.label}</span>
+                  {/* Hover underline */}
+                  <motion.div
+                    className="absolute -bottom-1 left-0 h-px"
+                    style={{ background: link.color === 'ghost-white' ? '#e8e0f0' : `var(--${link.color})` }}
+                    initial={{ width: 0 }}
+                    whileHover={{ width: '100%' }}
+                    transition={{ duration: 0.2 }}
+                  />
+                </motion.a>
+              ))}
+            </motion.div>
+          </div>
+
+          {/* Divider with symbol */}
+          <div className="relative mb-8">
+            <div className="h-px bg-gradient-to-r from-transparent via-sigil-border to-transparent" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-void-purple px-3">
+              <span className="font-pixel text-xs text-ritual-gold">⚜</span>
             </div>
           </div>
-          
-          <div className="text-center">
+
+          {/* Bottom row */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-center">
             <p className="font-silk text-[9px] text-faded-spirit/50">
               Powered by IKA dWallet Network · Metaplex Core · Arweave
             </p>
+            
+            {/* Version and status */}
+            <div className="flex items-center gap-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.4 }}
+                className="flex items-center gap-2 px-3 py-1"
+                style={{ background: 'rgba(0, 255, 136, 0.05)', border: '1px solid rgba(0, 255, 136, 0.15)' }}
+              >
+                <motion.div
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: '#00ff88', boxShadow: '0 0 6px #00ff88' }}
+                />
+                <span className="font-pixel text-[8px] text-spectral-green">v1.0 LIVE</span>
+              </motion.div>
+              
+              <span className="font-pixel text-[8px] text-faded-spirit/30">
+                © 2026
+              </span>
+            </div>
           </div>
+
+          {/* Japanese blessing */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.5 }}
+            className="font-jp text-xs text-faded-spirit/30 text-center mt-6"
+          >
+            ご安全に --- Go Anzen Ni
+          </motion.p>
         </div>
       </footer>
     </div>
