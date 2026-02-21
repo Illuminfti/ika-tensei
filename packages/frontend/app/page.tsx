@@ -179,17 +179,17 @@ export default function Home() {
     {
       icon: <SealIcon size={48} />,
       title: "Seal",
-      desc: "Deposit your NFT into the sacred vault on Ethereum or Sui. Your soul绑定 awaits.",
+      desc: "Send your NFT to a secure deposit address. No bridges, no wrapping. Just a simple transfer.",
     },
     {
       icon: <SoulOrb size={48} />,
       title: "Reborn",
-      desc: "Your NFT transcends chains via IKA dWallet 2PC-MPC signing. Transcendence awaits.",
+      desc: "Your NFT is reborn on Solana with every trait, attribute, and piece of history intact.",
     },
     {
       icon: <ShieldIcon size={48} />,
       title: "Join Guild",
-      desc: "Your reborn NFT grants entry to the Adventurer's Guild DAO. Rise together.",
+      desc: "Your reborn NFT unlocks the Guild. Vote on which dead collections to resurrect next.",
     },
   ];
 
@@ -375,7 +375,7 @@ export default function Home() {
               textShadow: "0 0 8px rgba(255, 215, 0, 0.3)",
             }}
           >
-            NFT REINCARNATION PROTOCOL
+            YOUR NFT DESERVES A SECOND LIFE
           </p>
         </motion.div>
 
@@ -393,7 +393,7 @@ export default function Home() {
               textShadow: "0 0 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.9)",
             }}
           >
-            Seal your NFTs from any chain. Reborn on Solana.
+            Dead collection? Floor at zero? Your PFP is still you. Bring it back to life.
           </p>
         </motion.div>
 
@@ -472,9 +472,9 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 1.3 }}
           className="flex gap-8 md:gap-12 mt-16 relative z-10"
         >
-          <StatsCounter target={12847} label="Sealed" icon={<SealIcon size={20} />} />
-          <StatsCounter target={10234} label="Reborn" icon={<SoulOrb size={20} />} />
-          <StatsCounter target={3} label="Chains" icon={<ChainBadge chain="ethereum" size={20} />} />
+          <StatsCounter target={18} label="Chains" icon={<ChainBadge chain="ethereum" size={20} />} />
+          <StatsCounter target={0} label="Sealed" icon={<SealIcon size={20} />} />
+          <StatsCounter target={0} label="Reborn" icon={<SoulOrb size={20} />} />
         </motion.div>
 
         {/* Scroll indicator */}
@@ -558,8 +558,8 @@ export default function Home() {
             <div className="absolute inset-4 border border-blood-pink/20 rounded-full" />
           </motion.div>
           
-          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">How It Works</span>
-          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">如何 作動 するか</div>
+          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Three Steps</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">三つの儀式</div>
         </motion.div>
         
         <motion.h2
@@ -569,18 +569,17 @@ export default function Home() {
           transition={{ delay: 0.1 }}
           className="font-pixel text-xl md:text-2xl text-center text-ritual-gold text-glow-gold mb-4"
         >
-          The Sacred Ritual
+          How It Works
         </motion.h2>
 
-        {/* Japanese ritual subtitle */}
         <motion.p
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="font-jp text-sm text-faded-spirit text-center mb-16"
+          className="font-silk text-sm text-faded-spirit text-center mb-16 max-w-md mx-auto"
         >
-          三つの儀式 --- Three Rites of Passage
+          Seal your NFT from any chain. Get it reborn on Solana. Join the community.
         </motion.p>
         
         {/* TAROT-STYLE RITUAL CARDS */}
@@ -781,8 +780,8 @@ export default function Home() {
           viewport={{ once: true }}
           className="text-center mb-4"
         >
-          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Why Choose Us</span>
-          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">何以 を選ぶか</div>
+          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Why It Matters</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">転生之力</div>
         </motion.div>
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
@@ -791,18 +790,17 @@ export default function Home() {
           transition={{ delay: 0.1 }}
           className="font-pixel text-xl md:text-2xl text-center text-blood-pink mb-4"
         >
-          Power of Reincarnation
+          Your Identity, Preserved
         </motion.h2>
 
-        {/* Japanese subtitle */}
         <motion.p
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="font-jp text-sm text-faded-spirit text-center mb-16"
+          className="font-silk text-sm text-faded-spirit text-center mb-16 max-w-lg mx-auto"
         >
-          転生之力 --- The Power of Rebirth
+          That PFP is more than a jpeg. It&apos;s your identity, your community, your history. We make sure nothing gets lost.
         </motion.p>
 
         {/* OCCULT SHRINE GRID - Each card is a shrine tablet */}
@@ -810,32 +808,32 @@ export default function Home() {
           {[
             {
               icon: <ShieldIcon size={32} />,
-              title: "Trustless Security",
-              desc: "IKA dWallet 2PC-MPC cryptography. Your NFT never touches a centralized bridge. No multisigs. No trust assumptions.",
+              title: "No Bridges, No Risk",
+              desc: "Your NFT never touches a centralized bridge or multisig. Cryptographic security, not trust assumptions.",
               accent: "#00ff88",
               symbol: "🛡",
               japanese: "防御",
             },
             {
               icon: <SoulOrb size={32} />,
-              title: "Metadata Preserved",
-              desc: "Every trait, every attribute, every piece of history travels with your NFT. Nothing lost in reincarnation.",
+              title: "Every Trait Preserved",
+              desc: "Traits, attributes, rarity, provenance. Everything that makes your NFT yours comes with it.",
               accent: "#00ccff",
               symbol: "💎",
               japanese: "魂",
             },
             {
               icon: <PortalIcon size={32} />,
-              title: "17+ Chains Supported",
-              desc: "Ethereum, Polygon, Arbitrum, Base, Sui, Aptos, NEAR and more. If it has NFTs, we can seal it.",
+              title: "Any Chain",
+              desc: "Ethereum, Solana, Sui, Aptos, Base, Arbitrum, NEAR, and 11 more. If it has NFTs, we can seal it.",
               accent: "#a855f7",
               symbol: "🌀",
               japanese: "次元",
             },
             {
               icon: <CrownIcon size={32} />,
-              title: "Guild Access",
-              desc: "Every reborn NFT grants membership to the Adventurer's Guild DAO. Vote, earn, and shape the protocol.",
+              title: "Community Takeover",
+              desc: "The Guild votes on which dead collections to resurrect. Royalties flow back to holders. You decide what happens.",
               accent: "#ffd700",
               symbol: "👑",
               japanese: "王冠",
@@ -843,15 +841,15 @@ export default function Home() {
             {
               icon: <SealIcon size={32} />,
               title: "Permanent Storage",
-              desc: "Reborn NFTs are stored on Arweave. Permanent. Immutable. Your art lives forever, not on someone's S3 bucket.",
+              desc: "Your reborn NFT lives on Arweave. Not a server. Not an S3 bucket. Permanent and immutable.",
               accent: "#ff6b35",
               symbol: "📜",
               japanese: "永劫",
             },
             {
               icon: <ScrollIcon size={32} open />,
-              title: "Open Source",
-              desc: "Fully audited. All code public on GitHub. Verify every line. We have nothing to hide.",
+              title: "Fully Open Source",
+              desc: "Every line of code is on GitHub. Don't trust us. Verify it yourself.",
               accent: "#ff3366",
               symbol: "📖",
               japanese: "真理",
@@ -974,8 +972,8 @@ export default function Home() {
           viewport={{ once: true }}
           className="text-center mb-4"
         >
-          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Cross-Chain</span>
-          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">対応 チェーン</div>
+          <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Supported Chains</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">対応チェーン</div>
         </motion.div>
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
@@ -984,16 +982,16 @@ export default function Home() {
           transition={{ delay: 0.1 }}
           className="font-pixel text-xl md:text-2xl text-center text-ghost-white mb-4"
         >
-          Supported Realms
+          Seal From Any Chain
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="font-jp text-sm text-faded-spirit text-center mb-12"
+          className="font-silk text-sm text-faded-spirit text-center mb-12 max-w-md mx-auto"
         >
-          マルチバースへの扉 --- Gateway to the Multiverse
+          One Solana wallet. That&apos;s all you need. We handle the rest.
         </motion.p>
 
         {/* CHAIN GRID - Clean, readable, works on all screens */}
@@ -1189,8 +1187,8 @@ export default function Home() {
               <span className="text-spectral-green/50">✧</span>
             </h2>
             
-            <p className="font-jp text-sm text-spectral-green/60 text-center mb-6">
-              護衛の三柱 --- Three Pillars of Protection
+            <p className="font-silk text-sm text-spectral-green/60 text-center mb-6">
+              Your NFT is safe. Here&apos;s why.
             </p>
 
             {/* Three pillars */}
@@ -1343,7 +1341,7 @@ export default function Home() {
             <DialogueBox
               speaker="Ika"
               portrait="smug"
-              text="Your NFTs are scattered across a dozen chains, collecting dust. Bring them home. The ritual awaits, and I've been waiting for you~"
+              text="Your favorite collection is dead. The devs are gone. But that PFP is still you. Let's bring it back to life together~"
             />
           </motion.div>
 
@@ -1501,7 +1499,7 @@ export default function Home() {
                   <span>イカ転生</span>
                   <span className="text-[10px] text-blood-pink">⚔</span>
                 </h3>
-                <p className="font-silk text-[10px] text-faded-spirit">NFT Reincarnation Protocol</p>
+                <p className="font-silk text-[10px] text-faded-spirit">Bring your NFTs back to life</p>
                 <p className="font-jp text-[8px] text-faded-spirit/60 mt-1">NFT 転生 プロトコル</p>
               </div>
             </motion.div>
