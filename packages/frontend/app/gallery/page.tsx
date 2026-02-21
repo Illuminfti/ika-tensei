@@ -380,6 +380,7 @@ export default function GalleryPage() {
               ✦ 転生の書庫 ✦
             </h1>
             <p className="font-pixel text-blood-pink text-sm mb-1" style={{ textShadow: "0 0 15px rgba(255,51,102,0.5), 0 2px 6px rgba(0,0,0,0.8)" }}>REBORN GALLERY</p>
+            <p className="font-jp text-xs text-faded-spirit/70 mb-2">再生された NFT の 保存庫</p>
             <p className="font-silk text-ghost-white/80 text-xs max-w-md mx-auto" style={{ textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
               Your sealed and reincarnated NFTs, preserved forever on Solana
             </p>

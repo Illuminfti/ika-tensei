@@ -504,6 +504,7 @@ export default function Home() {
         {/* Section divider glow line */}
         <div className="w-full max-w-lg mx-auto h-px mb-16" style={{ background: 'linear-gradient(90deg, transparent, #ffd700, transparent)' }} />
 
+        {/* Section header with Japanese subtitle */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -511,6 +512,7 @@ export default function Home() {
           className="text-center mb-4"
         >
           <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">How It Works</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">如何 作動 するか</div>
         </motion.div>
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
@@ -585,6 +587,7 @@ export default function Home() {
           className="text-center mb-4"
         >
           <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Why Choose Us</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">何以 を選ぶか</div>
         </motion.div>
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
@@ -680,6 +683,7 @@ export default function Home() {
           className="text-center mb-4"
         >
           <span className="font-pixel text-[9px] tracking-[0.4em] text-faded-spirit uppercase">Cross-Chain</span>
+          <div className="font-jp text-[10px] text-blood-pink/60 mt-1 tracking-wider">対応 チェーン</div>
         </motion.div>
         <motion.h2
           initial={{ opacity: 0, y: 20 }}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useSealFlow, STATUS_ORDER, STATUS_LABELS } from "@/hooks/useSealFlow";
@@ -673,6 +673,14 @@ function CompleteStep({
 }) {
   const chain = chainId ? getChainById(chainId) : null;
 
+  // Screen shake effect on mount
+  const [shake, setShake] = useState(false);
+  useEffect(() => {
+    setShake(true);
+    const timer = setTimeout(() => setShake(false), 600);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Sparkle particles
   const particles = Array.from({ length: 16 }, (_, i) => ({
     color: ["#00ff88", "#ffd700", "#ff3366", "#9945ff"][i % 4],
@@ -683,6 +691,19 @@ function CompleteStep({
 
   return (
     <Panel>
+      {/* Screen shake overlay */}
+      <motion.div
+        animate={shake ? {
+          x: [0, -8, 8, -8, 8, -4, 4, 0],
+          y: [0, 4, -4, 6, -6, 3, -3, 0],
+        } : {}}
+        transition={{ duration: 0.5 }}
+        className="fixed inset-0 pointer-events-none z-50"
+        style={{
+          background: shake ? 'radial-gradient(circle, transparent 30%, rgba(255,215,0,0.1) 60%, rgba(255,215,0,0.3) 100%)' : 'transparent',
+        }}
+      />
+
       {/* Confetti */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         {particles.map((p, i) => (

@@ -663,6 +663,30 @@ export default function GuildPage() {
 
       {/* ─── GUILD HEADER ────────────────────────────────────────────────── */}
       <section className="relative pt-8 pb-6 px-4 overflow-hidden">
+        {/* Torch light ambient effects */}
+        <div className="absolute top-20 left-10 pointer-events-none">
+          <motion.div
+            animate={{
+              opacity: [0.6, 0.9, 0.6],
+              boxShadow: ['0 0 30px #ff6b35', '0 0 50px #ff6b35', '0 0 30px #ff6b35'],
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="w-4 h-40 bg-gradient-to-b from-amber-600/20 to-transparent"
+            style={{ filter: 'blur(8px)' }}
+          />
+        </div>
+        <div className="absolute top-20 right-10 pointer-events-none">
+          <motion.div
+            animate={{
+              opacity: [0.5, 0.8, 0.5],
+              boxShadow: ['0 0 30px #ff6b35', '0 0 50px #ff6b35', '0 0 30px #ff6b35'],
+            }}
+            transition={{ duration: 2.5, repeat: Infinity, delay: 0.5 }}
+            className="w-4 h-40 bg-gradient-to-b from-amber-600/20 to-transparent"
+            style={{ filter: 'blur(8px)' }}
+          />
+        </div>
+
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10">
           <SummoningCircle size={400} phase="idle" />
         </div>
@@ -689,6 +713,9 @@ export default function GuildPage() {
             </h1>
             <p className="font-pixel text-[8px] tracking-[0.3em] text-faded-spirit mb-4">
               ADVENTURER&apos;S GUILD
+            </p>
+            <p className="font-jp text-[10px] text-blood-pink/60 mb-4 tracking-wider">
+              冒険者 の 集い
             </p>
 
             {/* Guild Level Bar */}
