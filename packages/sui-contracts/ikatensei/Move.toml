@@ -12,42 +12,31 @@ devnet = "082d5a13"
 testnet = "082d5a14"
 
 [dependencies]
-Sui = { local = "/home/ubuntu/.cargo/git/checkouts/sui-6ac459c53b1b685a/89d40ca/crates/sui-framework/packages/sui-framework" }
+Sui = { local = "/home/ubuntu/.cargo/git/checkouts/sui-6ac459c53b1b685a/89d40ca/crates/sui-framework/packages/sui-framework", override = true }
 
-# ─────────────────────────────────────────────────────────────────────
-# Wormhole — NOT included by default (needed for VAA verification)
-# Uncomment and set correct rev for devnet/testnet deployment:
-#
-#   Wormhole = {
-#     git = "https://github.com/wormhole-foundation/wormhole.git",
-#     subdir = "sui/wormhole",
-#     rev = "main"
-#   }
-#
-# Wormhole State Object IDs (pass to register_seal_with_vaa):
+# Wormhole — REQUIRED for VAA verification (parse_and_verify)
+# Provides: wormhole::vaa, wormhole::state, wormhole::external_address, wormhole::bytes32
+Wormhole = { git = "https://github.com/wormhole-foundation/wormhole.git", subdir = "sui/wormhole", rev = "main" }
+
+# Wormhole State Object IDs (pass to process_vaa):
 #   Testnet: 0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790
 #   Mainnet: 0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c
-#   Devnet:  0xc89Ce4735882C9F0f0FE26686c53074E09B0D550
-#
-# When enabling, replace parse_vaa_stub() in registry.move with real
-# wormhole::vaa::parse_and_verify() call (see inline comments).
-# ─────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────
-# IKA dWallet — NOT included by default (needed for real DWalletCap locking)
-# The current implementation records cap IDs in SealVault.
-# For full DWalletCap transfer (PRD §9), the DWalletCap object itself
-# must be transferred to the SealVault contract address.
+# IKA dWallet
+# Signing is done OFF-CHAIN via @ika.xyz/sdk TypeScript package.
+# The Sui contract only needs to:
+#   1. Store the dWallet's Ed25519 pubkey in DWalletRegistry
+#   2. Verify Ed25519 signatures using sui::ed25519::ed25519_verify
+#   3. Lock DWalletCap into SealVault after sealing
+#
+# For DWalletCap type import (when IKA publishes their Move package):
+#   IKA = { git = "https://github.com/dwallet-labs/ika.git", ... }
+#   Then replace local DWalletCap struct with:
+#     use ika_dwallet_2pc_mpc::coordinator::DWalletCap;
 #
 # IKA package addresses:
 #   Testnet: 0x6573a6c13daf26a64eb8a37d3c7a4391b353031e223072ca45b1ff9366f59293
-#   DWalletCap type: ika_dwallet_2pc_mpc::coordinator::DWalletCap
-#
-# To integrate, add to function parameters in registry.move:
-#   dwallet_cap: DWalletCap,        // from ika_dwallet_2pc_mpc::coordinator
-#   attestation_cap: DWalletCap,
-# Then transfer them to the vault:
-#   transfer::public_transfer(dwallet_cap, vault_address);
 # ─────────────────────────────────────────────────────────────────────
 
 [addresses]

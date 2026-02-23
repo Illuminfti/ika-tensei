@@ -66,6 +66,9 @@ module ikatensei::dwallet_registry {
     public struct DWalletRecord has store, copy, drop {
         deposit_address: vector<u8>,
         dwallet_id: vector<u8>,
+        /// Ed25519 public key of the dWallet (32 bytes).
+        /// Used by the orchestrator to verify IKA signatures on-chain.
+        dwallet_pubkey: vector<u8>,
         owner: address,
         registered_at: u64,
         active: bool,
@@ -128,10 +131,12 @@ module ikatensei::dwallet_registry {
         _cap: &RegistryOwnerCap,
         deposit_address: vector<u8>,
         dwallet_id: vector<u8>,
+        dwallet_pubkey: vector<u8>,
         ctx: &mut TxContext,
     ) {
         assert!(vector::length(&deposit_address) == 32, E_ZERO_ADDRESS);
         assert!(vector::length(&dwallet_id) >= 1, E_ZERO_ADDRESS);
+        assert!(vector::length(&dwallet_pubkey) == 32, E_ZERO_ADDRESS);
         assert!(
             !table::contains(&registry.wallets, deposit_address),
             E_ALREADY_REGISTERED
@@ -143,6 +148,7 @@ module ikatensei::dwallet_registry {
         let record = DWalletRecord {
             deposit_address,
             dwallet_id,
+            dwallet_pubkey,
             owner,
             registered_at: timestamp,
             active: true,
@@ -171,17 +177,20 @@ module ikatensei::dwallet_registry {
         cap: &RegistryOwnerCap,
         deposit_addresses: vector<vector<u8>>,
         dwallet_ids: vector<vector<u8>>,
+        dwallet_pubkeys: vector<vector<u8>>,
         ctx: &mut TxContext,
     ) {
         let len = vector::length(&deposit_addresses);
         assert!(len == vector::length(&dwallet_ids), E_ZERO_ADDRESS);
+        assert!(len == vector::length(&dwallet_pubkeys), E_ZERO_ADDRESS);
 
         let mut i = 0;
         while (i < len) {
             let addr = *vector::borrow(&deposit_addresses, i);
             let id   = *vector::borrow(&dwallet_ids, i);
+            let pk   = *vector::borrow(&dwallet_pubkeys, i);
             if (!table::contains(&registry.wallets, addr)) {
-                register_dwallet(registry, cap, addr, id, ctx);
+                register_dwallet(registry, cap, addr, id, pk, ctx);
             };
             i = i + 1;
         };
@@ -306,6 +315,11 @@ module ikatensei::dwallet_registry {
     /// Get the dwallet_id bytes for a deposit address.
     public fun get_dwallet_id(registry: &DWalletRegistry, deposit_address: &vector<u8>): vector<u8> {
         table::borrow(&registry.wallets, *deposit_address).dwallet_id
+    }
+
+    /// Get the Ed25519 public key for a registered dWallet.
+    public fun get_dwallet_pubkey(registry: &DWalletRegistry, deposit_address: &vector<u8>): vector<u8> {
+        table::borrow(&registry.wallets, *deposit_address).dwallet_pubkey
     }
 
     /// Historical total: number of registrations ever made. Never decrements.
