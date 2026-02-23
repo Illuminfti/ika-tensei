@@ -1,144 +1,124 @@
-# Ika Tensei — NFT Reincarnation on Solana
+# Ika Tensei
 
-**Your NFT died on Ethereum. Reborn it on Solana.**
+Cross-chain NFT reincarnation protocol. Seal an NFT on any supported chain, mint a provenance-verified copy on Solana via Metaplex Core.
 
-Dead collection? Floor at zero? Your PFP is still you. Ika Tensei lets you seal any NFT on any chain and mint a verified reborn copy on Solana — with full provenance, enforced royalties, and community governance.
+Zero backend. Zero admin keys. Wormhole VAA verification + IKA 2PC-MPC signing.
 
-No backend. No trust assumptions. Just Wormhole guardians and math.
+## Problem
 
-## Why Solana?
+NFTs are stuck on dying chains and dead collections. There's no trustless way to move them cross-chain while preserving provenance. Existing bridges are custodial, centralized, or both.
 
-Because reborn NFTs deserve a chain that's fast, cheap, and alive. Minting on Solana costs ~0.003 SOL. Metaplex Core gives enforced royalties out of the box. And the ecosystem is where the culture is.
+## Solution
 
-Ika Tensei brings NFTs *to* Solana from everywhere else: Ethereum, Polygon, Arbitrum, Base, Optimism, Avalanche, BSC, Sui, Aptos, NEAR — 18 chains and counting.
+Ika Tensei uses Wormhole's guardian network (13/19 consensus) for cross-chain state attestation and IKA Network's dWallet 2PC-MPC for threshold signing. The result is a fully permissionless seal-and-mint pipeline with on-chain provenance.
 
-## How It Works
+**Destination chain: Solana** (Metaplex Core, ~0.003 SOL per mint, enforced royalties)
+
+## Protocol Flow
 
 ```
-Source Chain (ETH, etc.)     Wormhole          Sui (IKA)              Solana
-┌──────────────────┐     ┌──────────┐     ┌──────────────┐     ┌──────────────┐
-│ SealInitiator    │────▶│ Guardian  │────▶│ Orchestrator │────▶│ IkaTensei    │
-│ verifies NFT     │     │ consensus │     │ verifies VAA │     │ Reborn       │
-│ ownership +      │     │ (13/19)   │     │ + IKA dWallet│     │ mints NFT    │
-│ emits Wormhole   │     │           │     │ Ed25519 sign │     │ via Metaplex │
-│ message          │     │           │     │              │     │ Core         │
-└──────────────────┘     └──────────┘     └──────────────┘     └──────────────┘
+EVM Chain                    Wormhole              IKA (Sui)                  Solana
+────────────                 ────────              ─────────                  ──────
+SealInitiator.sol            19 Guardian nodes      Orchestrator.move          IkaTenseiReborn (Anchor)
+├─ ownerOf() check           ├─ observe tx          ├─ parse_and_verify()      ├─ Ed25519 precompile verify
+├─ tokenURI() read           ├─ sign attestation    ├─ emitter validation      ├─ PDA-based replay check
+├─ encodePacked payload      └─ emit VAA            ├─ Ed25519 sig verify      ├─ CreateV2 CPI (Metaplex Core)
+└─ publishMessage()                                 └─ emit SealSigned         └─ store Provenance PDA
 ```
 
-1. **Seal**: User sends their NFT to a deposit address. SealInitiator contract verifies ownership and emits a Wormhole message.
-2. **Verify**: 13 of 19 Wormhole guardians sign the message. The VAA is submitted to the Sui Orchestrator which verifies guardian signatures.
-3. **Sign**: IKA dWallet performs 2PC-MPC Ed25519 signing. Neither the user nor the network can sign alone — both parties must cooperate.
-4. **Mint**: Relayer submits the verified signature to the Solana program, which mints a Metaplex Core NFT with full provenance to the user's wallet.
+### Phase 1: Seal (source chain)
 
-The entire flow is permissionless and trustless. No backend server. No admin keys on Solana. Anyone with a valid IKA signature can trigger a mint.
+`SealInitiator` verifies NFT ownership via `ownerOf()` (ERC-721), `balanceOf()` (ERC-1155), or `punkIndexToAddress()` (CryptoPunks). Reads `tokenURI()`. Encodes a packed binary payload and publishes a Wormhole message.
+
+Payload format (131+ bytes, no ABI encoding):
+```
+[0]      u8     payload_type (0x01)
+[1-2]    u16    source_chain (big-endian)
+[3-34]   bytes32 nft_contract (left-padded)
+[35-66]  bytes32 token_id
+[67-98]  bytes32 deposit_address (left-padded)
+[99-130] bytes32 receiver (Solana pubkey)
+[131+]   bytes   token_uri (raw UTF-8, variable)
+```
+
+### Phase 2: Verify + Sign (Sui)
+
+Two-transaction process on Sui:
+
+1. **`process_vaa`**: Takes raw VAA bytes + Wormhole `State` object. Calls `wormhole::vaa::parse_and_verify()` for guardian signature verification. Validates emitter address against a per-chain registry. Decodes payload. Stores a `PendingSeal` with `message_hash = sha256(token_id || token_uri || receiver)`.
+
+2. **`complete_seal`**: Relayer submits the Ed25519 signature produced by IKA's off-chain 2PC-MPC ceremony. On-chain verification via `sui::ed25519::ed25519_verify()`. Emits `SealSigned` event. Locks `DWalletCap` permanently in `SealVault` (transferred to an address derived from the vault's object ID — no signer controls it).
+
+IKA signing is asynchronous. The Sui contract cannot call the IKA network synchronously, so the relayer bridges the two transactions using the `@ika.xyz/sdk` TypeScript package.
+
+### Phase 3: Mint (Solana)
+
+The relayer watches `SealSigned` events and submits Anchor transactions to Solana:
+
+- **Instruction 0**: Ed25519 precompile — the runtime verifies the signature natively
+- **Instruction 1**: `mint_reborn` — program loads instruction 0 from the sysvar, checks pubkey + message + all 64 signature bytes via `constant_time_eq`, then mints
+
+Replay protection uses per-signature PDAs: `seeds = ["sig_used", sha256(signature)]`. Anchor's `init` constraint fails atomically if the PDA exists. No ring buffers, no overflow, no expiry.
+
+Metaplex Core `CreateV2` CPI mints the reborn NFT with:
+- Collection linkage (auto-created per source chain collection)
+- Original token URI preserved
+- Full provenance stored in a separate PDA
 
 ## Architecture
 
 ```
 packages/
-├── eth-contracts/     # Solidity — SealInitiator (EVM source chains)
-├── sui-contracts/     # Move — Orchestrator, DWallet Registry, Payload Decoder
-├── solana-program/    # Anchor — IkaTenseiReborn (mints Metaplex Core NFTs)
-├── relayer-v6/        # TypeScript — Bridges Sui events to Solana transactions
-└── frontend/          # Next.js — Seal flow UI (Vercel)
+├── eth-contracts/     Solidity    SealInitiator + Forge tests
+├── sui-contracts/     Move        Orchestrator, Payload Decoder, DWallet Registry
+├── solana-program/    Anchor      IkaTenseiReborn (Metaplex Core minting)
+├── relayer-v6/        TypeScript  Sui→Solana bridge (Borsh encoding, Ed25519 ix)
+└── frontend/          Next.js     Seal flow UI
 ```
 
-### Solana Program (the destination)
+### Key design decisions
 
-The Solana program is where NFTs are reborn. It:
-- Verifies Ed25519 signatures from IKA dWallets via the native precompile
-- Creates Metaplex Core collections per source chain collection
-- Mints reborn NFTs with enforced royalties
-- Stores full provenance on-chain (source chain, contract, token ID, original URI)
-- Uses PDA-based replay protection (one mint per signature, forever)
+- **`abi.encodePacked` not `abi.encode`**: ABI encoding inserts 32-byte padding and offset tables. The Sui decoder uses fixed byte offsets. Packed encoding is the only format that works cross-chain without an ABI decoder in Move.
+- **Two-phase seal on Sui**: IKA 2PC-MPC is async. Can't do VAA verification and signing in one tx.
+- **PDA-per-signature replay**: A global account with a bounded buffer overflows. PDA-per-signature scales indefinitely and fails atomically on replay.
+- **Ed25519 precompile + sysvar introspection**: Solana programs can't call the Ed25519 precompile directly. The relayer places it as instruction 0, the program reads it from the instructions sysvar and verifies all three fields (pubkey, message, signature bytes).
+- **DWalletCap burn via transfer**: Sui has no `destroy` for arbitrary types. Transferring to an address derived from a shared object's ID makes the cap permanently inaccessible.
 
-No admin keys. No upgrade authority needed. Pure verification + minting.
+## Source Chains
 
-### EVM Contracts (source chains)
+18 chains via Wormhole:
 
-SealInitiator is deployed on each EVM chain. It:
-- Verifies NFT ownership (ERC-721, ERC-1155, CryptoPunks)
-- Reads token URI from the source contract
-- Emits a Wormhole message with a packed binary payload
-- Has replay protection (each NFT can only be sealed once)
-- Supports batch sealing (up to 50 NFTs per tx)
+**EVM**: Ethereum, Polygon, Arbitrum, Base, Optimism, Avalanche, BSC, Fantom, Celo, Moonbeam, Gnosis, Klaytn, Scroll, zkSync
 
-### Sui Orchestrator (verification layer)
-
-The orchestrator on Sui handles cross-chain verification:
-- Parses and verifies Wormhole VAAs (real `wormhole::vaa::parse_and_verify`)
-- Validates emitter addresses against a registry of known SealInitiator contracts
-- Stores pending seals awaiting IKA dWallet signatures
-- Verifies Ed25519 signatures on-chain before emitting events
-- Locks DWalletCaps permanently after sealing (no recovery, by design)
-
-Two-phase process: `process_vaa` (verify) → `complete_seal` (sign + emit).
-
-### Relayer
-
-The relayer bridges Sui to Solana:
-- Subscribes to SealSigned events on Sui
-- Builds Anchor transactions with correct Borsh encoding
-- Prepends Ed25519 precompile instructions
-- Handles retries with exponential backoff
-- Persists event cursors for crash recovery
-
-## Supported Source Chains
-
-| Chain | Type | Status |
-|-------|------|--------|
-| Ethereum | EVM | ✅ |
-| Polygon | EVM | ✅ |
-| Arbitrum | EVM | ✅ |
-| Base | EVM | ✅ |
-| Optimism | EVM | ✅ |
-| Avalanche | EVM | ✅ |
-| BSC | EVM | ✅ |
-| Fantom | EVM | ✅ |
-| Celo | EVM | ✅ |
-| Moonbeam | EVM | ✅ |
-| Gnosis | EVM | ✅ |
-| Klaytn | EVM | ✅ |
-| Scroll | EVM | ✅ |
-| zkSync | EVM | ✅ |
-| Sui | MoveVM | ✅ |
-| Aptos | MoveVM | ✅ |
-| NEAR | NEAR | ✅ |
-| Solana | Solana | ✅ (seal old Token Metadata → reborn as Core) |
-
-**Destination: Solana** (Metaplex Core)
+**Other**: Sui, Aptos, NEAR, Solana (seal old Token Metadata → reborn as Metaplex Core)
 
 ## Security
 
-3 rounds of security auditing with 12 parallel agents. Full report: [`audits/v3/MASTER-AUDIT-V6.md`](audits/v3/MASTER-AUDIT-V6.md)
+3 audit rounds, 12 agents. 58 findings total, all CRITICAL/HIGH fixed. Report: [`audits/v3/MASTER-AUDIT-V6.md`](audits/v3/MASTER-AUDIT-V6.md)
 
-- 58 findings identified, all CRITICAL and HIGH fixed
-- Wire format specification: [`docs/WIRE-FORMAT-SPEC.md`](docs/WIRE-FORMAT-SPEC.md)
-- No admin keys on Solana program
-- Wormhole guardian consensus (13/19) for cross-chain messages
-- IKA 2PC-MPC for signing (neither party can sign alone)
-- PDA-based replay protection (permanent, no overflow)
-- Ed25519 signature verification checks all 64 bytes
+| Property | Implementation |
+|----------|---------------|
+| Cross-chain verification | Wormhole 13/19 guardian consensus |
+| Signing | IKA 2PC-MPC (neither party signs alone) |
+| Replay (EVM) | `mapping(bytes32 => bool) sealedNFTs` |
+| Replay (Solana) | PDA per signature hash |
+| Replay (Sui) | `processed_vaas` table + Wormhole consumed_vaas |
+| Signature verification | Ed25519 precompile, 64-byte constant-time comparison |
+| Admin keys (Solana) | None |
+| Reentrancy (EVM) | Checks-effects-interactions pattern |
 
-## Reborn NFT Design
+Wire format spec: [`docs/WIRE-FORMAT-SPEC.md`](docs/WIRE-FORMAT-SPEC.md)
 
-When your NFT is reborn on Solana:
-- **Name**: `"{Original Collection} ✦ Reborn"`
-- **Metadata**: Original token URI preserved
-- **Provenance**: Source chain, contract address, token ID stored on-chain
-- **Standard**: Metaplex Core (single account per NFT, enforced royalties)
-- **Storage**: Arweave via Irys for permanent metadata
-
-## Development
+## Build
 
 ```bash
-# EVM contracts
+# EVM
 cd packages/eth-contracts && forge build && forge test
 
-# Sui contracts
+# Sui (requires Wormhole git dependency)
 cd packages/sui-contracts/ikatensei && sui move build
 
-# Solana program
+# Solana
 cd packages/solana-program/ika-tensei-reborn && anchor build
 
 # Relayer
@@ -150,9 +130,9 @@ cd packages/frontend && npm install && npm run dev
 
 ## Docs
 
-- [PRD v6](docs/PRD-v6.md) — Protocol design
-- [Wire Format Spec](docs/WIRE-FORMAT-SPEC.md) — Canonical cross-chain byte layouts
-- [Sub-Agent Rules](docs/SUBAGENT-RULES.md) — Development guardrails
+- [PRD v6](docs/PRD-v6.md) — Protocol specification
+- [Wire Format Spec](docs/WIRE-FORMAT-SPEC.md) — Cross-chain byte layouts
+- [Audit Report](audits/v3/MASTER-AUDIT-V6.md) — Security findings + fixes
 
 ## License
 
