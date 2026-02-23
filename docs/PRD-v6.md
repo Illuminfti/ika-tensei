@@ -4,13 +4,20 @@
 
 Ika Tensei is an NFT reincarnation protocol. Users **seal** (permanently lock) NFTs on any source chain and **reborn** (mint) new versions on Solana.
 
-**Key change from v5:** Sui is the orchestration layer. Source chain contracts emit Wormhole VAAs. The Sui contract verifies VAAs, validates dWallet ownership, and signs a message via IKA. A permissionless relayer delivers that signature to Solana, which verifies it and mints the reborn NFT.
+**Key change from v5:** Sui is the orchestration layer. Two types of dWallets serve different purposes:
+
+1. **Deposit dWallets (many, per-NFT):** Each seal gets its own dWallet as the deposit address where the user sends the NFT. Created via IKA DKG in the frontend. The user submits DKG data to the relayer.
+2. **Minting dWallet (one, contract-owned):** A single Ed25519 dWallet owned by the Sui contract that signs ALL mint attestations. The Solana program stores this pubkey and only accepts mints signed by it.
+
+**Flow:** User does DKG in browser → deposits NFT → source chain emits Wormhole VAA → user sends {VAA + DKG data} to relayer API → relayer pre-validates (DKG address == VAA depositor) → relayer submits to Sui → Sui verifies VAA + completes DKG + derives deposit address on-chain + verifies match → signs with shared minting dWallet → relayer delivers signature to Solana → mint.
 
 This is Fesal's architecture. It's cleaner than v5 because:
-- Sui handles all the heavy verification (Wormhole VAA + dWallet validation)
-- Solana only verifies one Ed25519 signature (cheap, native precompile)
+- Sui handles all the heavy verification (Wormhole VAA + dWallet validation + address derivation)
+- Solana only verifies one Ed25519 signature from the known minting dWallet (cheap, native precompile)
 - IKA dWallet signing happens natively on Sui (where IKA lives)
 - Per-collection creation on Solana (each source collection gets its own reborn collection)
+- Relayer pre-validates DKG vs VAA off-chain to avoid wasting gas on mismatches
+- The minting dWallet is set once at contract init, never passed as input
 
 ## Architecture
 
@@ -46,28 +53,39 @@ This is Fesal's architecture. It's cleaner than v5 because:
 
 ```
 1. User connects Solana wallet on ika-tensei.io
-2. Selects source chain, gets dWallet deposit address
-3. Sends NFT to deposit address (via MetaMask, Phantom, etc.)
-4. Clicks "Verify Deposit"
-5. Source chain contract confirms NFT is at dWallet address,
+2. Selects source chain
+3. Frontend creates dWallet via IKA SDK in browser:
+   - prepareDKGAsync() → requestDWalletDKG() → gets DKG data
+   - DKG data includes: session identifier, centralized message, public output
+   - Derives deposit address from dWallet pubkey (secp256k1→keccak for EVM, Ed25519 for others)
+4. User sees deposit address, sends NFT to it (via MetaMask, Phantom, etc.)
+5. User clicks "Verify Deposit"
+6. Source chain contract confirms NFT is at dWallet address,
    reads tokenURI, emits Wormhole VAA
-6. ~15 min: Wormhole guardians reach consensus, VAA available
-7. VAA delivered to Sui contract (by user, relayer, or anyone)
-8. Sui contract:
-   a. Verifies Wormhole VAA (13/19 guardian signatures)
-   b. Validates dWallet address from VAA is a registered IKA dWallet
-   c. Constructs message: sha256(token_id + token_uri + receiver)
-   d. Signs message with IKA dWallet (2PC-MPC signing ceremony)
-   e. Emits event containing signature + message data
-9. Relayer picks up Sui event, fetches IKA signature
-10. Relayer submits to Solana program: signature + data
-11. Solana program:
-    a. Verifies Ed25519 signature (native precompile, ~900 CU)
+7. ~15 min: Wormhole guardians reach consensus, VAA available
+8. Frontend sends to Relayer API: { VAA bytes, DKG data }
+9. Relayer (off-chain pre-validation):
+   a. Parses VAA, extracts depositor address
+   b. Parses DKG data, derives expected deposit address
+   c. Compares: if mismatch → rejects (no gas wasted)
+   d. If match → submits to Sui contract: VAA + DKG data
+10. Sui contract:
+    a. Verifies Wormhole VAA (13/19 guardian signatures)
+    b. Completes DKG for deposit dWallet, stores in table
+    c. Derives deposit address on-chain from dWallet pubkey
+    d. Verifies derived address matches depositor in VAA
+    e. Constructs message: sha256(token_id + token_uri + receiver)
+    f. Signs message with the SHARED MINTING dWallet (set at init, not per-NFT)
+    g. Emits SealSigned event containing signature + message data
+11. Relayer picks up Sui event
+12. Relayer submits to Solana program: signature + data
+13. Solana program:
+    a. Verifies Ed25519 signature against stored minting pubkey (~900 CU)
     b. Creates Metaplex Core collection for this source collection
        (if first NFT from this collection)
     c. Mints reborn NFT to receiver address
     d. Stores provenance on-chain
-12. User sees reborn NFT in wallet
+14. User sees reborn NFT in wallet
 ```
 
 ## Smart Contracts
@@ -250,6 +268,10 @@ impl SealInitiator {
 
 The brain. Receives Wormhole VAAs from all source chains, verifies everything, signs with IKA.
 
+**Two dWallet types:**
+- **Deposit dWallets (per-NFT):** Created by users via DKG in browser. Stored in table after relayer submits DKG data. Used to verify NFT custody.
+- **Minting dWallet (singleton):** Set once at contract initialization. Stored in `MintAuthority` shared object. Signs ALL mint attestations. The Solana program stores this pubkey.
+
 ```move
 module ika_tensei::orchestrator {
     use wormhole::vaa;
@@ -257,12 +279,25 @@ module ika_tensei::orchestrator {
     use ika::dwallet_cap;
     use sui::hash;
     use sui::event;
+    use sui::table;
 
-    /// Registry of valid dWallet deposit addresses
-    struct DWalletRegistry has key {
+    /// Shared object holding the minting dWallet (set once at init)
+    struct MintAuthority has key {
         id: UID,
-        // Map: deposit_address => dWallet object ID
-        wallets: Table<vector<u8>, ID>,
+        dwallet_id: ID,               // The one minting dWallet
+        dwallet_pubkey: vector<u8>,    // Ed25519 pubkey (32 bytes)
+    }
+
+    /// Table of deposit dWallets (populated via DKG during seal flow)
+    struct DepositRegistry has key {
+        id: UID,
+        // deposit_address (chain-specific, derived from pubkey) => DKG record
+        deposits: Table<vector<u8>, DepositRecord>,
+    }
+
+    struct DepositRecord has store {
+        dwallet_pubkey: vector<u8>,    // The deposit dWallet's pubkey
+        source_chain: u16,             // Which chain this deposit is on
     }
 
     /// Emitted after successful verification + signing
@@ -271,65 +306,108 @@ module ika_tensei::orchestrator {
         nft_contract: vector<u8>,
         token_id: vector<u8>,
         token_uri: vector<u8>,
-        receiver: vector<u8>,       // Solana wallet (32 bytes)
+        receiver: vector<u8>,          // Solana wallet (32 bytes)
         deposit_address: vector<u8>,
-        message_hash: vector<u8>,   // sha256(token_id + token_uri + receiver)
-        signature: vector<u8>,      // IKA dWallet Ed25519 signature
+        message_hash: vector<u8>,      // sha256(token_id + token_uri + receiver)
+        signature: vector<u8>,         // Minting dWallet Ed25519 signature
     }
 
-    /// Process a Wormhole VAA and sign with IKA
+    /// Initialize contract with the shared minting dWallet
+    /// Called ONCE at deployment. The minting dWallet is permanent.
+    public entry fun initialize(
+        dwallet_id: ID,
+        dwallet_pubkey: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(vector::length(&dwallet_pubkey) == 32, E_INVALID_PUBKEY);
+        transfer::share_object(MintAuthority {
+            id: object::new(ctx),
+            dwallet_id,
+            dwallet_pubkey,
+        });
+        transfer::share_object(DepositRegistry {
+            id: object::new(ctx),
+            deposits: table::new(ctx),
+        });
+    }
+
+    /// Step 1: Relayer registers deposit dWallet from user's DKG data
+    /// and verifies it against the Wormhole VAA in one atomic tx.
     public entry fun process_seal(
-        registry: &DWalletRegistry,
-        vaa_bytes: vector<u8>,
-        dwallet: &DWallet,
-        dwallet_cap: &DWalletCap,
+        mint_auth: &MintAuthority,
+        registry: &mut DepositRegistry,
+        mint_dwallet: &DWallet,
+        mint_cap: &DWalletCap,
         wormhole_state: &WormholeState,
+        vaa_bytes: vector<u8>,
+        deposit_pubkey: vector<u8>,    // From user's DKG
+        clock: &Clock,
     ) {
         // 1. Parse and verify Wormhole VAA (13/19 guardian sigs)
-        let verified_vaa = vaa::parse_and_verify(wormhole_state, vaa_bytes);
+        let verified_vaa = vaa::parse_and_verify(wormhole_state, vaa_bytes, clock);
 
         // 2. Decode payload
-        let payload = decode_seal_payload(vaa::payload(&verified_vaa));
-        // payload: { source_chain, nft_contract, token_id,
-        //            deposit_address, receiver, token_uri }
+        let (emitter_chain, _emitter_addr, payload_bytes) =
+            vaa::take_emitter_info_and_payload(verified_vaa);
+        let payload = decode_seal_payload(payload_bytes);
 
-        // 3. Verify dWallet deposit address is registered
-        assert!(
-            table::contains(&registry.wallets, payload.deposit_address),
-            E_INVALID_DWALLET
+        // 3. Derive expected deposit address from DKG pubkey
+        //    EVM: keccak256(secp256k1_pubkey)[12:]
+        //    Solana/Sui: Ed25519 pubkey directly
+        let derived_address = derive_deposit_address(
+            emitter_chain,
+            &deposit_pubkey,
         );
-        let registered_id = table::borrow(&registry.wallets, payload.deposit_address);
-        assert!(object::id(dwallet) == *registered_id, E_DWALLET_MISMATCH);
 
-        // 4. Construct message to sign
-        // sha256(token_id || token_uri || receiver)
+        // 4. Verify derived address matches VAA depositor
+        assert!(derived_address == payload.deposit_address, E_ADDRESS_MISMATCH);
+
+        // 5. Store deposit record in registry
+        table::add(&mut registry.deposits, derived_address, DepositRecord {
+            dwallet_pubkey: deposit_pubkey,
+            source_chain: emitter_chain,
+        });
+
+        // 6. Verify minting dWallet matches authority
+        assert!(object::id(mint_dwallet) == mint_auth.dwallet_id, E_WRONG_MINT_DWALLET);
+
+        // 7. Construct message to sign
         let mut data = vector::empty<u8>();
         vector::append(&mut data, payload.token_id);
         vector::append(&mut data, payload.token_uri);
         vector::append(&mut data, payload.receiver);
         let message_hash = hash::sha2_256(data);
 
-        // 5. Sign with IKA dWallet (2PC-MPC)
+        // 8. Sign with the SHARED MINTING dWallet (not the deposit dWallet)
         let signature = dwallet::sign(
-            dwallet,
-            dwallet_cap,
+            mint_dwallet,
+            mint_cap,
             message_hash,
         );
 
-        // 6. Emit event for relayer
+        // 9. Emit event for relayer
         event::emit(SealSigned {
-            source_chain: payload.source_chain,
+            source_chain: emitter_chain,
             nft_contract: payload.nft_contract,
             token_id: payload.token_id,
             token_uri: payload.token_uri,
             receiver: payload.receiver,
-            deposit_address: payload.deposit_address,
+            deposit_address: derived_address,
             message_hash,
             signature,
         });
+    }
 
-        // 7. Lock DWalletCap (permanent seal)
-        dwallet_cap::lock(dwallet_cap);
+    /// Derive deposit address from pubkey based on chain type
+    fun derive_deposit_address(chain_id: u16, pubkey: &vector<u8>): vector<u8> {
+        if (is_evm_chain(chain_id)) {
+            // EVM: last 20 bytes of keccak256(uncompressed secp256k1 pubkey)
+            let hash = sui::hash::keccak256(*pubkey);
+            vector::slice(&hash, 12, 32)
+        } else {
+            // Solana/Sui/Aptos/NEAR: Ed25519 pubkey IS the address
+            *pubkey
+        }
     }
 }
 ```
@@ -346,32 +424,45 @@ use anchor_lang::solana_program::ed25519_program;
 pub mod ika_tensei_reborn {
     use super::*;
 
-    /// Mint a reborn NFT after verifying IKA dWallet signature
+    /// Initialize the program with the minting dWallet pubkey (once)
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        minting_pubkey: [u8; 32],  // The ONE minting dWallet Ed25519 pubkey
+    ) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        config.minting_pubkey = minting_pubkey;
+        config.authority = ctx.accounts.authority.key();
+        Ok(())
+    }
+
+    /// Mint a reborn NFT after verifying IKA minting dWallet signature
     pub fn mint_reborn(
         ctx: Context<MintReborn>,
-        signature: [u8; 64],       // Ed25519 signature from IKA
-        dwallet_pubkey: [u8; 32],  // IKA dWallet Ed25519 public key
+        signature: [u8; 64],       // Ed25519 signature from shared minting dWallet
         source_chain: u16,
         nft_contract: Vec<u8>,
         token_id: Vec<u8>,
         token_uri: String,
         collection_name: String,    // Source collection name
     ) -> Result<()> {
-        // 1. Reconstruct message hash
+        // 1. Load minting pubkey from on-chain config (NOT from input)
+        let minting_pubkey = ctx.accounts.config.minting_pubkey;
+
+        // 2. Reconstruct message hash
         let mut data = Vec::new();
         data.extend_from_slice(&token_id);
         data.extend_from_slice(token_uri.as_bytes());
         data.extend_from_slice(&ctx.accounts.receiver.key().to_bytes());
         let message_hash = anchor_lang::solana_program::hash::hash(&data);
 
-        // 2. Verify Ed25519 signature (native precompile, ~900 CU)
+        // 3. Verify Ed25519 signature against stored minting pubkey (~900 CU)
         verify_ed25519_signature(
-            &dwallet_pubkey,
+            &minting_pubkey,
             &message_hash.to_bytes(),
             &signature,
         )?;
 
-        // 3. Check signature hasn't been used (replay protection)
+        // 4. Check signature hasn't been used (replay protection)
         let sig_hash = anchor_lang::solana_program::hash::hash(&signature);
         require!(
             !ctx.accounts.used_signatures.is_used(&sig_hash),
@@ -414,20 +505,46 @@ pub mod ika_tensei_reborn {
 
 ### Layer 4: Relayer
 
-Permissionless process that bridges Sui events to Solana. Anyone can run it.
+Two roles: (1) API server that accepts user submissions, (2) event listener that bridges Sui → Solana.
 
 ```typescript
 // relayer/src/index.ts
 import { SuiClient } from "@mysten/sui/client";
 import { Connection, Transaction } from "@solana/web3.js";
+import express from "express";
 
 class SealRelayer {
     private sui: SuiClient;
     private solana: Connection;
+    private app: express.Application;
 
     async run() {
-        // Subscribe to SealSigned events on Sui
-        const unsubscribe = await this.sui.subscribeEvent({
+        // === Role 1: API server for user submissions ===
+        this.app.post("/api/seal", async (req, res) => {
+            const { vaaBytes, dkgData } = req.body;
+            // dkgData: { sessionIdentifier, centralizedMessage, publicOutput, depositPubkey }
+
+            // Pre-validate: derive address from DKG pubkey
+            const derivedAddress = deriveDepositAddress(
+                dkgData.depositPubkey,
+                parseVAAChainId(vaaBytes),
+            );
+
+            // Pre-validate: compare with VAA depositor
+            const vaaDepositor = parseVAADepositor(vaaBytes);
+            if (!derivedAddress.equals(vaaDepositor)) {
+                return res.status(400).json({
+                    error: "DKG address does not match VAA depositor",
+                });
+            }
+
+            // Submit to Sui contract (pays gas)
+            const txDigest = await this.submitToSui(vaaBytes, dkgData);
+            res.json({ status: "submitted", txDigest });
+        });
+
+        // === Role 2: Event listener for Sui → Solana bridge ===
+        await this.sui.subscribeEvent({
             filter: {
                 MoveEventType: `${PACKAGE_ID}::orchestrator::SealSigned`
             },
@@ -438,12 +555,10 @@ class SealRelayer {
     async relaySeal(event: SuiEvent) {
         const data = event.parsedJson as SealSigned;
 
-        // Build Solana transaction
+        // Build Solana transaction (no dwallet_pubkey - it's stored on-chain)
         const tx = new Transaction().add(
-            // Call mint_reborn on Solana program
             mintRebornInstruction({
                 signature: data.signature,
-                dwalletPubkey: data.dwallet_pubkey,
                 sourceChain: data.source_chain,
                 nftContract: data.nft_contract,
                 tokenId: data.token_id,
@@ -453,17 +568,18 @@ class SealRelayer {
             })
         );
 
-        // Submit to Solana
         await this.solana.sendTransaction(tx, [this.relayerKeypair]);
     }
 }
 ```
 
 **Relayer properties:**
-- **Permissionless:** Anyone can run one. The data is signed by IKA, relayer can't modify it.
-- **Stateless:** Just watches Sui events and forwards to Solana.
-- **Incentivizable:** Could add a small tip in the Solana program for relayers.
-- **Redundant:** Multiple relayers can run simultaneously. Replay protection prevents double mints.
+- **Two roles:** API server (receives user DKG + VAA) + event bridge (Sui → Solana)
+- **Pre-validates off-chain:** Compares DKG-derived address with VAA depositor before spending gas
+- **Stateless bridging:** The Sui→Solana leg just watches events and forwards signed data
+- **Incentivizable:** Could add a small tip in the Solana program for relayers
+- **Redundant:** Multiple relayers can run the event listener. Replay protection prevents double mints.
+- **API is centralized but verifiable:** The relayer API is a convenience; all verification happens on-chain. A user could theoretically submit directly to Sui.
 
 ## Metadata Verification
 
@@ -556,7 +672,9 @@ NEAR (SealInitiator Rust contract)
 | Double mint | Signature hash tracked in PDA. Second attempt rejected. |
 | Rogue relayer | Can't modify signed data. Can only delay (but anyone can run a relayer). |
 | Wormhole compromise | 13/19 guardians must collude. Same security as $10B+ TVL. |
-| IKA compromise | 2PC-MPC: neither network nor DWalletCap holder can sign alone. Cap is locked after seal. |
+| IKA compromise | 2PC-MPC: neither network nor DWalletCap holder can sign alone. Deposit dWallet cap locked after seal. |
+| Forged minting pubkey | Minting pubkey stored on-chain at init (Sui + Solana). Never accepted as input. |
+| DKG/VAA mismatch | Relayer pre-validates off-chain; Sui contract derives address on-chain and verifies against VAA. |
 
 ## Contracts Summary
 
@@ -601,11 +719,15 @@ NEAR (SealInitiator Rust contract)
 
 ## Decisions (v6)
 
-1. **Sui is the orchestrator.** Wormhole VAA verification + dWallet validation + IKA signing all happen on Sui.
-2. **Solana is thin.** Only Ed25519 signature verification + Metaplex Core mint. ~900 CU for sig verify.
-3. **Per-collection reborn collections.** Each source collection gets its own Solana collection. Better UX, better marketplace integration.
-4. **Permissionless relayer.** Bridges Sui → Solana. Can't tamper with signed data. Anyone can run one.
-5. **DWalletCap locked after signing.** The Sui Orchestrator locks the cap as part of `process_seal`. Permanent, atomic.
-6. **tokenURI preserved as-is.** The original tokenURI from the source chain is stored in provenance. Arweave re-upload is a separate optional step.
-7. **Source contracts are permissionless.** No admin keys. No upgradability. Deploy and forget.
-8. **Ed25519 for everything Solana-facing.** IKA dWallet signs with Ed25519, Solana verifies natively. No secp256k1 complications.
+1. **Two types of dWallets.** Deposit dWallets (many, per-NFT, created by user via DKG in browser) hold NFTs. One shared minting dWallet (set at contract init) signs all mint attestations.
+2. **Minting pubkey is NEVER an input.** Stored on-chain in both Sui (`MintAuthority`) and Solana (`Config` PDA). Set once at initialization.
+3. **User does DKG in browser.** Frontend uses IKA SDK (`@ika.xyz/sdk`) to create deposit dWallet. Sends DKG data + VAA to relayer API.
+4. **Relayer pre-validates.** Derives address from DKG pubkey, compares with VAA depositor off-chain. Rejects mismatches before spending gas.
+5. **Sui derives deposit address on-chain.** Computes address from pubkey (keccak for EVM, direct for Ed25519 chains) and verifies against VAA. Belt and suspenders with relayer check.
+6. **Sui is the orchestrator.** Wormhole VAA verification + DKG completion + address derivation + IKA signing all happen on Sui.
+7. **Solana is thin.** Only Ed25519 signature verification against stored minting pubkey + Metaplex Core mint. ~900 CU for sig verify.
+8. **Per-collection reborn collections.** Each source collection gets its own Solana collection. Better UX, better marketplace integration.
+9. **Deposit dWalletCap locked after signing.** Permanent, atomic.
+10. **tokenURI preserved as-is.** Original tokenURI stored in provenance. Arweave re-upload optional.
+11. **Source contracts are permissionless.** No admin keys. No upgradability. Deploy and forget.
+12. **Ed25519 for minting authority.** IKA minting dWallet signs with Ed25519, Solana verifies natively.
