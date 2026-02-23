@@ -1,0 +1,40 @@
+{
+  "name": "@ika-tensei/relayer-v6",
+  "version": "6.0.0",
+  "description": "Ika Tensei v6 permissionless relayer - Sui to Solana bridge",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "start:docker": "node dist/index.js"
+  },
+  "keywords": [
+    "ika-tensei",
+    "relayer",
+    "nft",
+    "reincarnation",
+    "cross-chain",
+    "sui",
+    "solana"
+  ],
+  "author": "Ika Tensei",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@mysten/sui": "^1.45.2",
+    "@solana/web3.js": "^1.95.0",
+    "dotenv": "^16.4.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
