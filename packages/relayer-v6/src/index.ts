@@ -1,11 +1,13 @@
 /**
  * Ika Tensei v6 Relayer - Main Entry Point
- * 
- * Permissionless relayer that:
- * 1. Subscribes to SealSigned events on Sui
- * 2. Parses event data
- * 3. Builds and submits transactions to Solana
- * 4. Handles retries with exponential backoff
+ *
+ * Permissionless relayer that bridges SealSigned events from Sui to Solana.
+ *
+ * Flow:
+ * 1. Subscribe to SealSigned events on Sui (real-time + replay on restart)
+ * 2. Parse event data into ProcessedSeal
+ * 3. Build and submit mint_reborn transaction to Solana
+ * 4. Handle retries with exponential backoff
  */
 
 import { readFileSync } from 'fs';
@@ -18,14 +20,14 @@ import { logger } from './logger.js';
 import type { SealSignedEvent, ProcessedSeal } from './types.js';
 
 /**
- * Main Relayer class
+ * Relayer orchestrates the Sui → Solana bridge.
  */
 export class Relayer {
-  private suiListener: SuiListener;
-  private solanaSubmitter: SolanaSubmitter;
-  private healthServer: HealthServer;
-  private relayerKeypair: Keypair;
-  private isRunning: boolean = false;
+  private readonly suiListener: SuiListener;
+  private readonly solanaSubmitter: SolanaSubmitter;
+  private readonly healthServer: HealthServer;
+  private readonly relayerKeypair: Keypair;
+  private _isRunning = false;
 
   constructor() {
     this.suiListener = new SuiListener();
@@ -34,208 +36,249 @@ export class Relayer {
     this.relayerKeypair = this.loadRelayerKeypair();
   }
 
-  /**
-   * Load relayer keypair from file
-   */
-  private loadRelayerKeypair(): Keypair {
-    const config = getConfig();
-    
-    try {
-      const keypairData = readFileSync(config.relayerKeypairPath, 'utf-8');
-      const keypairArray = JSON.parse(keypairData);
-      return Keypair.fromSecretKey(new Uint8Array(keypairArray));
-    } catch (error) {
-      logger.error({ 
-        path: config.relayerKeypairPath, 
-        error 
-      }, 'Failed to load relayer keypair');
-      throw new Error('Could not load relayer keypair');
-    }
-  }
+  // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
   /**
-   * Initialize and start the relayer
+   * Start the relayer: verify connections, load cursor, subscribe to events.
    */
   async start(): Promise<void> {
-    logger.info('Starting Ika Tensei v6 Relayer...');
+    logger.info('Starting Ika Tensei v6 Relayer…');
 
-    // Check connections
-    const suiConnected = await this.suiListener.checkConnection();
-    const solanaConnected = await this.solanaSubmitter.checkConnection();
-
-    this.healthServer.setSuiConnected(suiConnected);
-    this.healthServer.setSolanaConnected(solanaConnected);
-
-    if (!suiConnected) {
-      throw new Error('Sui connection failed');
+    // Verify Sui connection
+    const suiOk = await this.suiListener.checkConnection();
+    this.healthServer.setSuiConnected(suiOk);
+    if (!suiOk) {
+      throw new Error('Sui RPC connection failed');
     }
 
-    if (!solanaConnected) {
-      throw new Error('Solana connection failed');
+    // Verify Solana connection
+    const solanaOk = await this.solanaSubmitter.checkConnection();
+    this.healthServer.setSolanaConnected(solanaOk);
+    if (!solanaOk) {
+      throw new Error('Solana RPC connection failed');
     }
 
-    logger.info('Connections verified');
+    logger.info('All connections verified');
 
-    // Start health server
+    // Start health endpoint
     this.healthServer.start();
 
-    // Subscribe to Sui events
-    await this.suiListener.subscribe(async (event, eventId) => {
+    // Subscribe to Sui events (includes replay from cursor)
+    await this.suiListener.start(async (event, eventId) => {
       await this.processSealEvent(event, eventId);
     });
 
-    this.isRunning = true;
+    this._isRunning = true;
     logger.info('Relayer is running');
 
-    // Setup periodic connection checks
-    setInterval(async () => {
-      await this.checkConnections();
-    }, 30000);
+    // Periodic connection health checks
+    setInterval(() => {
+      this.checkConnections().catch((err) => {
+        logger.error({ err }, 'Connection check failed');
+      });
+    }, 30_000);
   }
 
   /**
-   * Process a SealSigned event from Sui
+   * Graceful shutdown.
+   */
+  async stop(): Promise<void> {
+    logger.info('Stopping relayer…');
+    await this.suiListener.unsubscribeFromEvents();
+    this.healthServer.stop();
+    this._isRunning = false;
+    logger.info('Relayer stopped');
+  }
+
+  get isRunning(): boolean {
+    return this._isRunning;
+  }
+
+  // ─── Event Processing ────────────────────────────────────────────────────────
+
+  /**
+   * Handle an incoming SealSigned event from Sui.
    */
   private async processSealEvent(event: SealSignedEvent, eventId: string): Promise<void> {
     logger.info({ eventId, tokenId: event.token_id }, 'Processing SealSigned event');
 
     try {
-      // Parse and validate the event data
+      // Parse and validate event data
       const processedSeal = this.parseSealEvent(event);
-      
-      logger.info({
-        eventId,
-        receiver: processedSeal.receiver,
-        collectionName: processedSeal.collectionName,
-      }, 'Submitting mint_reborn to Solana');
+
+      logger.info(
+        {
+          eventId,
+          receiver: Buffer.from(processedSeal.receiver).toString('hex'),
+          collectionName: processedSeal.collectionName,
+        },
+        'Submitting mint_reborn to Solana',
+      );
 
       // Submit to Solana
       const result = await this.solanaSubmitter.submitMintReborn(
         processedSeal,
-        this.relayerKeypair
+        this.relayerKeypair,
       );
 
       if (result.success) {
-        logger.info({
-          eventId,
-          txHash: result.txHash,
-          retries: result.retries,
-        }, 'Successfully processed seal');
-        
+        logger.info(
+          { eventId, txHash: result.txHash, retries: result.retries },
+          'Successfully processed SealSigned event',
+        );
         this.healthServer.incrementProcessed();
         this.healthServer.setLastProcessedEvent(eventId);
       } else {
-        logger.error({
-          eventId,
-          error: result.error,
-          retries: result.retries,
-        }, 'Failed to process seal');
-        
+        logger.error(
+          { eventId, error: result.error, retries: result.retries },
+          'Failed to process SealSigned event',
+        );
         this.healthServer.incrementFailed();
       }
-    } catch (error) {
-      logger.error({ error, eventId }, 'Error processing seal event');
+    } catch (err) {
+      logger.error({ err, eventId }, 'Exception processing SealSigned event');
       this.healthServer.incrementFailed();
     }
   }
 
   /**
-   * Parse SealSigned event into ProcessedSeal
+   * Convert raw Sui event fields into the ProcessedSeal structure used by Solana.
+   *
+   * CRITICAL FIX: The dWallet Ed25519 pubkey comes from `dwallet_pubkey` field,
+   * NOT from `deposit_address`. The deposit_address is a different field (likely
+   * the Sui address where funds were deposited, not the MPC key).
    */
   private parseSealEvent(event: SealSignedEvent): ProcessedSeal {
-    // Convert hex strings to Uint8Array
-    const signature = this.hexToUint8Array(event.signature);
-    const dwalletPubkey = this.hexToUint8Array(event.deposit_address);
-    
-    // Extract collection name from token URI or contract
-    // In production, this would come from the event or be looked up
-    const collectionName = this.deriveCollectionName(event.nft_contract, event.token_uri);
+    // All fields from Sui are hex-encoded strings.
+    // Convert them to the appropriate binary representations.
+
+    // 64-byte Ed25519 signature
+    const signature = this.hexToUint8Array(event.signature, 64);
+
+    // 32-byte Ed25519 public key of the IKA dWallet (NOT deposit_address!)
+    const dwalletPubkey = this.hexToUint8Array(event.dwallet_pubkey, 32);
+
+    // 32-byte message hash (SHA256)
+    const messageHash = this.hexToUint8Array(event.message_hash, 32);
+
+    // Receiver is a 32-byte Solana public key (hex of raw bytes)
+    const receiver = this.hexToUint8Array(event.receiver, 32);
+
+    // NFT contract and token ID are variable-length bytes (convert hex → raw)
+    const nftContract = this.hexToBytes(event.nft_contract);
+    const tokenId = this.hexToBytes(event.token_id);
+
+    // Token URI is hex-encoded UTF-8 bytes
+    const tokenUriBytes = this.hexToBytes(event.token_uri);
+    const tokenUri = Buffer.from(tokenUriBytes).toString('utf-8');
+
+    // Derive a collection name from the contract + source chain.
+    // In production this would be looked up from a registry, but for now we derive one.
+    const collectionName = this.deriveCollectionName(event.source_chain, event.nft_contract);
 
     return {
       signature,
       dwalletPubkey,
       sourceChain: event.source_chain,
-      nftContract: event.nft_contract,
-      tokenId: event.token_id,
-      tokenUri: event.token_uri,
-      receiver: event.receiver,
+      nftContract,
+      tokenId,
+      tokenUri,
+      receiver,
       collectionName,
-      messageHash: event.message_hash,
-      originalEvent: event,
+      messageHash,
     };
   }
 
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
   /**
-   * Convert hex string to Uint8Array
+   * Load the relayer's keypair from the JSON file path in config.
    */
-  private hexToUint8Array(hex: string): Uint8Array {
-    // Handle 0x prefix
-    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-    
-    const bytes = new Uint8Array(cleanHex.length / 2);
-    for (let i = 0; i < cleanHex.length; i += 2) {
-      bytes[i / 2] = parseInt(cleanHex.slice(i, i + 2), 16);
+  private loadRelayerKeypair(): Keypair {
+    const config = getConfig();
+    try {
+      const data = readFileSync(config.relayerKeypairPath, 'utf-8');
+      const secretKey = new Uint8Array(JSON.parse(data));
+      return Keypair.fromSecretKey(secretKey);
+    } catch (err) {
+      logger.error({ path: config.relayerKeypairPath, err }, 'Failed to load relayer keypair');
+      throw new Error('Could not load relayer keypair');
+    }
+  }
+
+  /**
+   * Convert a fixed-length hex string to Uint8Array.
+   */
+  private hexToUint8Array(hex: string, expectedLen: number): Uint8Array {
+    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+    if (clean.length !== expectedLen * 2) {
+      throw new Error(
+        `Expected ${expectedLen} bytes (${expectedLen * 2} hex chars), got ${clean.length}`,
+      );
+    }
+    const bytes = new Uint8Array(expectedLen);
+    for (let i = 0; i < expectedLen; i++) {
+      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
     }
     return bytes;
   }
 
   /**
-   * Derive collection name from contract and URI
-   * This is a simplified version - in production you'd look up from a registry
+   * Convert a variable-length hex string to Uint8Array.
    */
-  private deriveCollectionName(nftContract: string, _tokenUri: string): string {
-    // Try to extract collection name from contract address
-    // In production, this would query a collection registry
-    // Note: _tokenUri is reserved for future use
-    const shortContract = nftContract.slice(-8);
-    return `Reborn Collection (${shortContract})`;
+  private hexToBytes(hex: string): Uint8Array {
+    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+    if (clean.length % 2 !== 0) {
+      throw new Error('Hex string must have even length');
+    }
+    const bytes = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
   }
 
   /**
-   * Check and update connection status
+   * Derive a collection name from the source chain and contract.
+   * In a production system this would query a registry.
+   */
+  private deriveCollectionName(sourceChain: number, nftContract: string): string {
+    // Use last 8 hex chars of contract as identifier
+    const shortId = nftContract.slice(-8);
+    return `Reborn Collection ${sourceChain}:${shortId}`;
+  }
+
+  /**
+   * Periodic connection health checks + auto-reconnect.
    */
   private async checkConnections(): Promise<void> {
-    const suiConnected = await this.suiListener.checkConnection();
-    const solanaConnected = await this.solanaSubmitter.checkConnection();
+    const suiOk = await this.suiListener.checkConnection();
+    const solanaOk = await this.solanaSubmitter.checkConnection();
 
-    this.healthServer.setSuiConnected(suiConnected);
-    this.healthServer.setSolanaConnected(solanaConnected);
+    this.healthServer.setSuiConnected(suiOk);
+    this.healthServer.setSolanaConnected(solanaOk);
 
-    if (!suiConnected && this.isRunning) {
+    if (!suiOk && this._isRunning) {
       logger.warn('Sui connection lost, attempting reconnect');
       await this.suiListener.reconnect();
     }
   }
-
-  /**
-   * Stop the relayer
-   */
-  async stop(): Promise<void> {
-    logger.info('Stopping relayer...');
-    
-    await this.suiListener.unsubscribeFromEvents();
-    this.healthServer.stop();
-    
-    this.isRunning = false;
-    logger.info('Relayer stopped');
-  }
 }
 
-/**
- * Main entry point
- */
+// ─── Main ────────────────────────────────────────────────────────────────────
+
 async function main() {
   const relayer = new Relayer();
 
-  // Handle graceful shutdown
+  // Graceful shutdown handlers
   process.on('SIGINT', async () => {
-    logger.info('Received SIGINT, shutting down...');
+    logger.info('SIGINT received, shutting down…');
     await relayer.stop();
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
-    logger.info('Received SIGTERM, shutting down...');
+    logger.info('SIGTERM received, shutting down…');
     await relayer.stop();
     process.exit(0);
   });
@@ -243,14 +286,14 @@ async function main() {
   // Start the relayer
   try {
     await relayer.start();
-  } catch (error) {
-    logger.error({ error }, 'Failed to start relayer');
+  } catch (err) {
+    logger.error({ err }, 'Failed to start relayer');
     process.exit(1);
   }
 }
 
-// Run if this is the main module
-main().catch((error) => {
-  logger.error({ error }, 'Unhandled error in main');
+// Run as main module
+main().catch((err) => {
+  logger.error({ err }, 'Unhandled error in main');
   process.exit(1);
 });

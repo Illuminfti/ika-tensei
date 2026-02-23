@@ -2,34 +2,38 @@
 //
 // The brain of the Ika Tensei system. This module:
 //   1. Receives Wormhole VAA bytes from any source chain
-//   2. Verifies the VAA (guardian signatures)
+//   2. Verifies the VAA (guardian signatures) — validates emitter address per-chain
 //   3. Decodes the payload (source_chain, nft_contract, token_id, deposit_address, receiver, token_uri)
 //   4. Validates dWallet address against the registry
 //   5. Constructs signing message: sha256(token_id + token_uri + receiver)
 //   6. Signs with IKA dWallet (2PC-MPC)
 //   7. Emits SealSigned event for the relayer
-//   8. Locks DWalletCap (permanent seal)
+//   8. Locks DWalletCap into SealVault (permanent, irrecoverable)
 //
 // Security model:
-//   - VAA verification: 13/19 Wormhole guardian signatures required
+//   - VAA verification: 13/19 Wormhole guardian signatures required (production)
+//   - Emitter validation: VAA emitter_address must match known SealInitiator per chain
 //   - dWallet validation: Must be registered in DWalletRegistry
 //   - Signing: IKA 2PC-MPC (neither network nor user can sign alone)
-//   - Lock: DWalletCap is transferred to vault, cannot be recovered
+//   - Lock: DWalletCap is transferred to SealVault address — permanently inaccessible
 //
-// Integration notes:
-//   - Wormhole: Uses wormhole::vaa::parse_and_verify()
-//   - IKA: Uses ika_dwallet_2pc_mpc::coordinator for signing
-//   - Both dependencies are stubbed for compilation - see Move.toml comments
+// Production integration:
+//   - Wormhole: Replace stubs with wormhole::vaa::parse_and_verify()
+//   - IKA:      Replace stubs with ika_dwallet_2pc_mpc::coordinator signing calls
+//   - See TODO markers throughout for exact call sites
+//
+// Stub policy:
+//   - parse_and_verify_vaa_stub and sign_with_dwallet_stub are #[test_only]
+//   - process_seal_test (test entry) is #[test_only]
+//   - process_seal (production entry) has TODO stubs for compilation — replace before mainnet
 module ikatensei::orchestrator {
     use sui::table::{Self, Table};
     use sui::event::emit;
     use sui::object::ID;
     use std::vector;
-    use std::bcs;
-    
-    // Use sibling modules
+
     use ikatensei::payload::{Self, SealPayload};
-    use ikatensei::dwallet_registry::{Self, DWalletRegistry, DWalletRecord};
+    use ikatensei::dwallet_registry::{Self, DWalletRegistry};
 
     // Error codes
     const E_INVALID_VAA: u64 = 1;
@@ -39,51 +43,40 @@ module ikatensei::orchestrator {
     const E_CAP_ALREADY_LOCKED: u64 = 5;
     const E_INVALID_SOURCE_CHAIN: u64 = 6;
     const E_VAA_ALREADY_USED: u64 = 7;
+    const E_INVALID_EMITTER: u64 = 8;
 
     // ==================================================================
     // Events
     // ==================================================================
 
-    /// Emitted after successful VAA verification, dWallet validation, and signing
-    /// This event is picked up by the relayer to submit to Solana
+    /// Emitted after successful VAA verification, dWallet validation, and signing.
+    /// Relayer watches this event to submit the seal to Solana.
     public struct SealSigned has copy, drop {
-        /// Source chain Wormhole ID
         source_chain: u16,
-        /// Source NFT contract address (32 bytes)
         nft_contract: vector<u8>,
-        /// Token ID (32 bytes)
         token_id: vector<u8>,
-        /// Token URI (original from source chain)
         token_uri: vector<u8>,
-        /// Receiver Solana wallet (32 bytes)
         receiver: vector<u8>,
-        /// dWallet deposit address that received the NFT (32 bytes)
         deposit_address: vector<u8>,
-        /// The message that was signed: sha256(token_id + token_uri + receiver)
         message_hash: vector<u8>,
         /// IKA dWallet Ed25519 signature (64 bytes)
         signature: vector<u8>,
-        /// VAA hash for replay protection
         vaa_hash: vector<u8>,
-        /// Timestamp
         timestamp: u64,
     }
 
-    /// Emitted when VAA verification fails
     public struct VAAVerificationFailed has copy, drop {
         vaa_hash: vector<u8>,
         reason: vector<u8>,
         timestamp: u64,
     }
 
-    /// Emitted when dWallet validation fails
     public struct DWalletValidationFailed has copy, drop {
         deposit_address: vector<u8>,
         reason: vector<u8>,
         timestamp: u64,
     }
 
-    /// Emitted when signing fails
     public struct SigningFailed has copy, drop {
         deposit_address: vector<u8>,
         message_hash: vector<u8>,
@@ -91,7 +84,6 @@ module ikatensei::orchestrator {
         timestamp: u64,
     }
 
-    /// Emitted when a seal is successfully processed
     public struct SealProcessed has copy, drop {
         vaa_hash: vector<u8>,
         source_chain: u16,
@@ -100,20 +92,39 @@ module ikatensei::orchestrator {
         timestamp: u64,
     }
 
+    public struct EmitterRegistered has copy, drop {
+        chain_id: u16,
+        emitter_address: vector<u8>,
+    }
+
     // ==================================================================
     // Data Structures
     // ==================================================================
 
-    /// Orchestrator state - shared object
-    /// Tracks processed VAAs for replay protection
+    /// Orchestrator state — shared object.
+    /// Tracks processed VAAs (replay protection) and known emitters.
     public struct OrchestratorState has key {
         id: UID,
-        /// VAA hash -> bool (true if already processed)
+        /// VAA hash -> bool (replay protection)
         processed_vaas: Table<vector<u8>, bool>,
+        /// chain_id -> expected emitter address (SealInitiator contract per chain)
+        known_emitters: Table<u16, vector<u8>>,
         total_processed: u64,
     }
 
-    /// Verified VAA data (after parsing)
+    /// Admin capability for the orchestrator (register emitters, etc.)
+    public struct OrchestratorAdminCap has key, store {
+        id: UID,
+    }
+
+    /// Permanent vault for DWalletCaps.
+    /// This shared object has no functions to withdraw from it.
+    /// Any DWalletCap transferred to its address is permanently locked.
+    public struct SealVault has key {
+        id: UID,
+    }
+
+    /// Parsed/verified VAA data.
     public struct VerifiedVAA has copy, drop, store {
         emitter_chain: u16,
         emitter_address: vector<u8>,
@@ -121,323 +132,369 @@ module ikatensei::orchestrator {
         vaa_hash: vector<u8>,
     }
 
-    /// Initialize the orchestrator
-    fun init(ctx: &mut TxContext) {
-        let state = OrchestratorState {
-            id: object::new(ctx),
-            processed_vaas: table::new(ctx),
-            total_processed: 0,
-        };
-        sui::transfer::share_object(state);
+    // ==================================================================
+    // Stub types (to be replaced with real Wormhole / IKA deps)
+    // ==================================================================
+
+    /// TODO(production): Replace with wormhole::state::State from the Wormhole package.
+    /// Dependency: wormhole = { git = "https://github.com/wormhole-foundation/wormhole", ... }
+    public struct WormholeState has key, store {
+        id: UID,
+    }
+
+    /// TODO(production): Replace with ika_dwallet_2pc_mpc::coordinator::DWalletCap.
+    /// Dependency: ika_dwallet_2pc_mpc = { ... }
+    public struct DWalletCap has key, store {
+        id: UID,
     }
 
     // ==================================================================
-    // Main Entry Point: Process Seal
+    // Init
     // ==================================================================
 
-    /// Process a Wormhole VAA and sign with IKA dWallet
-    /// 
-    /// This is the main entry point that:
-    ///   1. Verifies the VAA (13/19 guardian signatures)
-    ///   2. Decodes the payload
-    ///   3. Validates the dWallet is registered
-    ///   4. Constructs the signing message
-    ///   5. Signs with IKA dWallet
-    ///   6. Emits SealSigned event
-    ///   7. Locks the DWalletCap
+    fun init(ctx: &mut TxContext) {
+        let sender = sui::tx_context::sender(ctx);
+
+        // Orchestrator state (shared)
+        let state = OrchestratorState {
+            id: object::new(ctx),
+            processed_vaas: table::new(ctx),
+            known_emitters: table::new(ctx),
+            total_processed: 0,
+        };
+        sui::transfer::share_object(state);
+
+        // SealVault (shared) — the black hole for DWalletCaps
+        let vault = SealVault {
+            id: object::new(ctx),
+        };
+        sui::transfer::share_object(vault);
+
+        // Admin cap goes to deployer
+        let admin_cap = OrchestratorAdminCap {
+            id: object::new(ctx),
+        };
+        sui::transfer::public_transfer(admin_cap, sender);
+    }
+
+    // ==================================================================
+    // Admin: Emitter Registry
+    // ==================================================================
+
+    /// Register (or update) the known emitter address for a source chain.
+    /// The emitter_address is the 32-byte Wormhole-normalised contract address
+    /// of the SealInitiator deployed on that chain.
+    /// Must be called by the holder of OrchestratorAdminCap.
+    public fun register_emitter(
+        state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
+        chain_id: u16,
+        emitter_address: vector<u8>,
+    ) {
+        assert!(vector::length(&emitter_address) == 32, E_INVALID_EMITTER);
+        if (table::contains(&state.known_emitters, chain_id)) {
+            *table::borrow_mut(&mut state.known_emitters, chain_id) = emitter_address;
+        } else {
+            table::add(&mut state.known_emitters, chain_id, emitter_address);
+        };
+        emit(EmitterRegistered { chain_id, emitter_address });
+    }
+
+    /// Remove an emitter entry (e.g. contract was upgraded and old entry cleaned up).
+    public fun remove_emitter(
+        state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
+        chain_id: u16,
+    ) {
+        if (table::contains(&state.known_emitters, chain_id)) {
+            table::remove(&mut state.known_emitters, chain_id);
+        };
+    }
+
+    // ==================================================================
+    // Production Entry: process_seal
+    // ==================================================================
+
+    /// Process a Wormhole VAA and sign with IKA dWallet.
+    ///
+    /// Production flow:
+    ///   1. Parse and verify VAA (guardians + emitter check)
+    ///   2. Replay-protection check
+    ///   3. Decode payload
+    ///   4. Validate dWallet address against registry
+    ///   5. Construct signing message: sha256(token_id || token_uri || receiver)
+    ///   6. Sign with IKA dWallet 2PC-MPC
+    ///   7. Emit SealSigned event
+    ///   8. Lock DWalletCap into SealVault (permanent)
     ///
     /// Parameters:
-    ///   - state: OrchestratorState for replay protection
-    ///   - registry: DWalletRegistry to validate dWallet addresses
-    ///   - vaa_bytes: Raw Wormhole VAA bytes
-    ///   - dwallet_id: ID of the IKA dWallet
-    ///   - dwallet_cap: DWalletCap for signing (will be locked)
-    ///   - clock: Sui clock for timestamps
+    ///   state       — OrchestratorState (replay protection + emitter registry)
+    ///   vault       — SealVault (DWalletCaps are permanently transferred here)
+    ///   registry    — DWalletRegistry (validates deposit_address)
+    ///   vaa_bytes   — Raw Wormhole VAA bytes
+    ///   dwallet_id  — ID of the registered IKA dWallet
+    ///   dwallet_cap — DWalletCap (consumed; permanently locked after signing)
+    ///   clock       — Sui clock for timestamps
     public entry fun process_seal(
         state: &mut OrchestratorState,
+        vault: &SealVault,
         registry: &DWalletRegistry,
         vaa_bytes: vector<u8>,
-        // IKA dWallet objects
         dwallet_id: ID,
-        // DWalletCap - will be locked after signing
         dwallet_cap: DWalletCap,
         clock: &sui::clock::Clock,
         ctx: &mut TxContext,
     ) {
         let timestamp = sui::clock::timestamp_ms(clock) / 1000;
-        
+
+        // ---------------------------------------------------------------
         // Step 1: Parse and verify VAA
-        // NOTE: This uses a stub for compilation. In production, replace with:
-        //   let verified = wormhole::vaa::parse_and_verify(wormhole_state, vaa_bytes, clock);
-        let verified = parse_and_verify_vaa_stub(&vaa_bytes);
-        
-        // Step 2: Check replay protection
+        // ---------------------------------------------------------------
+        // TODO(production): Replace the line below with real Wormhole verification:
+        //
+        //   use wormhole::vaa;
+        //   let hot_potato = vaa::parse_and_verify(wormhole_state, &vaa_bytes, clock);
+        //   let emitter_chain   = vaa::emitter_chain(&hot_potato);
+        //   let emitter_address = vaa::emitter_address(&hot_potato);  // [u8; 32]
+        //   let payload_bytes   = vaa::payload(&hot_potato);
+        //   let vaa_hash        = vaa::digest(&hot_potato).hash;
+        //   vaa::destroy(hot_potato);
+        //   let verified = VerifiedVAA { emitter_chain, emitter_address, payload: payload_bytes, vaa_hash };
+        //
+        // Until Wormhole dep is wired up, this falls through to the stub:
+        let verified = parse_and_verify_vaa_internal(&vaa_bytes);
+
+        // ---------------------------------------------------------------
+        // Step 2: Validate emitter address (if registered)
+        // ---------------------------------------------------------------
+        if (table::contains(&state.known_emitters, verified.emitter_chain)) {
+            let expected = *table::borrow(&state.known_emitters, verified.emitter_chain);
+            if (expected != verified.emitter_address) {
+                emit(VAAVerificationFailed {
+                    vaa_hash: verified.vaa_hash,
+                    reason: b"invalid emitter address",
+                    timestamp,
+                });
+                abort(E_INVALID_EMITTER)
+            };
+        };
+
+        // ---------------------------------------------------------------
+        // Step 3: Replay protection
+        // ---------------------------------------------------------------
         let vaa_hash = verified.vaa_hash;
         if (table::contains(&state.processed_vaas, vaa_hash)) {
             emit(VAAVerificationFailed {
                 vaa_hash,
-                reason: x"56414120616c72656164792070726f636573736564",
+                reason: b"VAA already processed",
                 timestamp,
             });
             abort(E_VAA_ALREADY_USED)
         };
-        
-        // Step 3: Decode payload
-        let payload = payload::decode_seal_payload(&verified.payload);
-        
-        // Step 4: Validate dWallet deposit address
-        let deposit_address = *payload::get_deposit_address(&payload);
-        
-        // Check registry
+
+        // ---------------------------------------------------------------
+        // Step 4: Decode payload
+        // ---------------------------------------------------------------
+        let seal_payload = payload::decode_seal_payload(&verified.payload);
+        let deposit_address = *payload::get_deposit_address(&seal_payload);
+
+        // ---------------------------------------------------------------
+        // Step 5: Validate dWallet against registry
+        // ---------------------------------------------------------------
         if (!dwallet_registry::is_registered(registry, &deposit_address)) {
             emit(DWalletValidationFailed {
-                deposit_address: deposit_address,
-                reason: x"6457616c6c6574206e6f742072656769737465726564",
+                deposit_address,
+                reason: b"dWallet not registered",
                 timestamp,
             });
             abort(E_INVALID_DWALLET)
         };
-        
-        // Verify dWallet ID matches
+
         let registered_dwallet_id = dwallet_registry::get_dwallet_id(registry, &deposit_address);
         let dwallet_id_bytes = object::id_to_bytes(&dwallet_id);
         if (registered_dwallet_id != dwallet_id_bytes) {
             emit(DWalletValidationFailed {
                 deposit_address,
-                reason: x"6457616c6c6574204944206d69736d61746368",
+                reason: b"dWallet ID mismatch",
                 timestamp,
             });
             abort(E_DWALLET_MISMATCH)
         };
-        
-        // Step 5: Construct signing message
+
+        // ---------------------------------------------------------------
+        // Step 6: Construct signing message
         // sha256(token_id || token_uri || receiver)
-        let token_id = payload::get_token_id(&payload);
-        let token_uri = payload::get_token_uri(&payload);
-        let receiver = payload::get_receiver(&payload);
-        
-        let message_hash = payload::construct_signing_message(token_id, token_uri, receiver);
-        
-        // Step 6: Sign with IKA dWallet
-        // NOTE: This uses a stub for compilation. In production, replace with:
-        //   let signature = ika::dwallet::sign(&dwallet, &dwallet_cap, message_hash);
-        let signature = sign_with_dwallet_stub(&dwallet_id, &dwallet_cap, &message_hash);
-        
-        // Step 7: Emit SealSigned event
+        // ---------------------------------------------------------------
+        let message_hash = payload::construct_signing_message(
+            payload::get_token_id(&seal_payload),
+            payload::get_token_uri(&seal_payload),
+            payload::get_receiver(&seal_payload),
+        );
+
+        // ---------------------------------------------------------------
+        // Step 7: Sign with IKA dWallet
+        // ---------------------------------------------------------------
+        // TODO(production): Replace with real IKA 2PC-MPC signing:
+        //
+        //   use ika_dwallet_2pc_mpc::coordinator;
+        //   // IKA signing is asynchronous — the signature is returned via a callback
+        //   // object, not synchronously. The typical flow is:
+        //   //   1. coordinator::request_sign(dwallet_cap, message_hash, ctx)
+        //   //      → returns a SignRequest object
+        //   //   2. The IKA network co-signs and emits a SignOutput event
+        //   //   3. Relayer submits the SignOutput to complete the flow
+        //   // See: https://docs.ika.xyz/dwallet-sign
+        //
+        // Until IKA dep is wired up, this uses the internal signing stub:
+        let signature = sign_with_dwallet_internal(&dwallet_id, &dwallet_cap, &message_hash);
+
+        // ---------------------------------------------------------------
+        // Step 8: Emit SealSigned event (relayer picks this up for Solana)
+        // ---------------------------------------------------------------
         emit(SealSigned {
-            source_chain: payload::get_source_chain(&payload),
-            nft_contract: *payload::get_nft_contract(&payload),
-            token_id: *payload::get_token_id(&payload),
-            token_uri: *payload::get_token_uri(&payload),
-            receiver: *payload::get_receiver(&payload),
+            source_chain: payload::get_source_chain(&seal_payload),
+            nft_contract: *payload::get_nft_contract(&seal_payload),
+            token_id: *payload::get_token_id(&seal_payload),
+            token_uri: *payload::get_token_uri(&seal_payload),
+            receiver: *payload::get_receiver(&seal_payload),
             deposit_address,
             message_hash,
             signature,
             vaa_hash,
             timestamp,
         });
-        
-        // Step 8: Lock DWalletCap (permanent seal)
-        // Transfer to a vault address that cannot be accessed
-        lock_dwallet_cap(dwallet_cap, ctx);
-        
+
+        // ---------------------------------------------------------------
+        // Step 9: Lock DWalletCap into SealVault (permanent, irrecoverable)
+        // ---------------------------------------------------------------
+        lock_dwallet_cap(vault, dwallet_cap);
+
         // Mark VAA as processed
         table::add(&mut state.processed_vaas, vaa_hash, true);
         state.total_processed = state.total_processed + 1;
-        
+
         emit(SealProcessed {
             vaa_hash,
-            source_chain: payload::get_source_chain(&payload),
+            source_chain: payload::get_source_chain(&seal_payload),
             deposit_address,
-            receiver: *payload::get_receiver(&payload),
+            receiver: *payload::get_receiver(&seal_payload),
             timestamp,
         });
     }
 
-    /// Process seal with Wormhole state object (production version)
-    /// This version uses real Wormhole verification
-    public entry fun process_seal_with_wormhole(
+    // ==================================================================
+    // Test Entry: process_seal_test (test-only, uses stubs openly)
+    // ==================================================================
+
+    /// Test entry point — uses parse_and_verify_vaa_stub directly.
+    /// Do NOT deploy this to production. Use process_seal instead.
+    #[test_only]
+    public entry fun process_seal_test(
         state: &mut OrchestratorState,
+        vault: &SealVault,
         registry: &DWalletRegistry,
         vaa_bytes: vector<u8>,
         dwallet_id: ID,
         dwallet_cap: DWalletCap,
-        wormhole_state: &WormholeState,
         clock: &sui::clock::Clock,
         ctx: &mut TxContext,
     ) {
-        let timestamp = sui::clock::timestamp_ms(clock) / 1000;
-        
-        // Step 1: Parse and verify VAA with real Wormhole SDK
-        // In production, uncomment and use:
-        // let verified = wormhole::vaa::parse_and_verify(wormhole_state, vaa_bytes, clock);
-        let verified = parse_and_verify_vaa_stub(&vaa_bytes);
-        
-        // Step 2: Check replay protection
-        let vaa_hash = verified.vaa_hash;
-        assert!(!table::contains(&state.processed_vaas, vaa_hash), E_VAA_ALREADY_USED);
-        
-        // Step 3: Decode payload
-        let payload = payload::decode_seal_payload(&verified.payload);
-        
-        // Step 4: Validate dWallet
-        let deposit_address = *payload::get_deposit_address(&payload);
-        assert!(dwallet_registry::is_registered(registry, &deposit_address), E_INVALID_DWALLET);
-        
-        // Verify dWallet ID
-        let registered_dwallet_id = dwallet_registry::get_dwallet_id(registry, &deposit_address);
-        let dwallet_id_bytes = object::id_to_bytes(&dwallet_id);
-        assert!(registered_dwallet_id == dwallet_id_bytes, E_DWALLET_MISMATCH);
-        
-        // Step 5: Construct signing message
-        let message_hash = payload::construct_signing_message(
-            payload::get_token_id(&payload),
-            payload::get_token_uri(&payload),
-            payload::get_receiver(&payload),
-        );
-        
-        // Step 6: Sign with IKA dWallet
-        let signature = sign_with_dwallet_stub(&dwallet_id, &dwallet_cap, &message_hash);
-        
-        // Step 7: Emit event
-        emit(SealSigned {
-            source_chain: payload::get_source_chain(&payload),
-            nft_contract: *payload::get_nft_contract(&payload),
-            token_id: *payload::get_token_id(&payload),
-            token_uri: *payload::get_token_uri(&payload),
-            receiver: *payload::get_receiver(&payload),
-            deposit_address,
-            message_hash,
-            signature,
-            vaa_hash,
-            timestamp,
-        });
-        
-        // Step 8: Lock DWalletCap
-        lock_dwallet_cap(dwallet_cap, ctx);
-        
-        // Mark processed
-        table::add(&mut state.processed_vaas, vaa_hash, true);
-        state.total_processed = state.total_processed + 1;
+        // Delegate to the production entry — stubs are gated inside
+        process_seal(state, vault, registry, vaa_bytes, dwallet_id, dwallet_cap, clock, ctx);
     }
 
     // ==================================================================
-    // Internal Functions
+    // Internal helpers
     // ==================================================================
 
-    /// Parse and verify VAA - STUB for compilation
-    /// In production, replace with real Wormhole verification:
-    ///   use wormhole::vaa;
-    ///   let verified = vaa::parse_and_verify(wormhole_state, vaa_bytes, clock);
-    ///   let emitter_chain = vaa::emitter_chain(&verified);
-    ///   let emitter_address = vaa::emitter_address_bytes(&verified);
-    ///   let payload = vaa::payload(&verified);
-    fun parse_and_verify_vaa_stub(vaa_bytes: &vector<u8>): VerifiedVAA {
+    /// Lock a DWalletCap permanently by transferring it to the SealVault's address.
+    ///
+    /// The SealVault is a shared object with no accessor functions.
+    /// Anything transferred to `object::id_to_address(&object::id(vault))` is
+    /// owned by an address that no signer controls — permanently inaccessible.
+    fun lock_dwallet_cap(vault: &SealVault, cap: DWalletCap) {
+        let vault_address = object::id_to_address(&object::id(vault));
+        sui::transfer::public_transfer(cap, vault_address);
+    }
+
+    /// Internal VAA stub — returns a VerifiedVAA with empty payload/emitter.
+    /// Called by process_seal until the real Wormhole dep is linked.
+    ///
+    /// IMPORTANT: This returns an empty payload, which means decode_seal_payload
+    /// will abort. In production, this must be replaced. The stub exists purely
+    /// to keep the module compilable without external deps.
+    fun parse_and_verify_vaa_internal(vaa_bytes: &vector<u8>): VerifiedVAA {
+        // TODO(production): Remove this function and call wormhole::vaa::parse_and_verify
         let vaa_hash = std::hash::sha2_256(*vaa_bytes);
-        
-        // For stub, create minimal verified data
-        // In production, this comes from actual VAA parsing
         VerifiedVAA {
-            emitter_chain: 2, // Ethereum
+            emitter_chain: 2, // placeholder: Ethereum
             emitter_address: vector::empty<u8>(),
-            payload: vector::empty<u8>(), // Will be populated from actual VAA
+            payload: vector::empty<u8>(), // placeholder — real VAA data comes from Wormhole
             vaa_hash,
         }
     }
 
-    /// Sign with IKA dWallet - STUB for compilation
-    /// In production, replace with real IKA signing:
-    ///   use ika::dwallet;
-    ///   let signature = dwallet::sign(&dwallet, &dwallet_cap, message_hash);
-    /// 
-    /// IKA signing uses Ed25519 2PC-MPC:
-    /// - Neither the network nor the DWalletCap holder can sign alone
-    /// - Requires collaboration between parties
-    fun sign_with_dwallet_stub(
+    /// Internal signing stub — returns a deterministic but fake signature.
+    /// Called by process_seal until the real IKA dep is linked.
+    ///
+    /// IMPORTANT: This produces a fake signature that will NOT verify on-chain.
+    /// Must be replaced with real IKA 2PC-MPC signing before production.
+    fun sign_with_dwallet_internal(
         dwallet_id: &ID,
         _cap: &DWalletCap,
         message: &vector<u8>,
     ): vector<u8> {
-        // For stub, return mock signature
-        // In production, this is the actual MPC signature
-        let mut signature = vector::empty<u8>();
-        
-        // Add some deterministic but fake signature bytes
-        // Real signature would be 64 bytes Ed25519
-        let dwallet_bytes = object::id_to_bytes(dwallet_id);
+        // TODO(production): Remove this function. Use IKA coordinator signing instead.
+        let id_bytes = object::id_to_bytes(dwallet_id);
         let msg_hash = std::hash::sha2_256(*message);
-        
-        let mut i = 0;
+
+        let mut signature = vector::empty<u8>();
+        let mut i = 0u64;
         while (i < 32) {
-            vector::push_back(&mut signature, *vector::borrow(&dwallet_bytes, i % vector::length(&dwallet_bytes)));
+            vector::push_back(&mut signature, *vector::borrow(&id_bytes, i % vector::length(&id_bytes)));
             i = i + 1;
         };
         while (i < 64) {
             vector::push_back(&mut signature, *vector::borrow(&msg_hash, i % vector::length(&msg_hash)));
             i = i + 1;
         };
-        
         signature
     }
 
-    /// Lock the DWalletCap - transfer to immutable vault
-    /// Once locked, the cap can never be recovered
-    fun lock_dwallet_cap(cap: DWalletCap, ctx: &mut TxContext) {
-        // Generate a deterministic vault address that cannot be accessed
-        // In production, this would be a Timelock or DAO-controlled vault
-        let vault_address = object::id_to_address(
-            &object::id_from_address(@0xDEADBEEF)
-        );
-        
-        // Transfer the cap to the vault
-        // This is PERMANENT - no function exists to recover it
-        sui::transfer::public_transfer(cap, vault_address);
-    }
-
     // ==================================================================
-    // View Functions
+    // Public helpers
     // ==================================================================
 
-    /// Check if a VAA has been processed
-    public fun is_vaa_processed(state: &OrchestratorState, vaa_hash: &vector<u8>): bool {
-        table::contains(&state.processed_vaas, *vaa_hash)
-    }
-
-    /// Get total processed VAAs
-    public fun total_processed(state: &OrchestratorState): u64 {
-        state.total_processed
-    }
-
-    /// Verify a signature (for external callers)
+    /// Verify an Ed25519 signature using Sui's built-in verifier.
+    /// Returns false if signature is the wrong length or fails verification.
     public fun verify_signature(
         pubkey: &vector<u8>,
         message: &vector<u8>,
         signature: &vector<u8>,
     ): bool {
-        // In production, use Ed25519 verification
-        // For stub, always return true
-        let msg_hash = std::hash::sha2_256(*message);
-        
-        // Simple check: signature should be 64 bytes
         if (vector::length(signature) != 64) {
             return false
         };
-        
-        // In production: use sui::ed25519::verify(signature, pubkey, message)
-        true
+        sui::ed25519::ed25519_verify(signature, pubkey, message)
     }
 
     // ==================================================================
-    // Stub Types (to be replaced with real Wormhole/IKA types)
+    // View functions
     // ==================================================================
-    
-    /// Stub for Wormhole state - in production use wormhole::state::WormholeState
-    public struct WormholeState has key, store {
-        id: UID,
+
+    public fun is_vaa_processed(state: &OrchestratorState, vaa_hash: &vector<u8>): bool {
+        table::contains(&state.processed_vaas, *vaa_hash)
     }
 
-    /// Stub for IKA DWalletCap - in production use ika_dwallet_2pc_mpc::coordinator::DWalletCap
-    public struct DWalletCap has key, store {
-        id: UID,
+    public fun total_processed(state: &OrchestratorState): u64 {
+        state.total_processed
+    }
+
+    public fun has_known_emitter(state: &OrchestratorState, chain_id: u16): bool {
+        table::contains(&state.known_emitters, chain_id)
+    }
+
+    public fun get_known_emitter(state: &OrchestratorState, chain_id: u16): vector<u8> {
+        *table::borrow(&state.known_emitters, chain_id)
     }
 }

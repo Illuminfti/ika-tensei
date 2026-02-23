@@ -6,53 +6,82 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {IWormhole} from "./interfaces/IWormhole.sol";
 
 /// @title SealInitiator
-/// @notice Permissionless contract to initiate NFT seal for Ika Tensei cross-chain rebirth
-/// @dev Part of Ika Tensei v6 architecture - Sui-orchestrated Wormhole
-///      Reads NFT state on source chain, emits Wormhole VAA for Sui verification
+/// @notice Permissionless contract to initiate NFT seal for Ika Tensei cross-chain rebirth.
+/// @dev Part of Ika Tensei v6 architecture — Sui-orchestrated Wormhole.
+///      Reads NFT state on source chain, emits a Wormhole VAA for Sui verification.
+///
+///      Payload wire format (binary, NOT ABI-encoded):
+///      ┌────────┬────────────┬──────────────┬────────────┬─────────────────┬──────────┬─────────────────┐
+///      │ Offset │  Size      │  Field        │  Type      │  Notes          │          │                 │
+///      ├────────┼────────────┼──────────────┼────────────┼─────────────────┤          │                 │
+///      │   0    │  1 byte    │ payload_type  │ uint8      │ always 1        │          │                 │
+///      │   1    │  2 bytes   │ source_chain  │ uint16 BE  │ Wormhole chain  │          │                 │
+///      │   3    │ 32 bytes   │ nft_contract  │ bytes32    │ address left-   │          │                 │
+///      │        │            │               │            │ padded w/ zeros │          │                 │
+///      │  35    │ 32 bytes   │ token_id      │ uint256 BE │                 │          │                 │
+///      │  67    │ 32 bytes   │ deposit_addr  │ bytes32    │ address left-   │          │                 │
+///      │        │            │               │            │ padded w/ zeros │          │                 │
+///      │  99    │ 32 bytes   │ receiver      │ bytes32    │ Sui/Solana addr │          │                 │
+///      │ 131    │ variable   │ token_uri     │ raw bytes  │ UTF-8, no len   │          │                 │
+///      └────────┴────────────┴──────────────┴────────────┴─────────────────┘          │                 │
 contract SealInitiator {
     // ============ Constants ============
 
-    /// @notice Payload type ID for Seal Attestation (PRD v6)
+    /// @notice Payload type ID for Seal Attestation (PRD v6).
     uint8 public constant PAYLOAD_TYPE_SEAL = 1;
 
-    /// @notice Wormhole core bridge address (Ethereum mainnet)
+    /// @notice Wormhole core bridge address — Ethereum mainnet.
     address public constant WORMHOLE_MAINNET = 0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B;
 
-    /// @notice Wormhole core bridge address (Ethereum Sepolia testnet)
+    /// @notice Wormhole core bridge address — Ethereum Sepolia testnet.
     address public constant WORMHOLE_SEPOLIA = 0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78;
 
-    /// @notice Consistency level 1 = finalized (production safety)
+    /// @notice Consistency level 1 = finalized (safe for production).
     uint8 public constant CONSISTENCY_LEVEL = 1;
 
-    /// @notice CryptoPunks contract address (mainnet)
-    address public constant CRYPTOPUNKS_MAINNET = 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB;
+    /// @notice Maximum token URI length accepted in a payload.
+    ///         Prevents gas-griefing via oversized Wormhole messages.
+    uint256 public constant MAX_URI_LENGTH = 2048;
+
+    // ============ Immutables ============
+
+    /// @notice Address of the Wormhole core contract.
+    IWormhole public immutable wormhole;
+
+    /// @notice CryptoPunks contract address.
+    ///         Passed at deploy time so the same bytecode works on mainnet, testnets,
+    ///         and local forks without a hard-coded mainnet address.
+    address public immutable cryptoPunksAddress;
 
     // ============ State Variables ============
 
-    /// @notice Address of the Wormhole core contract
-    IWormhole public immutable wormhole;
-
-    /// @notice Sequence counter for Wormhole messages
+    /// @notice Monotonically increasing nonce for Wormhole messages.
+    /// @dev    Used as the `nonce` argument to `publishMessage`.  Cast to uint32
+    ///         with a bitmask; wrapping is acceptable because the nonce is not a
+    ///         security primitive — Wormhole uses sequence numbers internally.
     uint64 public sequence;
 
-    /// @notice Cache for contract code existence (address => exists)
-    mapping(address => bool) private _codeExists;
+    /// @notice Tracks which NFTs have already been sealed to prevent replay.
+    /// @dev    Key: keccak256(abi.encodePacked(nftContract, tokenId))
+    mapping(bytes32 => bool) public sealedNFTs;
 
     // ============ Events ============
 
-    /// @notice Emitted when NFT seal is initiated
-    /// @dev Indexed for easy filtering by subgraph
+    /// @notice Emitted when an NFT seal is successfully initiated.
     event SealInitiated(
         address indexed nftContract,
         uint256 indexed tokenId,
         address depositAddress,
         string tokenURI,
         bytes32 solanaReceiver,
-        uint64 sequence,
+        uint64 wormholeSequence,
         uint16 sourceChainId
     );
 
-    /// @notice Emitted when tokenURI retrieval fails (no metadata)
+    /// @notice Emitted when tokenURI retrieval fails (contract has no metadata).
+    /// @dev    ERC-1155 note: balance > 0 only proves the deposit address holds
+    ///         *some* quantity of this token ID.  For fungible ERC-1155 tokens this
+    ///         check is ambiguous; downstream Sui logic must handle that case.
     event TokenURIUnavailable(
         address indexed nftContract,
         uint256 indexed tokenId
@@ -60,48 +89,71 @@ contract SealInitiator {
 
     // ============ Errors ============
 
-    /// @notice NFT is not owned by the deposit address
+    /// @notice NFT is not held at the supplied deposit address.
     error NotAtDepositAddress();
 
-    /// @notice Contract does not appear to be an NFT (no code)
+    /// @notice Target address has no contract code.
     error NotAnNFTContract();
 
-    /// @notice Insufficient fee for Wormhole message
+    /// @notice Ether sent does not cover the Wormhole message fee.
     error InsufficientFee();
+
+    /// @notice This NFT has already been sealed — replay not allowed.
+    error AlreadySealed();
+
+    /// @notice Token URI exceeds the maximum allowed length.
+    error URITooLong();
 
     // ============ Constructor ============
 
-    /// @notice Deploy SealInitiator
-    /// @param _wormhole Address of Wormhole core bridge (mainnet or testnet)
-    constructor(address _wormhole) {
+    /// @notice Deploy SealInitiator.
+    /// @param _wormhole     Address of the Wormhole core bridge (mainnet or testnet).
+    /// @param _cryptoPunks  Address of the CryptoPunks contract on the target network.
+    ///                      Pass `address(0)` to disable CryptoPunks support.
+    constructor(address _wormhole, address _cryptoPunks) {
         require(_wormhole != address(0), "Invalid wormhole address");
         wormhole = IWormhole(_wormhole);
+        cryptoPunksAddress = _cryptoPunks;
     }
 
     // ============ External Functions ============
 
-    /// @notice Initiate seal for an NFT
-    /// @dev Permissionless - anyone can call for any deposit address
-    ///      Verifies owner on-chain, reads tokenURI, emits Wormhole message
-    /// @param nftContract Address of the NFT contract (ERC-721, ERC-1155, or CryptoPunks)
-    /// @param tokenId Token ID to seal
-    /// @param depositAddress dWallet deposit address on source chain
-    /// @param solanaReceiver User's Solana wallet address (32 bytes, left-padded)
-    /// @return sequenceNumber The Wormhole sequence number for this message
+    /// @notice Initiate seal for a single NFT.
+    /// @dev    Permissionless — anyone can call for any deposit address.
+    ///         Verifies on-chain ownership, reads tokenURI, emits a Wormhole VAA.
+    /// @param nftContract    Address of the NFT contract (ERC-721, ERC-1155, or CryptoPunks).
+    /// @param tokenId        Token ID to seal.
+    /// @param depositAddress dWallet deposit address on the source chain.
+    /// @param solanaReceiver User's Sui/Solana wallet address (32 bytes, left-padded).
+    /// @return sequenceNumber  The Wormhole sequence number for this message.
     function initiateSeal(
         address nftContract,
         uint256 tokenId,
         address depositAddress,
         bytes32 solanaReceiver
     ) external payable returns (uint64 sequenceNumber) {
-        // 1. Verify NFT is at deposit address
+        // 1. Replay protection
+        bytes32 sealKey = keccak256(abi.encodePacked(nftContract, tokenId));
+        if (sealedNFTs[sealKey]) {
+            revert AlreadySealed();
+        }
+        sealedNFTs[sealKey] = true;
+
+        // 2. Verify the NFT is at the deposit address
         _verifyOwnership(nftContract, tokenId, depositAddress);
 
-        // 2. Read tokenURI on-chain (try ERC-721, then ERC-1155, handle CryptoPunks)
-        string memory uri = _getTokenURI(nftContract, tokenId);
+        // 3. Read tokenURI (view-safe; event emitted here if unavailable)
+        (string memory uri, bool uriAvailable) = _getTokenURI(nftContract, tokenId);
+        if (!uriAvailable) {
+            emit TokenURIUnavailable(nftContract, tokenId);
+        }
 
-        // 3. Build payload per PRD v6:
-        //    {payloadType=1, chainId, nftContract, tokenId, depositAddress, solanaReceiver, tokenURI}
+        // 4. Enforce URI length limit
+        if (bytes(uri).length > MAX_URI_LENGTH) {
+            revert URITooLong();
+        }
+
+        // 5. Build binary payload
         bytes memory payload = _buildPayload(
             nftContract,
             tokenId,
@@ -110,19 +162,23 @@ contract SealInitiator {
             uri
         );
 
-        // 4. Emit Wormhole message
+        // 6. Collect fee and publish Wormhole message
         uint256 fee = wormhole.messageFee();
         if (msg.value < fee) {
             revert InsufficientFee();
         }
 
+        // Nonce wraps at uint32 max — acceptable, it is not a security primitive.
+        uint32 nonce = uint32(sequence & 0xFFFFFFFF);
+        sequence++;
+
         sequenceNumber = wormhole.publishMessage{value: fee}(
-            uint32(sequence++),
+            nonce,
             payload,
             CONSISTENCY_LEVEL
         );
 
-        // 5. Emit event for indexing
+        // 7. Emit indexing event
         emit SealInitiated(
             nftContract,
             tokenId,
@@ -133,19 +189,19 @@ contract SealInitiator {
             wormhole.chainId()
         );
 
-        // 6. Refund excess fee (using call to avoid gas issues)
+        // 8. Refund excess ETH
         if (msg.value > fee) {
-            (bool success, ) = payable(msg.sender).call{value: msg.value - fee}("");
-            require(success, "Refund failed");
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - fee}("");
+            require(ok, "Refund failed");
         }
     }
 
-    /// @notice Allow receiving ETH
-    /// @param nftContracts Array of NFT contract addresses
-    /// @param tokenIds Array of token IDs
-    /// @param depositAddresses Array of deposit addresses
-    /// @param solanaReceivers Array of Solana receiver addresses
-    /// @return sequenceNumbers Array of Wormhole sequence numbers
+    /// @notice Initiate seal for multiple NFTs in one transaction.
+    /// @param nftContracts    Array of NFT contract addresses.
+    /// @param tokenIds        Array of token IDs (parallel with nftContracts).
+    /// @param depositAddresses Array of deposit addresses (parallel).
+    /// @param solanaReceivers Array of Sui/Solana receiver addresses (parallel).
+    /// @return sequenceNumbers  Wormhole sequence numbers, one per NFT.
     function initiateSealBatch(
         address[] calldata nftContracts,
         uint256[] calldata tokenIds,
@@ -168,11 +224,25 @@ contract SealInitiator {
         sequenceNumbers = new uint64[](nftContracts.length);
 
         for (uint256 i = 0; i < nftContracts.length; i++) {
+            // Replay protection per item
+            bytes32 sealKey = keccak256(abi.encodePacked(nftContracts[i], tokenIds[i]));
+            if (sealedNFTs[sealKey]) {
+                revert AlreadySealed();
+            }
+            sealedNFTs[sealKey] = true;
+
             // Verify ownership
             _verifyOwnership(nftContracts[i], tokenIds[i], depositAddresses[i]);
 
-            // Get URI
-            string memory uri = _getTokenURI(nftContracts[i], tokenIds[i]);
+            // Get URI (view-safe)
+            (string memory uri, bool uriAvailable) = _getTokenURI(nftContracts[i], tokenIds[i]);
+            if (!uriAvailable) {
+                emit TokenURIUnavailable(nftContracts[i], tokenIds[i]);
+            }
+
+            if (bytes(uri).length > MAX_URI_LENGTH) {
+                revert URITooLong();
+            }
 
             // Build payload
             bytes memory payload = _buildPayload(
@@ -184,13 +254,15 @@ contract SealInitiator {
             );
 
             // Publish message
+            uint32 nonce = uint32(sequence & 0xFFFFFFFF);
+            sequence++;
+
             sequenceNumbers[i] = wormhole.publishMessage{value: fee}(
-                uint32(sequence++),
+                nonce,
                 payload,
                 CONSISTENCY_LEVEL
             );
 
-            // Emit event
             emit SealInitiated(
                 nftContracts[i],
                 tokenIds[i],
@@ -202,30 +274,31 @@ contract SealInitiator {
             );
         }
 
-        // Refund excess (using call to avoid gas issues)
+        // Refund excess ETH
         if (msg.value > totalFee) {
-            (bool success, ) = payable(msg.sender).call{value: msg.value - totalFee}("");
-            require(success, "Refund failed");
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - totalFee}("");
+            require(ok, "Refund failed");
         }
     }
 
     // ============ Internal Functions ============
 
-    /// @notice Verify NFT ownership matches deposit address
-    /// @dev Handles ERC-721, ERC-1155 (balance check), and CryptoPunks
+    /// @notice Verify NFT ownership matches the deposit address.
+    /// @dev    Handles ERC-721, ERC-1155 (balance check), and CryptoPunks.
+    ///         ERC-1155 note: `balance > 0` only proves possession of *some* quantity;
+    ///         fungible ERC-1155 tokens are inherently ambiguous here.
     function _verifyOwnership(
         address nftContract,
         uint256 tokenId,
         address depositAddress
     ) internal view {
-        // Check if it's CryptoPunks (has punks token code but different interface)
-        if (nftContract == CRYPTOPUNKS_MAINNET) {
-            // CryptoPunks uses a different mapping for ownership
+        // CryptoPunks: distinct ownership mapping
+        if (cryptoPunksAddress != address(0) && nftContract == cryptoPunksAddress) {
             _verifyCryptoPunksOwnership(tokenId, depositAddress);
             return;
         }
 
-        // Try ERC-721 first (most common)
+        // Try ERC-721 ownerOf (most common)
         (bool success, bytes memory data) = nftContract.staticcall(
             abi.encodeWithSelector(IERC721.ownerOf.selector, tokenId)
         );
@@ -238,7 +311,7 @@ contract SealInitiator {
             revert NotAtDepositAddress();
         }
 
-        // Try ERC-1155 balance check
+        // Try ERC-1155 balanceOf
         (success, data) = nftContract.staticcall(
             abi.encodeWithSelector(
                 IERC1155.balanceOf.selector,
@@ -252,15 +325,15 @@ contract SealInitiator {
             if (balance > 0) {
                 return;
             }
+            revert NotAtDepositAddress();
         }
 
-        // If we get here, contract doesn't match expected interfaces
-        // But check if it has code (might be a custom implementation)
+        // Verify the target address has contract code before giving up
         if (nftContract.code.length == 0) {
             revert NotAnNFTContract();
         }
 
-        // Try one more common pattern: ownerOf without selector (some contracts)
+        // Final fallback: ownerOf via sig (some non-compliant ERC-721 contracts)
         (success, data) = nftContract.staticcall(
             abi.encodeWithSignature("ownerOf(uint256)", tokenId)
         );
@@ -275,14 +348,12 @@ contract SealInitiator {
         revert NotAtDepositAddress();
     }
 
-    /// @notice Verify CryptoPunks ownership
-    /// @dev CryptoPunks uses punkIndexToAddress mapping
+    /// @notice Verify CryptoPunks ownership via the `punkIndexToAddress` mapping.
     function _verifyCryptoPunksOwnership(
         uint256 punkIndex,
         address depositAddress
     ) internal view {
-        // CryptoPunks: check punkIndexToAddress mapping
-        (bool success, bytes memory data) = CRYPTOPUNKS_MAINNET.staticcall(
+        (bool success, bytes memory data) = cryptoPunksAddress.staticcall(
             abi.encodeWithSignature("punkIndexToAddress(uint256)", punkIndex)
         );
 
@@ -297,63 +368,98 @@ contract SealInitiator {
         revert NotAtDepositAddress();
     }
 
-    /// @notice Get tokenURI from NFT contract
-    /// @dev Tries ERC-721 tokenURI(uint256), then ERC-1155 uri(uint256), returns "" for no metadata
+    /// @notice Attempt to read the tokenURI from an NFT contract.
+    /// @dev    Pure view function — no events emitted; callers are responsible for
+    ///         emitting `TokenURIUnavailable` when `available` is false.
+    ///         Tries ERC-721 `tokenURI(uint256)`, then ERC-1155 `uri(uint256)`,
+    ///         with {id} placeholder replacement for ERC-1155.
+    ///         CryptoPunks have no on-chain metadata; returns ("", false).
+    /// @return uri       The token URI string (empty when unavailable).
+    /// @return available True when a URI was successfully retrieved.
     function _getTokenURI(
         address nftContract,
         uint256 tokenId
-    ) internal returns (string memory) {
+    ) internal view returns (string memory uri, bool available) {
         // Try ERC-721 tokenURI(uint256)
         (bool success, bytes memory data) = nftContract.staticcall(
             abi.encodeWithSelector(IERC721Metadata.tokenURI.selector, tokenId)
         );
 
         if (success && data.length > 0) {
-            return abi.decode(data, (string));
+            return (abi.decode(data, (string)), true);
         }
 
-        // Try ERC-1155 uri(uint256) - may contain {id} placeholder
+        // Try ERC-1155 uri(uint256) — may contain {id} placeholder
         (success, data) = nftContract.staticcall(
             abi.encodeWithSelector(IERC1155URI.uri.selector, tokenId)
         );
 
         if (success && data.length > 0) {
-            string memory uri = abi.decode(data, (string));
-            // ERC-1155 URIs often contain {id} placeholder - replace with tokenId
-            return _replaceTokenId(uri, tokenId);
+            string memory raw = abi.decode(data, (string));
+            return (_replaceTokenId(raw, tokenId), true);
         }
 
-        // Try CryptoPunks (no tokenURI)
-        if (nftContract == CRYPTOPUNKS_MAINNET) {
-            // CryptoPunks don't have metadata - return empty
-            emit TokenURIUnavailable(nftContract, tokenId);
-            return "";
+        // CryptoPunks: no on-chain metadata
+        if (cryptoPunksAddress != address(0) && nftContract == cryptoPunksAddress) {
+            return ("", false);
         }
 
-        // Try tokenURI without selector (some contracts)
+        // Final fallback via raw signature (non-standard ERC-721 variants)
         (success, data) = nftContract.staticcall(
             abi.encodeWithSignature("tokenURI(uint256)", tokenId)
         );
 
         if (success && data.length > 0) {
-            return abi.decode(data, (string));
+            return (abi.decode(data, (string)), true);
         }
 
-        // No metadata available
-        emit TokenURIUnavailable(nftContract, tokenId);
-        return "";
+        return ("", false);
     }
 
-    /// @notice Replace {id} placeholder in ERC-1155 URI with padded tokenId
+    /// @notice Build the binary Wormhole payload.
+    /// @dev    Uses `abi.encodePacked` to produce the exact binary layout expected
+    ///         by the Sui payload decoder.  Addresses are left-padded to 32 bytes
+    ///         (Wormhole convention) via `bytes32(uint256(uint160(addr)))`.
+    ///
+    ///         Layout (total: 131 + len(tokenURI) bytes):
+    ///           [0]      payload_type  (1 byte)
+    ///           [1–2]    source_chain  (2 bytes BE)
+    ///           [3–34]   nft_contract  (32 bytes, address left-padded)
+    ///           [35–66]  token_id      (32 bytes BE)
+    ///           [67–98]  deposit_addr  (32 bytes, address left-padded)
+    ///           [99–130] receiver      (32 bytes)
+    ///           [131+]   token_uri     (variable raw bytes, no length prefix)
+    function _buildPayload(
+        address nftContract,
+        uint256 tokenId,
+        address depositAddress,
+        bytes32 solanaReceiver,
+        string memory tokenURI
+    ) internal view returns (bytes memory) {
+        return abi.encodePacked(
+            PAYLOAD_TYPE_SEAL,                            // 1 byte
+            wormhole.chainId(),                           // 2 bytes (uint16 BE)
+            bytes32(uint256(uint160(nftContract))),        // 32 bytes, left-padded
+            tokenId,                                      // 32 bytes
+            bytes32(uint256(uint160(depositAddress))),     // 32 bytes, left-padded
+            solanaReceiver,                               // 32 bytes
+            bytes(tokenURI)                               // variable, no length prefix
+        );
+    }
+
+    /// @notice Replace the `{id}` placeholder in an ERC-1155 URI with the hex token ID.
+    /// @dev    ERC-1155 spec §metadata: token ID must be substituted as a zero-padded
+    ///         lowercase 64-character hex string (no `0x` prefix).
     function _replaceTokenId(
         string memory uri,
         uint256 tokenId
     ) internal pure returns (string memory) {
         bytes memory uriBytes = bytes(uri);
-        bytes memory tokenIdBytes = bytes(_uint2str(tokenId));
-
-        // Look for {id} placeholder
         bytes memory placeholder = bytes("{id}");
+
+        if (uriBytes.length < placeholder.length) {
+            return uri;
+        }
 
         for (uint256 i = 0; i <= uriBytes.length - placeholder.length; i++) {
             bool found = true;
@@ -364,23 +470,18 @@ contract SealInitiator {
                 }
             }
             if (found) {
-                // Replace {id} with tokenId (hex, zero-padded to 64 chars)
-                bytes memory hexTokenId = _toHex(tokenId);
+                bytes memory hexId = _toHex(tokenId);
                 bytes memory result = new bytes(
-                    i + hexTokenId.length + (uriBytes.length - i - placeholder.length)
+                    i + hexId.length + (uriBytes.length - i - placeholder.length)
                 );
                 for (uint256 k = 0; k < i; k++) {
                     result[k] = uriBytes[k];
                 }
-                for (uint256 k = 0; k < hexTokenId.length; k++) {
-                    result[i + k] = hexTokenId[k];
+                for (uint256 k = 0; k < hexId.length; k++) {
+                    result[i + k] = hexId[k];
                 }
-                for (
-                    uint256 k = i + placeholder.length;
-                    k < uriBytes.length;
-                    k++
-                ) {
-                    result[k + hexTokenId.length - placeholder.length] = uriBytes[k];
+                for (uint256 k = i + placeholder.length; k < uriBytes.length; k++) {
+                    result[k + hexId.length - placeholder.length] = uriBytes[k];
                 }
                 return string(result);
             }
@@ -389,52 +490,14 @@ contract SealInitiator {
         return uri;
     }
 
-    /// @notice Build Wormhole payload per PRD v6 format
-    /// @dev Payload: {payloadType=1, chainId, nftContract, tokenId, depositAddress, solanaReceiver, tokenURI}
-    function _buildPayload(
-        address nftContract,
-        uint256 tokenId,
-        address depositAddress,
-        bytes32 solanaReceiver,
-        string memory tokenURI
-    ) internal view returns (bytes memory) {
-        return abi.encode(
-            PAYLOAD_TYPE_SEAL,           // uint8: payload type
-            wormhole.chainId(),         // uint16: source chain ID
-            nftContract,                // address: NFT contract
-            tokenId,                    // uint256: token ID
-            depositAddress,             // address: dWallet deposit address
-            solanaReceiver,             // bytes32: Solana receiver
-            tokenURI                    // string: tokenURI
-        );
-    }
-
-    /// @notice Convert uint to string
-    function _uint2str(uint256 value) internal pure returns (string memory) {
-        if (value == 0) {
-            return "0";
-        }
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits--;
-            buffer[digits] = bytes1(uint8(48 + (value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
-    }
-
-    /// @notice Convert uint256 to hex string (for ERC-1155 {id} replacement)
+    /// @notice Convert a uint256 to a zero-padded 64-character lowercase hex string.
     function _toHex(uint256 value) internal pure returns (bytes memory) {
         bytes memory buffer = new bytes(64);
         for (uint256 i = 0; i < 64; i++) {
-            uint8 char = uint8(value & 0xf);
-            buffer[63 - i] = char < 10 ? bytes1(uint8(char + 48)) : bytes1(uint8(char + 87));
+            uint8 nibble = uint8(value & 0xf);
+            buffer[63 - i] = nibble < 10
+                ? bytes1(uint8(nibble + 48))   // '0'–'9'
+                : bytes1(uint8(nibble + 87));  // 'a'–'f'
             value >>= 4;
         }
         return buffer;
@@ -442,39 +505,35 @@ contract SealInitiator {
 
     // ============ View Functions ============
 
-    /// @notice Get the current message fee
+    /// @notice Returns the current Wormhole message fee.
     function getMessageFee() external view returns (uint256) {
         return wormhole.messageFee();
     }
 
-    /// @notice Get the current chain ID
+    /// @notice Returns the Wormhole chain ID for this deployment.
     function getChainId() external view returns (uint16) {
         return wormhole.chainId();
     }
 
-    /// @notice Check if an address has code (is a contract)
+    /// @notice Returns true if `addr` is a contract (has code).
     function isContract(address addr) external view returns (bool) {
         return addr.code.length > 0;
     }
 
-    // ============ Receive Function ============
+    // ============ Receive ============
 
-    /// @notice Allow receiving ETH for refunds
+    /// @notice Accept ETH (fee refunds flow through here).
     receive() external payable {}
-
-    // ============ ERC165 Support ============
-
-    /// @notice This contract does not support ERC165 (it's not intended to be called as NFT)
 }
 
-/// @title IERC721Metadata
-/// @notice ERC-721 Metadata interface (subset needed for tokenURI)
+// ============ Supplementary Interfaces ============
+
+/// @notice ERC-721 Metadata extension — subset needed for `tokenURI`.
 interface IERC721Metadata is IERC721 {
     function tokenURI(uint256 tokenId) external view returns (string memory);
 }
 
-/// @title IERC1155URI
-/// @notice ERC-1155 URI interface for metadata
+/// @notice ERC-1155 URI extension — needed for `uri(uint256)`.
 interface IERC1155URI {
     function uri(uint256 tokenId) external view returns (string memory);
 }

@@ -12,6 +12,9 @@ contract DeploySealInitiator is Script {
     address constant WORMHOLE_SEPOLIA = 0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78;
     address constant WORMHOLE_MAINNET = 0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B;
 
+    /// @notice CryptoPunks address (mainnet only; pass address(0) on testnets)
+    address constant CRYPTOPUNKS_MAINNET = 0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB;
+
     function run() external {
         // Get deployment configuration
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
@@ -24,23 +27,27 @@ contract DeploySealInitiator is Script {
             network = vm.envString("NETWORK");
         }
 
-        // Determine Wormhole address based on network
+        // Determine Wormhole + CryptoPunks addresses based on network
         address wormholeAddress;
+        address cryptoPunksAddr;
         if (compareStrings(network, "mainnet")) {
             wormholeAddress = WORMHOLE_MAINNET;
+            cryptoPunksAddr = CRYPTOPUNKS_MAINNET;
         } else {
-            // Default to Sepolia for testnet
+            // Testnets: use Sepolia Wormhole; no CryptoPunks equivalent
             wormholeAddress = WORMHOLE_SEPOLIA;
+            cryptoPunksAddr = address(0);
         }
 
         console.log("Deploying SealInitiator to network:", network);
         console.log("Using Wormhole address:", wormholeAddress);
+        console.log("Using CryptoPunks address:", cryptoPunksAddr);
 
         // Start broadcast
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy SealInitiator
-        SealInitiator initiator = new SealInitiator(wormholeAddress);
+        SealInitiator initiator = new SealInitiator(wormholeAddress, cryptoPunksAddr);
 
         console.log("SealInitiator deployed at:", address(initiator));
 

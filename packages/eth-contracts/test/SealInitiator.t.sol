@@ -135,7 +135,7 @@ contract SealInitiatorTest is Test {
         erc1155 = new MockERC1155();
 
         // Deploy SealInitiator
-        initiator = new SealInitiator(address(wormhole));
+        initiator = new SealInitiator(address(wormhole), address(0));
     }
 
     // ============ Constructor Tests ============
@@ -146,7 +146,7 @@ contract SealInitiatorTest is Test {
 
     function test_Constructor_RejectsZeroAddress() public {
         vm.expectRevert("Invalid wormhole address");
-        new SealInitiator(address(0));
+        new SealInitiator(address(0), address(0));
     }
 
     // ============ initiateSeal Basic Tests ============
