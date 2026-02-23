@@ -26,7 +26,9 @@ import { logger } from './logger.js';
 const MPL_CORE_PROGRAM_ID = new PublicKey('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d');
 
 // ─── PDA seed constants (must match lib.rs exactly) ──────────────────────────
-const SEED_USED_SIGNATURES = Buffer.from('used_signatures');
+// NOTE: The old "used_signatures" global PDA no longer exists in the program.
+// Replay protection now uses per-signature PDAs with seed ["sig_used", sig_hash].
+const SEED_SIG_USED = Buffer.from('sig_used');
 const SEED_COLLECTION_REGISTRY = Buffer.from('collection_registry');
 const SEED_PROVENANCE = Buffer.from('provenance');
 const SEED_COLLECTION = Buffer.from('reborn_collection');
@@ -56,6 +58,7 @@ const DISCRIMINATOR_MINT_REBORN = anchorDiscriminator('mint_reborn');
  *   [u8; 8]  – discriminator
  *   [u8; 64] – signature (fixed-size array, no length prefix)
  *   [u8; 32] – dwallet_pubkey (fixed-size array, no length prefix)
+ *   [u8; 32] – sig_hash (SHA256 of signature, for PDA verification)
  *   u16      – source_chain
  *   u32 + [] – nft_contract (Vec<u8>)
  *   u32 + [] – token_id (Vec<u8>)
@@ -65,6 +68,7 @@ const DISCRIMINATOR_MINT_REBORN = anchorDiscriminator('mint_reborn');
 function encodeMintRebornArgs(
   signature: Uint8Array,
   dwalletPubkey: Uint8Array,
+  sigHash: Uint8Array,
   sourceChain: number,
   nftContract: Uint8Array,
   tokenId: Uint8Array,
@@ -73,6 +77,7 @@ function encodeMintRebornArgs(
 ): Buffer {
   if (signature.length !== 64) throw new Error('signature must be 64 bytes');
   if (dwalletPubkey.length !== 32) throw new Error('dwalletPubkey must be 32 bytes');
+  if (sigHash.length !== 32) throw new Error('sigHash must be 32 bytes');
 
   const tokenUriBytes = Buffer.from(tokenUri, 'utf-8');
   const collectionNameBytes = Buffer.from(collectionName, 'utf-8');
@@ -81,6 +86,7 @@ function encodeMintRebornArgs(
     8 +   // discriminator
     64 +  // signature fixed array
     32 +  // dwallet_pubkey fixed array
+    32 +  // sig_hash fixed array
     2 +   // source_chain u16
     4 + nftContract.length +      // Vec<u8>
     4 + tokenId.length +           // Vec<u8>
@@ -102,29 +108,33 @@ function encodeMintRebornArgs(
   buf.set(dwalletPubkey, offset);
   offset += 32;
 
-  // 4. source_chain: u16 LE
+  // 4. sig_hash: [u8; 32] (SHA256 of signature, for PDA seed verification)
+  buf.set(sigHash, offset);
+  offset += 32;
+
+  // 5. source_chain: u16 LE
   buf.writeUInt16LE(sourceChain, offset);
   offset += 2;
 
-  // 5. nft_contract: Vec<u8> → u32 len + bytes
+  // 6. nft_contract: Vec<u8> → u32 len + bytes
   buf.writeUInt32LE(nftContract.length, offset);
   offset += 4;
   buf.set(nftContract, offset);
   offset += nftContract.length;
 
-  // 6. token_id: Vec<u8>
+  // 7. token_id: Vec<u8>
   buf.writeUInt32LE(tokenId.length, offset);
   offset += 4;
   buf.set(tokenId, offset);
   offset += tokenId.length;
 
-  // 7. token_uri: String
+  // 8. token_uri: String
   buf.writeUInt32LE(tokenUriBytes.length, offset);
   offset += 4;
   tokenUriBytes.copy(buf, offset);
   offset += tokenUriBytes.length;
 
-  // 8. collection_name: String
+  // 9. collection_name: String
   buf.writeUInt32LE(collectionNameBytes.length, offset);
   offset += 4;
   collectionNameBytes.copy(buf, offset);
@@ -235,8 +245,12 @@ export class SolanaSubmitter {
     const sourceChainBuf = Buffer.alloc(2);
     sourceChainBuf.writeUInt16LE(sourceChain);
 
-    const [usedSignaturesPda] = PublicKey.findProgramAddressSync(
-      [SEED_USED_SIGNATURES],
+    // Compute sig_hash = SHA256(signature) for replay PDA
+    const sigHash = createHash('sha256').update(signature).digest();
+
+    // Per-signature replay protection PDA: ["sig_used", sha256(signature)]
+    const [sigRecordPda] = PublicKey.findProgramAddressSync(
+      [SEED_SIG_USED, sigHash],
       this.programId,
     );
 
@@ -276,6 +290,7 @@ export class SolanaSubmitter {
     const ixData = encodeMintRebornArgs(
       signature,
       dwalletPubkey,
+      sigHash,
       sourceChain,
       nftContract,
       tokenId,
@@ -289,10 +304,11 @@ export class SolanaSubmitter {
       keys: [
         { pubkey: relayerKeypair.publicKey, isSigner: true,  isWritable: true  }, // payer
         { pubkey: receiverPubkey,           isSigner: false, isWritable: false }, // receiver
-        { pubkey: usedSignaturesPda,        isSigner: false, isWritable: true  }, // used_signatures
+        { pubkey: sigRecordPda,             isSigner: false, isWritable: true  }, // sig_record (per-sig replay PDA)
         { pubkey: registryPda,              isSigner: false, isWritable: true  }, // registry
         { pubkey: provenancePda,            isSigner: false, isWritable: true  }, // provenance
-        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection
+        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection (program metadata)
+        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection_asset (Metaplex Core collection)
         { pubkey: mintAuthorityPda,         isSigner: false, isWritable: false }, // mint_authority
         { pubkey: assetKeypair.publicKey,   isSigner: true,  isWritable: true  }, // asset
         { pubkey: MPL_CORE_PROGRAM_ID,      isSigner: false, isWritable: false }, // mpl_core_program
