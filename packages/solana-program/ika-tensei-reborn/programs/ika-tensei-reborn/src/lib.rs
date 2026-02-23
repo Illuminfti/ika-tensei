@@ -451,73 +451,88 @@ fn verify_ed25519_signature(
     expected_message: &[u8; 32],
     expected_signature: &[u8; 64],
 ) -> Result<()> {
-    for i in 0..10 {
-        if let Ok(ed25519_ix) = ix_sysvar::load_instruction_at_checked(i, instructions_sysvar) {
-            if ed25519_ix.program_id != ed25519_program::ID {
-                continue;
-            }
-
-            // Found an Ed25519 instruction — verify all three fields and return
-            let data = ed25519_ix.data;
-
-            // Minimum header size: 2 (count + padding) + 14 (one signature entry header)
-            if data.len() < 16 {
-                return Err(ErrorCode::InvalidInstructionData.into());
-            }
-
-            let num_signatures = data[0];
-            if num_signatures < 1 {
-                return Err(ErrorCode::InvalidInstructionData.into());
-            }
-
-            // Parse offsets from the first signature entry header (starts at byte 2)
-            let sig_offset     = u16::from_le_bytes([data[2],  data[3]])  as usize;
-            let pubkey_offset  = u16::from_le_bytes([data[6],  data[7]])  as usize;
-            let message_offset = u16::from_le_bytes([data[10], data[11]]) as usize;
-            let message_size   = u16::from_le_bytes([data[12], data[13]]) as usize;
-
-            // --- FIX 1: Verify signature bytes ---
-            // Previously `_expected_signature` was unused; an attacker could supply a
-            // *different* valid signature for the same (pubkey, message) pair and bypass
-            // per-signature replay protection. Now we explicitly check all 64 bytes.
-            match data.get(sig_offset..sig_offset + 64) {
-                Some(sig_data) => {
-                    if !constant_time_eq::constant_time_eq(sig_data, expected_signature) {
-                        return Err(ErrorCode::SignatureVerificationFailed.into());
-                    }
+    // The Ed25519 precompile instruction MUST be at index 0 in the transaction.
+    // This prevents confusion with Ed25519 instructions from other programs in
+    // a composed transaction. The relayer always places it at position 0.
+    let ed25519_ix = ix_sysvar::load_instruction_at_checked(0, instructions_sysvar)
+        .map_err(|_| ErrorCode::NoEd25519Instruction)?;
+    
+    if ed25519_ix.program_id != ed25519_program::ID {
+        // Also search positions 1-3 as a fallback (in case of preflight instructions)
+        let mut found = false;
+        for i in 1..4 {
+            if let Ok(ix) = ix_sysvar::load_instruction_at_checked(i, instructions_sysvar) {
+                if ix.program_id == ed25519_program::ID {
+                    return verify_ed25519_ix_data(&ix.data, expected_pubkey, expected_message, expected_signature);
                 }
-                None => return Err(ErrorCode::InvalidInstructionData.into()),
             }
-
-            // --- Verify public key ---
-            match data.get(pubkey_offset..pubkey_offset + 32) {
-                Some(pubkey_data) => {
-                    if !constant_time_eq::constant_time_eq(pubkey_data, expected_pubkey) {
-                        return Err(ErrorCode::SignatureVerificationFailed.into());
-                    }
-                }
-                None => return Err(ErrorCode::InvalidInstructionData.into()),
-            }
-
-            // --- Verify message ---
-            if message_size != 32 {
-                return Err(ErrorCode::SignatureVerificationFailed.into());
-            }
-            match data.get(message_offset..message_offset + message_size) {
-                Some(message_data) => {
-                    if !constant_time_eq::constant_time_eq(message_data, expected_message) {
-                        return Err(ErrorCode::SignatureVerificationFailed.into());
-                    }
-                }
-                None => return Err(ErrorCode::InvalidInstructionData.into()),
-            }
-
-            return Ok(());
+        }
+        if !found {
+            return Err(ErrorCode::NoEd25519Instruction.into());
         }
     }
+    
+    return verify_ed25519_ix_data(&ed25519_ix.data, expected_pubkey, expected_message, expected_signature);
+}
 
-    // No Ed25519 instruction was found in the transaction
-    Err(ErrorCode::NoEd25519Instruction.into())
+/// Inner verification of Ed25519 instruction data fields.
+/// Checks all three fields: signature bytes, public key, and message.
+fn verify_ed25519_ix_data(
+    data: &[u8],
+    expected_pubkey: &[u8; 32],
+    expected_message: &[u8; 32],
+    expected_signature: &[u8; 64],
+) -> Result<()> {
+    // Minimum header size: 2 (count + padding) + 14 (one signature entry header)
+    if data.len() < 16 {
+        return Err(ErrorCode::InvalidInstructionData.into());
+    }
+
+    let num_signatures = data[0];
+    if num_signatures < 1 {
+        return Err(ErrorCode::InvalidInstructionData.into());
+    }
+
+    // Parse offsets from the first signature entry header (starts at byte 2)
+    let sig_offset     = u16::from_le_bytes([data[2],  data[3]])  as usize;
+    let pubkey_offset  = u16::from_le_bytes([data[6],  data[7]])  as usize;
+    let message_offset = u16::from_le_bytes([data[10], data[11]]) as usize;
+    let message_size   = u16::from_le_bytes([data[12], data[13]]) as usize;
+
+    // Verify signature bytes (all 64)
+    match data.get(sig_offset..sig_offset + 64) {
+        Some(sig_data) => {
+            if !constant_time_eq::constant_time_eq(sig_data, expected_signature) {
+                return Err(ErrorCode::SignatureVerificationFailed.into());
+            }
+        }
+        None => return Err(ErrorCode::InvalidInstructionData.into()),
+    }
+
+    // Verify public key (32 bytes)
+    match data.get(pubkey_offset..pubkey_offset + 32) {
+        Some(pubkey_data) => {
+            if !constant_time_eq::constant_time_eq(pubkey_data, expected_pubkey) {
+                return Err(ErrorCode::SignatureVerificationFailed.into());
+            }
+        }
+        None => return Err(ErrorCode::InvalidInstructionData.into()),
+    }
+
+    // Verify message (must be exactly 32 bytes = our SHA256 hash)
+    if message_size != 32 {
+        return Err(ErrorCode::SignatureVerificationFailed.into());
+    }
+    match data.get(message_offset..message_offset + message_size) {
+        Some(message_data) => {
+            if !constant_time_eq::constant_time_eq(message_data, expected_message) {
+                return Err(ErrorCode::SignatureVerificationFailed.into());
+            }
+        }
+        None => return Err(ErrorCode::InvalidInstructionData.into()),
+    }
+
+    Ok(())
 }
 
 // ============ Errors ============

@@ -43,6 +43,10 @@ contract SealInitiator {
     ///         Prevents gas-griefing via oversized Wormhole messages.
     uint256 public constant MAX_URI_LENGTH = 2048;
 
+    /// @notice Maximum number of NFTs in a single batch seal.
+    ///         Prevents gas griefing via unbounded loops.
+    uint256 public constant MAX_BATCH_SIZE = 50;
+
     // ============ Immutables ============
 
     /// @notice Address of the Wormhole core contract.
@@ -103,6 +107,9 @@ contract SealInitiator {
 
     /// @notice Token URI exceeds the maximum allowed length.
     error URITooLong();
+
+    /// @notice Batch size exceeds maximum.
+    error BatchTooLarge();
 
     // ============ Constructor ============
 
@@ -208,6 +215,9 @@ contract SealInitiator {
         address[] calldata depositAddresses,
         bytes32[] calldata solanaReceivers
     ) external payable returns (uint64[] memory sequenceNumbers) {
+        if (nftContracts.length > MAX_BATCH_SIZE) {
+            revert BatchTooLarge();
+        }
         require(
             nftContracts.length == tokenIds.length &&
             tokenIds.length == depositAddresses.length &&

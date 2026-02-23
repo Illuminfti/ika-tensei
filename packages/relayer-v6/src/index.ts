@@ -153,16 +153,16 @@ export class Relayer {
     // Convert them to the appropriate binary representations.
 
     // 64-byte Ed25519 signature
-    const signature = this.hexToUint8Array(event.signature, 64);
+    const signature = this.hexToUint8Array(event.signature, 64, 'signature');
 
     // 32-byte Ed25519 public key of the IKA dWallet (NOT deposit_address!)
-    const dwalletPubkey = this.hexToUint8Array(event.dwallet_pubkey, 32);
+    const dwalletPubkey = this.hexToUint8Array(event.dwallet_pubkey, 32, 'dwallet_pubkey');
 
     // 32-byte message hash (SHA256)
-    const messageHash = this.hexToUint8Array(event.message_hash, 32);
+    const messageHash = this.hexToUint8Array(event.message_hash, 32, 'message_hash');
 
     // Receiver is a 32-byte Solana public key (hex of raw bytes)
-    const receiver = this.hexToUint8Array(event.receiver, 32);
+    const receiver = this.hexToUint8Array(event.receiver, 32, 'receiver');
 
     // NFT contract and token ID are variable-length bytes (convert hex → raw)
     const nftContract = this.hexToBytes(event.nft_contract);
@@ -209,11 +209,11 @@ export class Relayer {
   /**
    * Convert a fixed-length hex string to Uint8Array.
    */
-  private hexToUint8Array(hex: string, expectedLen: number): Uint8Array {
+  private hexToUint8Array(hex: string, expectedLen: number, fieldName?: string): Uint8Array {
     const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
     if (clean.length !== expectedLen * 2) {
       throw new Error(
-        `Expected ${expectedLen} bytes (${expectedLen * 2} hex chars), got ${clean.length}`,
+        `${fieldName ?? 'field'}: expected ${expectedLen} bytes (${expectedLen * 2} hex chars), got ${clean.length} chars from "${hex.slice(0, 20)}..."`,
       );
     }
     const bytes = new Uint8Array(expectedLen);

@@ -94,12 +94,11 @@ DO NOT hand-encode instruction data.
 
 ### PDA Seeds (exact)
 ```
-used_signatures:   ["used_signatures"]
+sig_used:          ["sig_used", sha256(signature)]   ← per-signature replay PDA
 collection_registry: ["collection_registry"]
 provenance:        ["provenance", source_chain.to_le_bytes(), nft_contract, token_id]
 reborn_collection: ["reborn_collection", source_chain.to_le_bytes(), nft_contract]
 mint_authority:    ["mint_authority", source_chain.to_le_bytes(), nft_contract]
-sig_used:          ["sig_used", sha256(signature)]
 ```
 
 Note: source_chain is u16 little-endian in PDA seeds (Solana convention).
