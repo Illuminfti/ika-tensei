@@ -153,48 +153,56 @@ module ikatensei::payload {
         // NFT contract (32 bytes, left-pad with zeros)
         let contract_len = vector::length(&nft_contract);
         let mut i = 0;
-        while (i < 32) {
-            if (i < contract_len) {
-                vector::push_back(&mut payload, *vector::borrow(&nft_contract, i));
-            } else {
-                vector::push_back(&mut payload, 0u8);
-            };
+        let contract_pad = 32 - contract_len;
+        while (i < contract_pad) {
+            vector::push_back(&mut payload, 0u8);
+            i = i + 1;
+        };
+        i = 0;
+        while (i < contract_len) {
+            vector::push_back(&mut payload, *vector::borrow(&nft_contract, i));
             i = i + 1;
         };
 
         // Token ID (32 bytes, left-pad with zeros)
         let token_len = vector::length(&token_id);
         i = 0;
-        while (i < 32) {
-            if (i < token_len) {
-                vector::push_back(&mut payload, *vector::borrow(&token_id, i));
-            } else {
-                vector::push_back(&mut payload, 0u8);
-            };
+        let token_pad = 32 - token_len;
+        while (i < token_pad) {
+            vector::push_back(&mut payload, 0u8);
+            i = i + 1;
+        };
+        i = 0;
+        while (i < token_len) {
+            vector::push_back(&mut payload, *vector::borrow(&token_id, i));
             i = i + 1;
         };
 
         // Deposit address (32 bytes, left-pad with zeros)
         let deposit_len = vector::length(&deposit_address);
         i = 0;
-        while (i < 32) {
-            if (i < deposit_len) {
-                vector::push_back(&mut payload, *vector::borrow(&deposit_address, i));
-            } else {
-                vector::push_back(&mut payload, 0u8);
-            };
+        let deposit_pad = 32 - deposit_len;
+        while (i < deposit_pad) {
+            vector::push_back(&mut payload, 0u8);
+            i = i + 1;
+        };
+        i = 0;
+        while (i < deposit_len) {
+            vector::push_back(&mut payload, *vector::borrow(&deposit_address, i));
             i = i + 1;
         };
 
         // Receiver (32 bytes, left-pad with zeros)
         let receiver_len = vector::length(&receiver);
         i = 0;
-        while (i < 32) {
-            if (i < receiver_len) {
-                vector::push_back(&mut payload, *vector::borrow(&receiver, i));
-            } else {
-                vector::push_back(&mut payload, 0u8);
-            };
+        let receiver_pad = 32 - receiver_len;
+        while (i < receiver_pad) {
+            vector::push_back(&mut payload, 0u8);
+            i = i + 1;
+        };
+        i = 0;
+        while (i < receiver_len) {
+            vector::push_back(&mut payload, *vector::borrow(&receiver, i));
             i = i + 1;
         };
 

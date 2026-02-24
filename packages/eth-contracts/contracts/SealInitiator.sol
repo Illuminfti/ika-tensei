@@ -457,21 +457,25 @@ contract SealInitiator {
         );
     }
 
-    /// @notice Replace the `{id}` placeholder in an ERC-1155 URI with the hex token ID.
+    /// @notice Replace ALL `{id}` placeholders in an ERC-1155 URI with the hex token ID.
     /// @dev    ERC-1155 spec §metadata: token ID must be substituted as a zero-padded
     ///         lowercase 64-character hex string (no `0x` prefix).
+    ///         URIs may contain multiple `{id}` placeholders — all are replaced.
     function _replaceTokenId(
         string memory uri,
         uint256 tokenId
     ) internal pure returns (string memory) {
         bytes memory uriBytes = bytes(uri);
         bytes memory placeholder = bytes("{id}");
+        bytes memory hexId = _toHex(tokenId);
 
         if (uriBytes.length < placeholder.length) {
             return uri;
         }
 
-        for (uint256 i = 0; i <= uriBytes.length - placeholder.length; i++) {
+        // First pass: count occurrences to compute result length
+        uint256 count = 0;
+        for (uint256 i = 0; i <= uriBytes.length - placeholder.length; ) {
             bool found = true;
             for (uint256 j = 0; j < placeholder.length; j++) {
                 if (uriBytes[i + j] != placeholder[j]) {
@@ -480,24 +484,47 @@ contract SealInitiator {
                 }
             }
             if (found) {
-                bytes memory hexId = _toHex(tokenId);
-                bytes memory result = new bytes(
-                    i + hexId.length + (uriBytes.length - i - placeholder.length)
-                );
-                for (uint256 k = 0; k < i; k++) {
-                    result[k] = uriBytes[k];
-                }
-                for (uint256 k = 0; k < hexId.length; k++) {
-                    result[i + k] = hexId[k];
-                }
-                for (uint256 k = i + placeholder.length; k < uriBytes.length; k++) {
-                    result[k + hexId.length - placeholder.length] = uriBytes[k];
-                }
-                return string(result);
+                count++;
+                i += placeholder.length;
+            } else {
+                i++;
             }
         }
 
-        return uri;
+        if (count == 0) {
+            return uri;
+        }
+
+        // Second pass: build result with all {id} replaced
+        uint256 newLen = uriBytes.length + count * (hexId.length - placeholder.length);
+        bytes memory result = new bytes(newLen);
+        uint256 src = 0;
+        uint256 dst = 0;
+        while (src < uriBytes.length) {
+            bool found = false;
+            if (src + placeholder.length <= uriBytes.length) {
+                found = true;
+                for (uint256 j = 0; j < placeholder.length; j++) {
+                    if (uriBytes[src + j] != placeholder[j]) {
+                        found = false;
+                        break;
+                    }
+                }
+            }
+            if (found) {
+                for (uint256 k = 0; k < hexId.length; k++) {
+                    result[dst + k] = hexId[k];
+                }
+                dst += hexId.length;
+                src += placeholder.length;
+            } else {
+                result[dst] = uriBytes[src];
+                dst++;
+                src++;
+            }
+        }
+
+        return string(result);
     }
 
     /// @notice Convert a uint256 to a zero-padded 64-character lowercase hex string.

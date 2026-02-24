@@ -285,6 +285,12 @@ export interface RelayerConfig {
   presignPoolMinAvailable: number;
   presignPoolReplenishBatch: number;
 
+  // VAA ingestion
+  wormholescanApiUrl: string;
+  wormholeStateObjectId: string;
+  sourceChainEmitters: SourceChainEmitter[];
+  vaaPollingIntervalMs: number;
+
   // Optional tuning
   healthPort: number;
   maxRetries: number;
@@ -320,4 +326,52 @@ export interface HealthStatus {
 export interface EventCursor {
   txDigest: string;
   eventSeq: string;
+}
+
+// ─── VAA Ingestion ──────────────────────────────────────────────────────────
+
+/**
+ * A registered source chain emitter (SealInitiator contract).
+ * The relayer polls Wormholescan for VAAs from these emitters.
+ */
+export interface SourceChainEmitter {
+  /** Wormhole chain ID (e.g. 2 = Ethereum, 15 = NEAR, 22 = Aptos) */
+  chainId: number;
+  /** 32-byte hex emitter address (left-padded for EVM, hashed for NEAR) */
+  emitterAddress: string;
+  /** Human-readable label for logging */
+  label: string;
+}
+
+/**
+ * VAA entry from Wormholescan API response.
+ */
+export interface WormholescanVAAEntry {
+  /** Unique VAA ID: chainId/emitterAddress/sequence */
+  id: string;
+  /** Wormhole chain ID of the emitter */
+  emitterChain: number;
+  /** Hex-encoded emitter address */
+  emitterAddr: string;
+  /** Sequence number */
+  sequence: string;
+  /** Base64-encoded signed VAA bytes */
+  vaa: string;
+  /** ISO timestamp */
+  timestamp: string;
+}
+
+/**
+ * Wormholescan API response for /api/v1/vaas endpoint.
+ */
+export interface WormholescanVAAResponse {
+  data: WormholescanVAAEntry[];
+}
+
+/**
+ * Persisted state for the VAA ingester (tracks last-seen sequence per emitter).
+ */
+export interface VAAIngesterState {
+  /** Map of "chainId:emitterAddress" → last processed sequence number */
+  lastSequences: Record<string, string>;
 }

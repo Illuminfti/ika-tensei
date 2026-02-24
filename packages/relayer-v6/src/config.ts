@@ -5,7 +5,7 @@
  * v7 adds: SUI_KEYPAIR_PATH (for Sui txs), API_PORT (for HTTP API).
  */
 
-import { RelayerConfig } from './types.js';
+import { RelayerConfig, SourceChainEmitter } from './types.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -66,10 +66,33 @@ export function getConfig(): RelayerConfig {
     minSuiBalanceMist: BigInt(process.env.MIN_SUI_BALANCE_MIST || '5000000000'),  // 5 SUI default
     presignPoolMinAvailable: parseInt(process.env.PRESIGN_POOL_MIN_AVAILABLE || '5', 10),
     presignPoolReplenishBatch: parseInt(process.env.PRESIGN_POOL_REPLENISH_BATCH || '5', 10),
+    wormholescanApiUrl: process.env.WORMHOLESCAN_API_URL || 'https://api.testnet.wormholescan.io',
+    wormholeStateObjectId: process.env.WORMHOLE_STATE_OBJECT_ID || '',
+    sourceChainEmitters: parseEmitters(process.env.SOURCE_CHAIN_EMITTERS || ''),
+    vaaPollingIntervalMs: parseInt(process.env.VAA_POLLING_INTERVAL_MS || '30000', 10),
     healthPort: parseInt(process.env.HEALTH_PORT || '8080', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),
     retryDelayMs: parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
   };
+}
+
+/**
+ * Parse SOURCE_CHAIN_EMITTERS env var.
+ * Format: "chainId:emitterAddress:label,chainId:emitterAddress:label,..."
+ * Example: "2:000000000000000000000000abc123...:Ethereum,15:abc123...:NEAR"
+ */
+function parseEmitters(raw: string): SourceChainEmitter[] {
+  if (!raw.trim()) return [];
+  return raw.split(',').map((entry) => {
+    const [chainIdStr, emitterAddress, label] = entry.trim().split(':');
+    return {
+      chainId: parseInt(chainIdStr, 10),
+      emitterAddress: emitterAddress.startsWith('0x')
+        ? emitterAddress.slice(2)
+        : emitterAddress,
+      label: label || `Chain ${chainIdStr}`,
+    };
+  });
 }
 
 /**

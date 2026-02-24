@@ -1,13 +1,15 @@
 /**
  * Ika Tensei v8 Relayer - Main Entry Point
  *
- * Four roles:
- * 1. API server — accepts seal requests, creates deposit dWallets via IKA SDK
- * 2. SealPending listener — watches SealPending events, triggers IKA signing
- * 3. SealSigned listener — watches SealSigned events, bridges to Solana
- * 4. Background maintenance — treasury balances, presign pool replenishment
+ * Five roles:
+ * 1. VAA ingester — polls Wormholescan for signed VAAs, submits process_vaa() to Sui
+ * 2. API server — accepts seal requests, creates deposit dWallets via IKA SDK
+ * 3. SealPending listener — watches SealPending events, triggers IKA signing
+ * 4. SealSigned listener — watches SealSigned events, bridges to Solana
+ * 5. Background maintenance — treasury balances, presign pool replenishment
  *
  * v8 changes from v7:
+ * - VAA ingester: automatic Wormholescan polling for EVM/NEAR VAAs
  * - Treasury-funded coordinator calls (DKG, presign, sign)
  * - Presign pool with FIFO allocation
  * - Full signing flow: SealPending → IKA 2PC-MPC → complete_seal → SealSigned
@@ -30,6 +32,7 @@ import { DWalletCreator } from './dwallet-creator.js';
 import { TreasuryManager } from './treasury-manager.js';
 import { PresignPool } from './presign-pool.js';
 import { SealSigner } from './seal-signer.js';
+import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
 import type {
@@ -43,6 +46,7 @@ import type {
 
 /**
  * Relayer orchestrates the full seal flow:
+ * - VAA ingestion from Wormholescan → Sui process_vaa
  * - API for dWallet creation
  * - SealPending → IKA signing → complete_seal
  * - SealSigned → Solana minting
@@ -62,6 +66,7 @@ export class Relayer {
   private treasuryManager?: TreasuryManager;
   private presignPool?: PresignPool;
   private sealSigner?: SealSigner;
+  private vaaIngester?: VAAIngester;
 
   /** In-memory seal session tracker (production: use Redis or DB) */
   private readonly sessions = new Map<string, SealSession>();
@@ -268,6 +273,9 @@ export class Relayer {
     // Initialize v8 services (treasury, presign pool, seal signer)
     await this.initializeSigningServices();
 
+    // Initialize and start VAA ingester (polls Wormholescan for source chain VAAs)
+    await this.initializeVAAIngester();
+
     // Start health endpoint
     this.healthServer.start();
 
@@ -368,8 +376,34 @@ export class Relayer {
     }
   }
 
+  /**
+   * Initialize the VAA ingester (polls Wormholescan for source chain VAAs).
+   * Requires wormholeStateObjectId and at least one source chain emitter.
+   */
+  private async initializeVAAIngester(): Promise<void> {
+    const config = getConfig();
+
+    if (!config.wormholeStateObjectId) {
+      logger.warn('VAA ingester disabled — WORMHOLE_STATE_OBJECT_ID not set');
+      return;
+    }
+
+    if (config.sourceChainEmitters.length === 0) {
+      logger.warn('VAA ingester disabled — no SOURCE_CHAIN_EMITTERS configured');
+      return;
+    }
+
+    const sui = new SuiClient({ url: config.suiRpcUrl });
+    const suiKeypair = this.loadSuiKeypair(config.suiKeypairPath);
+
+    this.vaaIngester = new VAAIngester(sui, suiKeypair);
+    await this.vaaIngester.start();
+    logger.info('VAA ingester started');
+  }
+
   async stop(): Promise<void> {
     logger.info('Stopping relayer…');
+    this.vaaIngester?.stop();
     await this.sealSignedListener.unsubscribeFromEvents();
     await this.sealPendingListener.unsubscribeFromEvents();
     this.healthServer.stop();
