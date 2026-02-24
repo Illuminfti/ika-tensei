@@ -1,0 +1,269 @@
+/**
+ * Seal Signer — Core signing orchestrator for IKA dWallet 2PC-MPC.
+ *
+ * Bridges the gap between SealPending events and complete_seal:
+ *
+ *   1. Allocate presign from pool
+ *   2. Compute centralized signature via IKA SDK WASM
+ *   3. Call request_sign_seal on-chain (treasury-funded)
+ *   4. Poll IKA for signature completion
+ *   5. Call complete_seal on-chain with the IKA signature
+ *
+ * The minting dWallet's userSecretKeyShare and userPublicOutput must be
+ * provided at construction (persisted from DKG). These are needed for
+ * createUserSignMessageWithPublicOutput.
+ */
+
+import { SuiClient } from '@mysten/sui/client';
+import { Transaction } from '@mysten/sui/transactions';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import {
+  IkaClient,
+  Curve,
+  Hash,
+  SignatureAlgorithm,
+  createUserSignMessageWithPublicOutput,
+  parseSignatureFromSignOutput,
+} from '@ika.xyz/sdk';
+import type { IkaConfig } from '@ika.xyz/sdk';
+import { PresignPool } from './presign-pool.js';
+import { getConfig } from './config.js';
+import { logger } from './logger.js';
+import type { SealPendingEvent } from './types.js';
+
+export class SealSigner {
+  private readonly sui: SuiClient;
+  private readonly ikaClient: IkaClient;
+  private readonly ikaConfig: IkaConfig;
+  private readonly keypair: Ed25519Keypair;
+  private readonly presignPool: PresignPool;
+  private readonly userSecretKeyShare: Uint8Array;
+  private readonly userPublicOutput: Uint8Array;
+  private protocolPublicParams: Uint8Array | null = null;
+
+  constructor(
+    sui: SuiClient,
+    ikaClient: IkaClient,
+    ikaConfig: IkaConfig,
+    keypair: Ed25519Keypair,
+    presignPool: PresignPool,
+    userSecretKeyShare: Uint8Array,
+    userPublicOutput: Uint8Array,
+  ) {
+    this.sui = sui;
+    this.ikaClient = ikaClient;
+    this.ikaConfig = ikaConfig;
+    this.keypair = keypair;
+    this.presignPool = presignPool;
+    this.userSecretKeyShare = userSecretKeyShare;
+    this.userPublicOutput = userPublicOutput;
+  }
+
+  /**
+   * Full signing flow for a pending seal.
+   *
+   * Called when a SealPending event is received. Performs the complete
+   * IKA 2PC-MPC signing ceremony and submits the result on-chain.
+   */
+  async signAndComplete(event: SealPendingEvent): Promise<void> {
+    const { vaa_hash: vaaHash, message_hash: messageHashHex } = event;
+    const messageHash = hexToBytes(messageHashHex);
+
+    logger.info({ vaaHash }, 'Starting signing flow for pending seal');
+
+    // 1. Allocate presign from pool
+    const presign = this.presignPool.allocate(vaaHash);
+    if (!presign) {
+      throw new Error(`No presigns available for seal ${vaaHash}`);
+    }
+
+    try {
+      // 2. Get protocol public parameters (cached)
+      const protocolPublicParams = await this.getProtocolPublicParams();
+
+      // 3. Generate centralized signature via IKA SDK WASM
+      logger.info({ vaaHash }, 'Computing centralized signature');
+      const centralizedSig = await createUserSignMessageWithPublicOutput(
+        protocolPublicParams,
+        this.userPublicOutput,
+        this.userSecretKeyShare,
+        presign.presignBcs,
+        messageHash,
+        Hash.SHA512,
+        SignatureAlgorithm.EdDSA,
+        Curve.ED25519,
+      );
+
+      // 4. Call request_sign_seal on-chain
+      const signatureId = await this.requestSignOnChain(
+        vaaHash,
+        centralizedSig,
+        presign.objectId,
+      );
+
+      logger.info({ vaaHash, signatureId }, 'Sign request submitted — polling IKA');
+
+      // 5. Poll IKA for signature completion
+      const signResult = await this.ikaClient.getSignInParticularState(
+        signatureId,
+        Curve.ED25519,
+        SignatureAlgorithm.EdDSA,
+        'Completed',
+        { timeout: 120_000 },
+      );
+
+      // 6. Extract raw signature
+      const signatureOutput = new Uint8Array(
+        (signResult as { state: { Completed: { signature: number[] } } }).state.Completed.signature,
+      );
+      const signature = await parseSignatureFromSignOutput(
+        Curve.ED25519,
+        SignatureAlgorithm.EdDSA,
+        signatureOutput,
+      );
+
+      logger.info(
+        { vaaHash, signatureHex: Buffer.from(signature).toString('hex').slice(0, 32) + '...' },
+        'IKA signature obtained',
+      );
+
+      // 7. Mark presign used and trigger async replenishment
+      this.presignPool.markUsed(presign.objectId);
+      this.presignPool.replenish(1).catch((err) =>
+        logger.warn({ err }, 'Async presign replenish failed'),
+      );
+
+      // 8. Call complete_seal on-chain
+      await this.completeSealOnChain(vaaHash, signature);
+
+      logger.info({ vaaHash }, 'Seal signing flow complete — SealSigned event emitted');
+    } catch (err) {
+      // Don't leave the presign in ALLOCATED state on failure
+      if (presign.status === 'ALLOCATED') {
+        presign.status = 'AVAILABLE';
+        presign.allocatedAt = undefined;
+        presign.allocatedFor = undefined;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Get protocol public parameters (cached after first fetch).
+   */
+  private async getProtocolPublicParams(): Promise<Uint8Array> {
+    if (!this.protocolPublicParams) {
+      this.protocolPublicParams = await this.ikaClient.getProtocolPublicParameters(
+        undefined,
+        Curve.ED25519,
+      );
+    }
+    return this.protocolPublicParams;
+  }
+
+  /**
+   * Submit request_sign_seal transaction on-chain.
+   * Returns the IKA signature_id from the SignRequested event.
+   */
+  private async requestSignOnChain(
+    vaaHash: string,
+    centralizedSig: Uint8Array,
+    presignObjectId: string,
+  ): Promise<string> {
+    const config = getConfig();
+    const coordinatorConfig = this.ikaConfig.objects.ikaDWalletCoordinator;
+
+    const tx = new Transaction();
+    const coordinatorRef = tx.sharedObjectRef({
+      objectId: coordinatorConfig.objectID,
+      initialSharedVersion: coordinatorConfig.initialSharedVersion,
+      mutable: true,
+    });
+
+    tx.moveCall({
+      target: `${config.suiPackageId}::orchestrator::request_sign_seal`,
+      arguments: [
+        tx.object(config.suiOrchestratorStateId),
+        tx.object(config.suiSigningStateId),
+        coordinatorRef,
+        tx.pure.vector('u8', Array.from(hexToBytes(vaaHash))),
+        tx.pure.vector('u8', Array.from(centralizedSig)),
+        tx.object(presignObjectId),
+        tx.pure.u64(Date.now()),
+      ],
+    });
+
+    const result = await this.sui.signAndExecuteTransaction({
+      transaction: tx,
+      signer: this.keypair,
+      options: { showEvents: true },
+    });
+
+    // Parse SignRequested event to get signature_id
+    const signEvent = result.events?.find(
+      (e) => e.type.includes('signing::SignRequested'),
+    );
+
+    if (!signEvent?.parsedJson) {
+      throw new Error('SignRequested event not found in transaction');
+    }
+
+    const eventData = signEvent.parsedJson as {
+      request: string;
+      vaa_hash: number[];
+      signature_id: string;
+    };
+
+    logger.info(
+      { txDigest: result.digest, signatureId: eventData.signature_id },
+      'request_sign_seal submitted',
+    );
+
+    return eventData.signature_id;
+  }
+
+  /**
+   * Submit complete_seal transaction on-chain with the IKA signature.
+   */
+  private async completeSealOnChain(
+    vaaHash: string,
+    signature: Uint8Array,
+  ): Promise<void> {
+    const config = getConfig();
+
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${config.suiPackageId}::orchestrator::complete_seal`,
+      arguments: [
+        tx.object(config.suiOrchestratorStateId),
+        tx.object(config.suiRegistryObjectId),
+        tx.object(config.suiMintingAuthorityId),
+        tx.pure.vector('u8', Array.from(hexToBytes(vaaHash))),
+        tx.pure.vector('u8', Array.from(signature)),
+        tx.object('0x6'), // Clock shared object
+      ],
+    });
+
+    const result = await this.sui.signAndExecuteTransaction({
+      transaction: tx,
+      signer: this.keypair,
+    });
+
+    logger.info(
+      { txDigest: result.digest, vaaHash },
+      'complete_seal submitted — SealSigned event emitted',
+    );
+  }
+}
+
+/**
+ * Convert hex string to Uint8Array.
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}

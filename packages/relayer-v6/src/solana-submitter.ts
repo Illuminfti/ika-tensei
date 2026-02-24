@@ -19,7 +19,7 @@ import {
 } from '@solana/web3.js';
 import { createHash } from 'crypto';
 import { getConfig } from './config.js';
-import type { ProcessedSeal, SubmissionResult } from './types.js';
+import type { ProcessedSeal, SubmissionResult, PaymentVerificationResult } from './types.js';
 import { logger } from './logger.js';
 
 // Metaplex Core program ID (constant across all deployments)
@@ -33,6 +33,7 @@ const SEED_COLLECTION_REGISTRY = Buffer.from('collection_registry');
 const SEED_PROVENANCE = Buffer.from('provenance');
 const SEED_COLLECTION = Buffer.from('reborn_collection');
 const SEED_MINT_AUTHORITY = Buffer.from('mint_authority');
+const SEED_MINT_CONFIG = Buffer.from('mint_config');
 
 // ─── Anchor instruction discriminator ─────────────────────────────────────────
 /**
@@ -48,6 +49,45 @@ function anchorDiscriminator(name: string): Buffer {
 
 const DISCRIMINATOR_MINT_REBORN = anchorDiscriminator('mint_reborn');
 
+// ─── On-chain account parsing ────────────────────────────────────────────────
+
+/**
+ * Parse the collection_asset_address (Pubkey) from a RebornCollection PDA's
+ * Borsh-encoded account data.
+ *
+ * RebornCollection layout:
+ *   8          discriminator
+ *   2          source_chain (u16)
+ *   4 + N      nft_contract (Vec<u8>)
+ *   4 + N      name (String)
+ *   32         collection_asset_address (Pubkey)  ← we want this
+ *   8          total_minted (u64)
+ *   1          is_initialized (bool)
+ *   1          bump (u8)
+ */
+function parseCollectionAssetAddress(data: Buffer): PublicKey | null {
+  if (data.length < 8) return null;
+
+  let offset = 8; // skip discriminator
+
+  // source_chain: u16
+  offset += 2;
+
+  // nft_contract: Vec<u8> (4-byte LE length prefix + bytes)
+  if (offset + 4 > data.length) return null;
+  const contractLen = data.readUInt32LE(offset);
+  offset += 4 + contractLen;
+
+  // name: String (4-byte LE length prefix + UTF-8 bytes)
+  if (offset + 4 > data.length) return null;
+  const nameLen = data.readUInt32LE(offset);
+  offset += 4 + nameLen;
+
+  // collection_asset_address: Pubkey (32 bytes)
+  if (offset + 32 > data.length) return null;
+  return new PublicKey(data.subarray(offset, offset + 32));
+}
+
 // ─── Borsh encoding helpers ───────────────────────────────────────────────────
 
 /**
@@ -57,17 +97,17 @@ const DISCRIMINATOR_MINT_REBORN = anchorDiscriminator('mint_reborn');
  * Layout (all integers are little-endian):
  *   [u8; 8]  – discriminator
  *   [u8; 64] – signature (fixed-size array, no length prefix)
- *   [u8; 32] – dwallet_pubkey (fixed-size array, no length prefix)
  *   [u8; 32] – sig_hash (SHA256 of signature, for PDA verification)
  *   u16      – source_chain
  *   u32 + [] – nft_contract (Vec<u8>)
  *   u32 + [] – token_id (Vec<u8>)
  *   u32 + [] – token_uri (String = Vec<u8> of UTF-8)
  *   u32 + [] – collection_name (String)
+ *
+ * NOTE: dwallet_pubkey is NOT included — it's loaded from the MintConfig PDA on-chain.
  */
 function encodeMintRebornArgs(
   signature: Uint8Array,
-  dwalletPubkey: Uint8Array,
   sigHash: Uint8Array,
   sourceChain: number,
   nftContract: Uint8Array,
@@ -76,7 +116,6 @@ function encodeMintRebornArgs(
   collectionName: string,
 ): Buffer {
   if (signature.length !== 64) throw new Error('signature must be 64 bytes');
-  if (dwalletPubkey.length !== 32) throw new Error('dwalletPubkey must be 32 bytes');
   if (sigHash.length !== 32) throw new Error('sigHash must be 32 bytes');
 
   const tokenUriBytes = Buffer.from(tokenUri, 'utf-8');
@@ -85,7 +124,6 @@ function encodeMintRebornArgs(
   const totalLen =
     8 +   // discriminator
     64 +  // signature fixed array
-    32 +  // dwallet_pubkey fixed array
     32 +  // sig_hash fixed array
     2 +   // source_chain u16
     4 + nftContract.length +      // Vec<u8>
@@ -104,37 +142,33 @@ function encodeMintRebornArgs(
   buf.set(signature, offset);
   offset += 64;
 
-  // 3. dwallet_pubkey: [u8; 32]
-  buf.set(dwalletPubkey, offset);
-  offset += 32;
-
-  // 4. sig_hash: [u8; 32] (SHA256 of signature, for PDA seed verification)
+  // 3. sig_hash: [u8; 32] (SHA256 of signature, for PDA seed verification)
   buf.set(sigHash, offset);
   offset += 32;
 
-  // 5. source_chain: u16 LE
+  // 4. source_chain: u16 LE
   buf.writeUInt16LE(sourceChain, offset);
   offset += 2;
 
-  // 6. nft_contract: Vec<u8> → u32 len + bytes
+  // 5. nft_contract: Vec<u8> → u32 len + bytes
   buf.writeUInt32LE(nftContract.length, offset);
   offset += 4;
   buf.set(nftContract, offset);
   offset += nftContract.length;
 
-  // 7. token_id: Vec<u8>
+  // 6. token_id: Vec<u8>
   buf.writeUInt32LE(tokenId.length, offset);
   offset += 4;
   buf.set(tokenId, offset);
   offset += tokenId.length;
 
-  // 8. token_uri: String
+  // 7. token_uri: String
   buf.writeUInt32LE(tokenUriBytes.length, offset);
   offset += 4;
   tokenUriBytes.copy(buf, offset);
   offset += tokenUriBytes.length;
 
-  // 9. collection_name: String
+  // 8. collection_name: String
   buf.writeUInt32LE(collectionNameBytes.length, offset);
   offset += 4;
   collectionNameBytes.copy(buf, offset);
@@ -166,6 +200,65 @@ export class SolanaSubmitter {
     } catch (err) {
       logger.error({ err }, 'Solana connection check failed');
       return false;
+    }
+  }
+
+  /**
+   * Verify a SOL payment transaction on-chain.
+   *
+   * Checks:
+   * - Transaction exists and succeeded
+   * - Contains a system program transfer instruction
+   * - Source matches expectedSender, destination matches expectedReceiver
+   * - Lamports transferred >= requiredAmount
+   */
+  async verifyPayment(
+    txSignature: string,
+    expectedSender: string,
+    expectedReceiver: string,
+    requiredLamports: number,
+  ): Promise<PaymentVerificationResult> {
+    try {
+      const tx = await this.connection.getParsedTransaction(txSignature, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+
+      if (!tx) {
+        return { verified: false, error: 'Transaction not found' };
+      }
+
+      if (tx.meta?.err) {
+        return { verified: false, error: `Transaction failed: ${JSON.stringify(tx.meta.err)}` };
+      }
+
+      // Search for a system program transfer instruction matching our criteria
+      const instructions = tx.transaction.message.instructions;
+      for (const ix of instructions) {
+        if (!('parsed' in ix)) continue;
+        if (ix.program !== 'system' || ix.parsed?.type !== 'transfer') continue;
+
+        const info = ix.parsed.info;
+        if (
+          info.source === expectedSender &&
+          info.destination === expectedReceiver &&
+          info.lamports >= requiredLamports
+        ) {
+          logger.info(
+            { txSignature, lamports: info.lamports, sender: expectedSender },
+            'Payment verified',
+          );
+          return { verified: true, actualLamports: info.lamports };
+        }
+      }
+
+      return { verified: false, error: 'No matching transfer instruction found' };
+    } catch (err) {
+      logger.error({ err, txSignature }, 'Payment verification failed');
+      return {
+        verified: false,
+        error: err instanceof Error ? err.message : 'Verification error',
+      };
     }
   }
 
@@ -274,10 +367,55 @@ export class SolanaSubmitter {
       this.programId,
     );
 
+    // MintConfig PDA — stores the shared minting dWallet pubkey on-chain
+    const [mintConfigPda] = PublicKey.findProgramAddressSync(
+      [SEED_MINT_CONFIG],
+      this.programId,
+    );
+
     // ── 2. Receiver public key ────────────────────────────────────────────────
     const receiverPubkey = new PublicKey(receiver);
 
-    // ── 3. Build Ed25519 pre-instruction ─────────────────────────────────────
+    // ── 3. Determine collection_asset account ────────────────────────────────
+    // The collection PDA (our program's metadata) is different from the Metaplex
+    // Core collection_asset. On the first mint for a source collection, we generate
+    // a new keypair for collection_asset (Metaplex Core creates it via CPI).
+    // On subsequent mints, we read the stored collection_asset_address from the
+    // RebornCollection PDA and pass it as a non-signer.
+    let collectionAssetPubkey: PublicKey;
+    let collectionAssetKeypair: Keypair | null = null;
+
+    const collectionAccountInfo = await this.connection.getAccountInfo(collectionPda);
+    if (collectionAccountInfo && collectionAccountInfo.data.length > 8) {
+      // Collection PDA exists — parse stored collection_asset_address
+      const storedAddress = parseCollectionAssetAddress(collectionAccountInfo.data);
+      if (storedAddress && !storedAddress.equals(PublicKey.default)) {
+        // Existing collection: use the stored Metaplex Core collection asset
+        collectionAssetPubkey = storedAddress;
+        logger.info(
+          { collectionAsset: storedAddress.toBase58() },
+          'Using existing collection asset',
+        );
+      } else {
+        // PDA exists but collection_asset_address is zero/default — first mint
+        collectionAssetKeypair = Keypair.generate();
+        collectionAssetPubkey = collectionAssetKeypair.publicKey;
+        logger.info(
+          { collectionAsset: collectionAssetPubkey.toBase58() },
+          'Generating new collection asset keypair (first mint)',
+        );
+      }
+    } else {
+      // Collection PDA doesn't exist yet — first mint for this source collection
+      collectionAssetKeypair = Keypair.generate();
+      collectionAssetPubkey = collectionAssetKeypair.publicKey;
+      logger.info(
+        { collectionAsset: collectionAssetPubkey.toBase58() },
+        'Generating new collection asset keypair (new collection)',
+      );
+    }
+
+    // ── 4. Build Ed25519 pre-instruction ─────────────────────────────────────
     // The Solana program reads the Ed25519 instruction at index 0 from the
     // instructions sysvar to verify the dWallet signature.
     const ed25519Ix = Ed25519Program.createInstructionWithPublicKey({
@@ -286,10 +424,10 @@ export class SolanaSubmitter {
       signature: signature,        // 64-byte Ed25519 signature
     });
 
-    // ── 4. Encode Borsh instruction data ──────────────────────────────────────
+    // ── 5. Encode Borsh instruction data ──────────────────────────────────────
+    // NOTE: dwallet_pubkey is NOT included — loaded from MintConfig PDA on-chain
     const ixData = encodeMintRebornArgs(
       signature,
-      dwalletPubkey,
       sigHash,
       sourceChain,
       nftContract,
@@ -298,7 +436,8 @@ export class SolanaSubmitter {
       collectionName,
     );
 
-    // ── 5. Build mint_reborn instruction ─────────────────────────────────────
+    // ── 6. Build mint_reborn instruction ─────────────────────────────────────
+    const isFirstMint = collectionAssetKeypair !== null;
     const mintRebornIx = {
       programId: this.programId,
       keys: [
@@ -307,31 +446,37 @@ export class SolanaSubmitter {
         { pubkey: sigRecordPda,             isSigner: false, isWritable: true  }, // sig_record (per-sig replay PDA)
         { pubkey: registryPda,              isSigner: false, isWritable: true  }, // registry
         { pubkey: provenancePda,            isSigner: false, isWritable: true  }, // provenance
-        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection (program metadata)
-        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection_asset (Metaplex Core collection)
-        { pubkey: mintAuthorityPda,         isSigner: false, isWritable: false }, // mint_authority
+        { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection (program metadata PDA)
+        { pubkey: mintAuthorityPda,         isSigner: false, isWritable: false }, // mint_authority (PDA signer for CPIs)
+        { pubkey: collectionAssetPubkey,    isSigner: isFirstMint, isWritable: true }, // collection_asset (Metaplex Core collection)
         { pubkey: assetKeypair.publicKey,   isSigner: true,  isWritable: true  }, // asset
         { pubkey: MPL_CORE_PROGRAM_ID,      isSigner: false, isWritable: false }, // mpl_core_program
         { pubkey: SystemProgram.programId,  isSigner: false, isWritable: false }, // system_program
         { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false }, // instructions_sysvar
+        { pubkey: mintConfigPda,            isSigner: false, isWritable: false }, // config (MintConfig PDA)
       ],
       data: ixData,
     };
 
-    // ── 6. Assemble transaction: Ed25519 verify FIRST, then mint ─────────────
+    // ── 7. Assemble transaction: Ed25519 verify FIRST, then mint ─────────────
     const transaction = new Transaction();
     transaction.add(ed25519Ix);   // index 0 → program reads this for verification
     transaction.add(mintRebornIx);
 
-    // ── 7. Sign (relayer + asset) and send ────────────────────────────────────
+    // ── 8. Sign and send ─────────────────────────────────────────────────────
     transaction.feePayer = relayerKeypair.publicKey;
     transaction.recentBlockhash = (
       await this.connection.getLatestBlockhash('confirmed')
     ).blockhash;
 
-    // Partial sign with both the relayer (paying fees) and the asset (required signer)
+    // Sign with relayer (pays fees) + asset (new NFT keypair)
     transaction.partialSign(relayerKeypair);
     transaction.partialSign(assetKeypair);
+
+    // On first mint, the collection_asset keypair must also sign
+    if (collectionAssetKeypair) {
+      transaction.partialSign(collectionAssetKeypair);
+    }
 
     const rawTx = transaction.serialize();
     const txHash = await this.connection.sendRawTransaction(rawTx, {

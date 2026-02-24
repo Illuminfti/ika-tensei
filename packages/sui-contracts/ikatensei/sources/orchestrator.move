@@ -1,71 +1,70 @@
-// Ika Tensei PRD v6 - Orchestrator (Production)
+// Ika Tensei - Orchestrator (v8: Treasury + Signing Integration)
 //
 // Two-phase seal process using Wormhole VAA + IKA dWallet:
 //
-//   Phase 1: process_vaa (permissionless)
+//   Phase 1: process_vaa (called by relayer)
 //     - Parse and verify Wormhole VAA (guardian signatures)
 //     - Validate emitter address against known SealInitiator contracts
 //     - Decode payload (nft_contract, token_id, deposit_address, receiver, token_uri)
-//     - Validate dWallet against registry
-//     - Construct signing message: sha256(token_id || token_uri || receiver)
-//     - Store pending seal (awaiting IKA signature)
+//     - Validate dWallet against registry + check it hasn't been used before
+//     - Construct signing message: sha256(token_uri || token_id || receiver)
+//     - Store pending seal, emit SealPending
+//
+//   Phase 1.5: request_sign_seal (called by relayer)
+//     - Withdraw coins from treasury
+//     - Call signing::request_sign with the minting dWallet
+//     - Return unused coins to treasury
+//     - Relayer polls IKA for signature completion
 //
 //   Phase 2: complete_seal (called by relayer after IKA signing)
-//     - Verify Ed25519 signature from IKA dWallet against the stored message
+//     - Verify Ed25519 signature from the SHARED MINTING dWallet (MintingAuthority)
+//     - Mark deposit dWallet as permanently used (one dWallet = one NFT)
 //     - Emit SealSigned event for the Solana relayer
-//     - Lock DWalletCap into SealVault (permanent)
 //
-// Why two phases?
-//   IKA dWallet 2PC-MPC signing is asynchronous. The Sui contract cannot call
-//   IKA signing synchronously in a single transaction. Instead:
-//   1. The relayer calls process_vaa to verify the Wormhole message and store the seal
-//   2. The relayer uses the IKA TypeScript SDK to perform 2PC-MPC signing off-chain
-//   3. The relayer calls complete_seal with the resulting Ed25519 signature
+// Presign flow:
+//   request_presign → signing::request_presign (treasury-funded)
+//   UnverifiedPresignCap transferred to sender for later use in signing
 //
-// Wormhole integration:
-//   - Uses wormhole::vaa::parse_and_verify for real VAA verification
-//   - Requires WormholeState shared object passed as parameter
-//   - VAA is consumed (hot potato) to prevent replay at the Wormhole layer
-//   - Additional replay protection via processed_vaas table
-//
-// Security model:
-//   - VAA verification: 13/19 Wormhole guardian signatures (production)
-//   - Emitter validation: VAA emitter_address must match registered SealInitiator
-//   - Ed25519 signature verification: sui::ed25519::ed25519_verify
-//   - DWalletCap lock: transferred to SealVault (permanently inaccessible)
-//   - Replay: VAA hash tracked + Wormhole consumed_vaas
+// Treasury:
+//   On-chain IKA/SUI pool. Admin tops up via add_ika_payment / add_sui_payment.
+//   Every coordinator call uses withdraw → use → return pattern.
 
 module ikatensei::orchestrator {
+    use ika::ika::IKA;
     use sui::table::{Self, Table};
     use sui::event::emit;
-    use sui::object::ID;
-    use std::vector;
+    use sui::coin::Coin;
+    use sui::sui::SUI;
 
-    use wormhole::vaa::{Self, VAA};
+    use wormhole::vaa;
     use wormhole::state::{State as WormholeState};
     use wormhole::external_address;
     use wormhole::bytes32;
 
-    use ikatensei::payload::{Self, SealPayload};
+    use ika_dwallet_2pc_mpc::coordinator::DWalletCoordinator;
+    use ika_dwallet_2pc_mpc::coordinator_inner::UnverifiedPresignCap;
+
+    use ikatensei::payload;
     use ikatensei::dwallet_registry::{Self, DWalletRegistry};
+    use ikatensei::treasury::{Self, Treasury};
+    use ikatensei::signing::{Self, SigningState};
 
     // Error codes
-    const E_INVALID_VAA: u64 = 1;
     const E_INVALID_DWALLET: u64 = 2;
     const E_DWALLET_MISMATCH: u64 = 3;
     const E_SIGNATURE_FAILED: u64 = 4;
-    const E_CAP_ALREADY_LOCKED: u64 = 5;
     const E_INVALID_SOURCE_CHAIN: u64 = 6;
     const E_VAA_ALREADY_USED: u64 = 7;
     const E_INVALID_EMITTER: u64 = 8;
     const E_PENDING_SEAL_NOT_FOUND: u64 = 9;
     const E_SEAL_ALREADY_COMPLETED: u64 = 10;
+    const E_DWALLET_ALREADY_USED: u64 = 11;
 
     // ==================================================================
     // Events
     // ==================================================================
 
-    /// Emitted after successful VAA verification + Ed25519 signature verification.
+    /// Emitted after successful Ed25519 signature verification.
     /// Relayer watches this event to submit the seal to Solana.
     public struct SealSigned has copy, drop {
         source_chain: u16,
@@ -123,7 +122,11 @@ module ikatensei::orchestrator {
         known_emitters: Table<u16, vector<u8>>,
         /// VAA hash -> PendingSeal (awaiting IKA signature)
         pending_seals: Table<vector<u8>, PendingSeal>,
+        /// deposit_address -> bool (one-use dWallet tracking)
+        used_dwallets: Table<vector<u8>, bool>,
         total_processed: u64,
+        /// On-chain IKA/SUI pool for coordinator calls
+        treasury: Treasury,
     }
 
     /// Admin capability for the orchestrator.
@@ -131,9 +134,11 @@ module ikatensei::orchestrator {
         id: UID,
     }
 
-    /// Permanent vault for DWalletCaps. No withdraw functions.
-    public struct SealVault has key {
+    /// Shared minting authority — stores the pubkey of the shared IKA minting dWallet.
+    public struct MintingAuthority has key {
         id: UID,
+        /// Ed25519 public key of the shared minting dWallet (32 bytes).
+        minting_pubkey: vector<u8>,
     }
 
     // ==================================================================
@@ -148,14 +153,17 @@ module ikatensei::orchestrator {
             processed_vaas: table::new(ctx),
             known_emitters: table::new(ctx),
             pending_seals: table::new(ctx),
+            used_dwallets: table::new(ctx),
             total_processed: 0,
+            treasury: treasury::new(),
         };
         sui::transfer::share_object(state);
 
-        let vault = SealVault {
+        let minting_authority = MintingAuthority {
             id: object::new(ctx),
+            minting_pubkey: vector::empty(),
         };
-        sui::transfer::share_object(vault);
+        sui::transfer::share_object(minting_authority);
 
         let admin_cap = OrchestratorAdminCap {
             id: object::new(ctx),
@@ -193,16 +201,75 @@ module ikatensei::orchestrator {
     }
 
     // ==================================================================
+    // Admin: Minting Authority + Minting dWallet
+    // ==================================================================
+
+    /// Set (or update) the shared minting dWallet's Ed25519 public key.
+    public fun set_minting_pubkey(
+        authority: &mut MintingAuthority,
+        _cap: &OrchestratorAdminCap,
+        minting_pubkey: vector<u8>,
+    ) {
+        assert!(vector::length(&minting_pubkey) == 32, E_SIGNATURE_FAILED);
+        authority.minting_pubkey = minting_pubkey;
+    }
+
+    /// Create the contract's own minting dWallet via IKA DKG.
+    /// Called once after deployment. The DWalletCap goes directly into
+    /// SigningState and never leaves contract control.
+    /// The relayer provides DKG inputs from prepareDKGAsync() via the IKA SDK.
+    public fun create_minting_dwallet(
+        state: &mut OrchestratorState,
+        signing_state: &mut SigningState,
+        _cap: &OrchestratorAdminCap,
+        coordinator: &mut DWalletCoordinator,
+        dwallet_network_encryption_key_id: ID,
+        centralized_public_key_share_and_proof: vector<u8>,
+        user_public_output: vector<u8>,
+        public_user_secret_key_share: vector<u8>,
+        session_bytes: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        signing::create_minting_dwallet(
+            signing_state,
+            &mut state.treasury,
+            coordinator,
+            dwallet_network_encryption_key_id,
+            centralized_public_key_share_and_proof,
+            user_public_output,
+            public_user_secret_key_share,
+            session_bytes,
+            ctx,
+        );
+    }
+
+    // ==================================================================
+    // Admin: Treasury
+    // ==================================================================
+
+    /// Top up the treasury with IKA tokens (for coordinator fees).
+    public fun add_ika_payment(
+        state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
+        coin: Coin<IKA>,
+    ) {
+        state.treasury.add_ika(coin);
+    }
+
+    /// Top up the treasury with SUI tokens (for coordinator fees).
+    public fun add_sui_payment(
+        state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
+        coin: Coin<SUI>,
+    ) {
+        state.treasury.add_sui(coin);
+    }
+
+    // ==================================================================
     // Phase 1: process_vaa — Verify Wormhole VAA and store pending seal
     // ==================================================================
 
-    /// Verify a Wormhole VAA, decode the seal payload, validate the dWallet,
-    /// and store a PendingSeal awaiting IKA signature.
-    ///
-    /// This is Phase 1 of the two-phase seal process. After calling this,
-    /// the relayer must use the IKA TS SDK to sign the message_hash with
-    /// the dWallet, then call complete_seal with the signature.
-    public entry fun process_vaa(
+    public fun process_vaa(
         state: &mut OrchestratorState,
         wormhole_state: &WormholeState,
         registry: &DWalletRegistry,
@@ -213,22 +280,19 @@ module ikatensei::orchestrator {
     ) {
         let timestamp = sui::clock::timestamp_ms(clock) / 1000;
 
-        // ── Step 1: Parse and verify VAA (real Wormhole verification) ──
+        // ── Step 1: Parse and verify VAA ──
         let verified_vaa = vaa::parse_and_verify(wormhole_state, vaa_bytes, clock);
 
-        // Extract fields before consuming the VAA
         let emitter_chain = vaa::emitter_chain(&verified_vaa);
         let emitter_addr = external_address::to_bytes(vaa::emitter_address(&verified_vaa));
         let vaa_hash = bytes32::to_bytes(vaa::digest(&verified_vaa));
 
-        // Consume the VAA (take payload, destroying the hot potato)
         let (_chain, _addr, payload_bytes) = vaa::take_emitter_info_and_payload(verified_vaa);
 
-        // ── Step 2: Validate emitter address ──
-        if (table::contains(&state.known_emitters, emitter_chain)) {
-            let expected = *table::borrow(&state.known_emitters, emitter_chain);
-            assert!(expected == emitter_addr, E_INVALID_EMITTER);
-        };
+        // ── Step 2: Validate emitter ──
+        assert!(table::contains(&state.known_emitters, emitter_chain), E_INVALID_SOURCE_CHAIN);
+        let expected = *table::borrow(&state.known_emitters, emitter_chain);
+        assert!(expected == emitter_addr, E_INVALID_EMITTER);
 
         // ── Step 3: Replay protection ──
         assert!(!table::contains(&state.processed_vaas, vaa_hash), E_VAA_ALREADY_USED);
@@ -237,24 +301,26 @@ module ikatensei::orchestrator {
         let seal_payload = payload::decode_seal_payload(&payload_bytes);
         let deposit_address = *payload::get_deposit_address(&seal_payload);
 
-        // ── Step 5: Validate dWallet against registry ──
+        // ── Step 5: One-use dWallet check ──
+        assert!(!table::contains(&state.used_dwallets, deposit_address), E_DWALLET_ALREADY_USED);
+
+        // ── Step 6: Registry validation ──
         assert!(dwallet_registry::is_registered(registry, &deposit_address), E_INVALID_DWALLET);
 
         let registered_dwallet_id = dwallet_registry::get_dwallet_id(registry, &deposit_address);
         let dwallet_id_bytes = object::id_to_bytes(&dwallet_id);
         assert!(registered_dwallet_id == dwallet_id_bytes, E_DWALLET_MISMATCH);
 
-        // Get the dWallet's Ed25519 public key from registry
         let dwallet_pubkey = dwallet_registry::get_dwallet_pubkey(registry, &deposit_address);
 
-        // ── Step 6: Construct signing message ──
+        // ── Step 7: Construct signing message ──
         let message_hash = payload::construct_signing_message(
-            payload::get_token_id(&seal_payload),
             payload::get_token_uri(&seal_payload),
+            payload::get_token_id(&seal_payload),
             payload::get_receiver(&seal_payload),
         );
 
-        // ── Step 7: Store pending seal ──
+        // ── Step 8: Store pending seal ──
         let pending = PendingSeal {
             source_chain: payload::get_source_chain(&seal_payload),
             nft_contract: *payload::get_nft_contract(&seal_payload),
@@ -283,21 +349,89 @@ module ikatensei::orchestrator {
     }
 
     // ==================================================================
+    // Phase 1.5: request_sign_seal — Treasury-funded IKA signing
+    // ==================================================================
+
+    /// Request IKA 2PC-MPC signing for a pending seal.
+    /// Withdraws coins from treasury, calls signing::request_sign, returns unused coins.
+    /// The relayer must poll IKA for signature completion, then call complete_seal.
+    public fun request_sign_seal(
+        state: &mut OrchestratorState,
+        signing_state: &mut SigningState,
+        coordinator: &mut DWalletCoordinator,
+        vaa_hash: vector<u8>,
+        message_centralized_signature: vector<u8>,
+        unverified_cap: UnverifiedPresignCap,
+        request: u64,
+        ctx: &mut TxContext,
+    ) {
+        // Look up the pending seal to get the message_hash
+        assert!(table::contains(&state.pending_seals, vaa_hash), E_PENDING_SEAL_NOT_FOUND);
+        let pending = table::borrow(&state.pending_seals, vaa_hash);
+        assert!(!pending.completed, E_SEAL_ALREADY_COMPLETED);
+        let message = pending.message_hash;
+
+        // Withdraw coins from treasury
+        let (mut payment_ika, mut payment_sui) = state.treasury.withdraw_coins(ctx);
+
+        // Request signing via signing module
+        let _signature_id = signing::request_sign(
+            signing_state,
+            coordinator,
+            message,
+            message_centralized_signature,
+            unverified_cap,
+            vaa_hash,
+            request,
+            &mut payment_ika,
+            &mut payment_sui,
+            ctx,
+        );
+
+        // Return unused coins to treasury
+        state.treasury.return_coins(payment_ika, payment_sui);
+    }
+
+    // ==================================================================
+    // Presign: Treasury-funded presign requests
+    // ==================================================================
+
+    /// Request a global presign from the IKA coordinator (treasury-funded).
+    /// The UnverifiedPresignCap is transferred to the sender for later use.
+    public fun request_presign(
+        state: &mut OrchestratorState,
+        coordinator: &mut DWalletCoordinator,
+        _cap: &OrchestratorAdminCap,
+        enc_key_id: ID,
+        request: u64,
+        ctx: &mut TxContext,
+    ) {
+        let (mut payment_ika, mut payment_sui) = state.treasury.withdraw_coins(ctx);
+
+        signing::request_presign(
+            coordinator,
+            enc_key_id,
+            request,
+            &mut payment_ika,
+            &mut payment_sui,
+            ctx,
+        );
+
+        state.treasury.return_coins(payment_ika, payment_sui);
+    }
+
+    // ==================================================================
     // Phase 2: complete_seal — Submit IKA signature and emit SealSigned
     // ==================================================================
 
     /// Complete a pending seal by providing the IKA dWallet Ed25519 signature.
-    ///
-    /// The relayer calls this after signing the message_hash with the IKA TS SDK.
-    /// The signature is verified on-chain using sui::ed25519::ed25519_verify.
-    /// On success, emits SealSigned (which the relayer uses to submit to Solana).
-    /// The DWalletCap is permanently locked in the SealVault.
-    public entry fun complete_seal(
+    /// The minting DWalletCap stays permanently in SigningState (no DWalletCap param needed).
+    public fun complete_seal(
         state: &mut OrchestratorState,
-        vault: &SealVault,
+        registry: &mut DWalletRegistry,
+        minting_authority: &MintingAuthority,
         vaa_hash: vector<u8>,
         signature: vector<u8>,
-        dwallet_cap: DWalletCap,
         clock: &sui::clock::Clock,
         _ctx: &mut TxContext,
     ) {
@@ -308,11 +442,12 @@ module ikatensei::orchestrator {
         let pending = table::borrow_mut(&mut state.pending_seals, vaa_hash);
         assert!(!pending.completed, E_SEAL_ALREADY_COMPLETED);
 
-        // ── Step 2: Verify Ed25519 signature ──
+        // ── Step 2: Verify Ed25519 signature from the SHARED MINTING dWallet ──
         assert!(vector::length(&signature) == 64, E_SIGNATURE_FAILED);
+        assert!(vector::length(&minting_authority.minting_pubkey) == 32, E_SIGNATURE_FAILED);
         let valid = sui::ed25519::ed25519_verify(
             &signature,
-            &pending.dwallet_pubkey,
+            &minting_authority.minting_pubkey,
             &pending.message_hash,
         );
         assert!(valid, E_SIGNATURE_FAILED);
@@ -321,7 +456,11 @@ module ikatensei::orchestrator {
         pending.completed = true;
         state.total_processed = state.total_processed + 1;
 
-        // ── Step 4: Emit SealSigned event ──
+        // ── Step 4: Mark deposit dWallet as permanently used ──
+        table::add(&mut state.used_dwallets, pending.deposit_address, true);
+        dwallet_registry::mark_dwallet_used(registry, &pending.deposit_address);
+
+        // ── Step 5: Emit SealSigned event ──
         emit(SealSigned {
             source_chain: pending.source_chain,
             nft_contract: pending.nft_contract,
@@ -329,28 +468,18 @@ module ikatensei::orchestrator {
             token_uri: pending.token_uri,
             receiver: pending.receiver,
             deposit_address: pending.deposit_address,
-            dwallet_pubkey: pending.dwallet_pubkey,
+            dwallet_pubkey: minting_authority.minting_pubkey,
             message_hash: pending.message_hash,
             signature,
             vaa_hash,
             timestamp,
         });
-
-        // ── Step 5: Lock DWalletCap permanently ──
-        lock_dwallet_cap(vault, dwallet_cap);
     }
 
     // ==================================================================
-    // Internal helpers
+    // View functions
     // ==================================================================
 
-    /// Lock a DWalletCap permanently by transferring it to the SealVault's address.
-    fun lock_dwallet_cap(vault: &SealVault, cap: DWalletCap) {
-        let vault_address = object::id_to_address(&object::id(vault));
-        sui::transfer::public_transfer(cap, vault_address);
-    }
-
-    /// Verify an Ed25519 signature using Sui's built-in verifier.
     public fun verify_signature(
         pubkey: &vector<u8>,
         message: &vector<u8>,
@@ -361,10 +490,6 @@ module ikatensei::orchestrator {
         };
         sui::ed25519::ed25519_verify(signature, pubkey, message)
     }
-
-    // ==================================================================
-    // View functions
-    // ==================================================================
 
     public fun is_vaa_processed(state: &OrchestratorState, vaa_hash: &vector<u8>): bool {
         table::contains(&state.processed_vaas, *vaa_hash)
@@ -383,20 +508,28 @@ module ikatensei::orchestrator {
     }
 
     public fun is_seal_pending(state: &OrchestratorState, vaa_hash: &vector<u8>): bool {
-        table::contains(&state.pending_seals, *vaa_hash) && 
+        table::contains(&state.pending_seals, *vaa_hash) &&
         !table::borrow(&state.pending_seals, *vaa_hash).completed
     }
 
     public fun is_seal_completed(state: &OrchestratorState, vaa_hash: &vector<u8>): bool {
-        table::contains(&state.pending_seals, *vaa_hash) && 
+        table::contains(&state.pending_seals, *vaa_hash) &&
         table::borrow(&state.pending_seals, *vaa_hash).completed
     }
 
-    /// DWalletCap type for the vault to accept.
-    /// TODO(production): Replace with ika_dwallet_2pc_mpc::coordinator::DWalletCap
-    /// when the IKA Move package dependency is available.
-    /// For now, this is a local type that mirrors the real one.
-    public struct DWalletCap has key, store {
-        id: UID,
+    public fun is_dwallet_used(state: &OrchestratorState, deposit_address: &vector<u8>): bool {
+        table::contains(&state.used_dwallets, *deposit_address)
+    }
+
+    public fun get_minting_pubkey(authority: &MintingAuthority): vector<u8> {
+        authority.minting_pubkey
+    }
+
+    public fun treasury_ika_balance(state: &OrchestratorState): u64 {
+        state.treasury.ika_balance()
+    }
+
+    public fun treasury_sui_balance(state: &OrchestratorState): u64 {
+        state.treasury.sui_balance()
     }
 }

@@ -55,15 +55,17 @@ payload[131..]  → token_uri (may be empty)
 ## 2. Signing Message (Sui → IKA dWallet)
 
 ```
-message = sha256(token_id || token_uri || receiver)
+message = sha256(token_uri || token_id || receiver)
 ```
 
 Where:
-- token_id: 32 bytes (from payload)
 - token_uri: variable bytes (from payload, may be empty)
+- token_id: 32 bytes (from payload)
 - receiver: 32 bytes (Solana pubkey from payload)
 
 Result: 32-byte SHA256 hash, signed with Ed25519 via IKA 2PC-MPC.
+
+**NOTE (v7):** Field order changed from v6. token_uri is now FIRST.
 
 ## 3. SealSigned Event (Sui → Relayer)
 

@@ -4,13 +4,12 @@ module ikatensei::payload_tests {
 
     #[test]
     fun test_construct_signing_message() {
-        let token_id = x"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
         let token_uri = x"687474703a2f2f6578616d706c652e636f6d2f6e66742f31";
+        let token_id = x"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
         let receiver = x"72656365697665725f77616c6c65745f616464726573735f31323334";
-        
-        let message = payload::construct_signing_message(&token_id, &token_uri, &receiver);
-        
-        // SHA256 produces 32 bytes
+
+        // sha256(token_uri || token_id || receiver) → 32 bytes
+        let message = payload::construct_signing_message(&token_uri, &token_id, &receiver);
         assert!(vector::length(&message) == 32, 0);
     }
 

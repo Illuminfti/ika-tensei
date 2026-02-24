@@ -1,10 +1,14 @@
 /**
- * Types for Ika Tensei v6 Relayer
+ * Types for Ika Tensei v7 Relayer
  *
- * Shared types matching the Sui contract events and Solana program instructions.
+ * Shared types matching the Sui contract events, Solana program instructions,
+ * and the relayer API for dWallet creation.
+ *
  * All binary data from Sui events arrives as hex strings; ProcessedSeal converts
  * them to Uint8Array for use in Solana transactions.
  */
+
+// ─── Sui Events ──────────────────────────────────────────────────────────────
 
 /**
  * SealSigned event emitted by the Sui Orchestrator contract.
@@ -39,6 +43,27 @@ export interface SealSignedEvent {
 }
 
 /**
+ * SealPending event emitted by the Sui Orchestrator contract.
+ * The relayer subscribes to these events and triggers the signing flow.
+ */
+export interface SealPendingEvent {
+  /** Hex-encoded VAA hash */
+  vaa_hash: string;
+  /** Source chain ID */
+  source_chain: number;
+  /** Hex-encoded deposit address */
+  deposit_address: string;
+  /** Hex-encoded 32-byte Solana public key of the NFT receiver */
+  receiver: string;
+  /** Hex-encoded 32-byte SHA256 message hash to be signed */
+  message_hash: string;
+  /** Unix timestamp */
+  timestamp: number;
+}
+
+// ─── Processed Data ──────────────────────────────────────────────────────────
+
+/**
  * Parsed and processed seal data, ready for Solana submission.
  * All binary data is decoded from hex into Uint8Array/number.
  */
@@ -63,6 +88,154 @@ export interface ProcessedSeal {
   messageHash: Uint8Array;
 }
 
+// ─── API Types (v7: dWallet creation with SOL payment gate) ─────────────────
+
+/**
+ * Request to start a seal — initiates a payment session.
+ */
+export interface StartSealRequest {
+  /** User's Solana wallet address (receiver of the reborn NFT) */
+  solanaWallet: string;
+  /** Source chain identifier (e.g. "ethereum", "polygon", "sui", "near") */
+  sourceChain: string;
+}
+
+/**
+ * Response from seal start — session ID and payment details.
+ */
+export interface StartSealResponse {
+  /** Unique session ID (UUID) for this seal request */
+  sessionId: string;
+  /** Solana address to send SOL payment to */
+  paymentAddress: string;
+  /** Required payment amount in lamports */
+  feeAmountLamports: number;
+}
+
+/**
+ * Request to confirm payment and trigger dWallet creation.
+ */
+export interface ConfirmPaymentRequest {
+  /** Session ID from /api/seal/start */
+  sessionId: string;
+  /** Solana transaction signature of the SOL payment */
+  paymentTxSignature: string;
+}
+
+/**
+ * Result of verifying a SOL payment transaction on-chain.
+ */
+export interface PaymentVerificationResult {
+  /** Whether the payment was verified successfully */
+  verified: boolean;
+  /** Error message if verification failed */
+  error?: string;
+  /** Actual lamports transferred (for logging/debugging) */
+  actualLamports?: number;
+}
+
+/**
+ * Status of a seal in progress.
+ */
+export type SealStatusValue =
+  | 'awaiting_payment'
+  | 'payment_confirmed'
+  | 'creating_dwallet'
+  | 'waiting_deposit'
+  | 'detected'
+  | 'verifying_vaa'
+  | 'signing'
+  | 'minting'
+  | 'complete'
+  | 'error';
+
+/**
+ * Response from seal status polling.
+ */
+export interface SealStatusResponse {
+  sessionId: string;
+  dwalletId?: string;
+  status: SealStatusValue;
+  depositAddress?: string;
+  rebornNFT?: {
+    mint: string;
+    name: string;
+    image: string;
+  };
+  error?: string;
+}
+
+/**
+ * Internal tracking of a seal session (stored in-memory by the relayer).
+ */
+export interface SealSession {
+  sessionId: string;
+  solanaWallet: string;
+  sourceChain: string;
+  status: SealStatusValue;
+  createdAt: number;
+  /** Set after dWallet creation */
+  dwalletId?: string;
+  /** Set after dWallet creation */
+  depositAddress?: string;
+  /** Set after dWallet creation */
+  dwalletPubkey?: Uint8Array;
+  /** SOL payment tx signature (set after confirm-payment) */
+  paymentTxSignature?: string;
+  /** Timestamp when payment was verified */
+  paymentVerifiedAt?: number;
+  rebornNFT?: { mint: string; name: string; image: string };
+  error?: string;
+}
+
+/**
+ * Created dWallet from IKA SDK.
+ */
+export interface CreatedDWallet {
+  /** dWallet ID on Sui */
+  id: string;
+  /** Ed25519 public key (32 bytes) */
+  pubkey: Uint8Array;
+  /** Chain-specific deposit address */
+  depositAddress: string;
+  /** DKG user secret key share (needed for createUserSignMessageWithPublicOutput) */
+  userSecretKeyShare: Uint8Array;
+  /** DKG user public output (needed for createUserSignMessageWithPublicOutput) */
+  userPublicOutput: Uint8Array;
+}
+
+// ─── Presign Pool ────────────────────────────────────────────────────────────
+
+/**
+ * A presign cap entry in the in-memory pool.
+ */
+export interface PresignEntry {
+  /** Sui object ID of the UnverifiedPresignCap */
+  objectId: string;
+  /** IKA presign ID (for polling completion) */
+  presignId: string;
+  /** BCS bytes of the presign (needed for createUserSignMessage) */
+  presignBcs: Uint8Array;
+  /** Current status */
+  status: 'AVAILABLE' | 'ALLOCATED' | 'USED';
+  /** Timestamp when allocated */
+  allocatedAt?: number;
+  /** VAA hash this presign is allocated for */
+  allocatedFor?: string;
+}
+
+/**
+ * Presign pool statistics.
+ */
+export interface PresignPoolStats {
+  available: number;
+  allocated: number;
+  used: number;
+  total: number;
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
 /**
  * Relayer configuration (loaded from environment variables).
  */
@@ -78,6 +251,39 @@ export interface RelayerConfig {
 
   // Relayer keypair file path
   relayerKeypairPath: string;
+
+  // Sui keypair for transactions (dWallet creation, VAA submission)
+  suiKeypairPath: string;
+
+  // IKA network ('testnet' | 'mainnet')
+  ikaNetwork: 'testnet' | 'mainnet';
+
+  // 32-byte hex seed for IKA UserShareEncryptionKeys (keep secret!)
+  ikaEncryptionSeed: string;
+
+  // API server
+  apiPort: number;
+
+  // Payment gate
+  sealFeeLamports: number;
+
+  // Sui DWalletRegistry object IDs (optional — validated at call time)
+  suiRegistryObjectId: string;
+  suiRegistryCapObjectId: string;
+
+  // Sui shared object IDs for signing flow
+  suiOrchestratorStateId: string;
+  suiSigningStateId: string;
+  suiMintingAuthorityId: string;
+  suiAdminCapId: string;
+
+  // Treasury minimum balances (in MIST)
+  minIkaBalanceMist: bigint;
+  minSuiBalanceMist: bigint;
+
+  // Presign pool tuning
+  presignPoolMinAvailable: number;
+  presignPoolReplenishBatch: number;
 
   // Optional tuning
   healthPort: number;

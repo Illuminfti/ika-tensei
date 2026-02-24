@@ -14,7 +14,6 @@
 //
 // Total minimum: 131 bytes (token_uri may be 0 bytes)
 module ikatensei::payload {
-    use std::vector;
 
     // Error codes
     const E_INVALID_PAYLOAD: u64 = 1;
@@ -116,17 +115,17 @@ module ikatensei::payload {
     }
 
     /// Construct the message hash for IKA signing.
-    /// Format: sha256(token_id || token_uri || receiver)
+    /// Format (v7): sha256(token_uri || token_id || receiver)
     /// All fields are concatenated as raw bytes.
     /// Works correctly when token_uri is empty.
     public fun construct_signing_message(
-        token_id: &vector<u8>,
         token_uri: &vector<u8>,
+        token_id: &vector<u8>,
         receiver: &vector<u8>,
     ): vector<u8> {
         let mut data = vector::empty<u8>();
-        vector::append(&mut data, *token_id);
         vector::append(&mut data, *token_uri);
+        vector::append(&mut data, *token_id);
         vector::append(&mut data, *receiver);
         std::hash::sha2_256(data)
     }
@@ -224,17 +223,17 @@ module ikatensei::payload {
 
     /// Get chain name as ASCII bytes for debugging/logging.
     public fun chain_name(chain_id: u16): vector<u8> {
-        if (chain_id == CHAIN_SOLANA)   { return x"736f6c616e61"; };         // "solana"
-        if (chain_id == CHAIN_ETHEREUM) { return x"657468657265756d"; };     // "ethereum"
-        if (chain_id == CHAIN_BSC)      { return x"627363"; };               // "bsc"
-        if (chain_id == CHAIN_POLYGON)  { return x"706f6c79676f6e"; };       // "polygon"
-        if (chain_id == CHAIN_AVALANCHE){ return x"6176616c616e636865"; };   // "avalanche"
-        if (chain_id == CHAIN_NEAR)     { return x"6e656172"; };             // "near"
-        if (chain_id == CHAIN_SUI)      { return x"737569"; };               // "sui"
-        if (chain_id == CHAIN_APTOS)    { return x"6170746f73"; };           // "aptos"
-        if (chain_id == CHAIN_ARBITRUM) { return x"617262697472756d"; };     // "arbitrum"
-        if (chain_id == CHAIN_OPTIMISM) { return x"6f7074696d69736d"; };     // "optimism"
-        if (chain_id == CHAIN_BASE)     { return x"62617365"; };             // "base"
+        if (chain_id == CHAIN_SOLANA)    return x"736f6c616e61";         // "solana"
+        if (chain_id == CHAIN_ETHEREUM)  return x"657468657265756d";     // "ethereum"
+        if (chain_id == CHAIN_BSC)       return x"627363";               // "bsc"
+        if (chain_id == CHAIN_POLYGON)   return x"706f6c79676f6e";       // "polygon"
+        if (chain_id == CHAIN_AVALANCHE) return x"6176616c616e636865";   // "avalanche"
+        if (chain_id == CHAIN_NEAR)      return x"6e656172";             // "near"
+        if (chain_id == CHAIN_SUI)       return x"737569";               // "sui"
+        if (chain_id == CHAIN_APTOS)     return x"6170746f73";           // "aptos"
+        if (chain_id == CHAIN_ARBITRUM)  return x"617262697472756d";     // "arbitrum"
+        if (chain_id == CHAIN_OPTIMISM)  return x"6f7074696d69736d";     // "optimism"
+        if (chain_id == CHAIN_BASE)      return x"62617365";             // "base"
         x"756e6b6f776e"  // "unknown"
     }
 

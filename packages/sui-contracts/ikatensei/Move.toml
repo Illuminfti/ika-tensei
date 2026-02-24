@@ -1,43 +1,13 @@
-# Ika Tensei v3 - Sui Move Contracts
-# Protocol version: 3 | Guild: 500 bps | Team: 190 bps
-
 [package]
 name = "ikatensei"
-version = "3.0.0"
 edition = "2024.beta"
 
-[environments]
-mainnet = "0x0"
-devnet = "082d5a13"
-testnet = "082d5a14"
-
 [dependencies]
-Sui = { local = "/home/ubuntu/.cargo/git/checkouts/sui-6ac459c53b1b685a/89d40ca/crates/sui-framework/packages/sui-framework", override = true }
+ika_dwallet_2pc_mpc = { git = "https://github.com/dwallet-labs/ika.git", subdir = "deployed_contracts/testnet/ika_dwallet_2pc_mpc", rev = "main" }
+ika = { git = "https://github.com/dwallet-labs/ika.git", subdir = "deployed_contracts/testnet/ika", rev = "main" }
 
 # Wormhole — REQUIRED for VAA verification (parse_and_verify)
-# Provides: wormhole::vaa, wormhole::state, wormhole::external_address, wormhole::bytes32
 Wormhole = { git = "https://github.com/wormhole-foundation/wormhole.git", subdir = "sui/wormhole", rev = "main" }
-
-# Wormhole State Object IDs (pass to process_vaa):
-#   Testnet: 0x31358d198147da50db32eda2562951d53973a0c0ad5ed738e9b17d88b213d790
-#   Mainnet: 0xaeab97f96cf9877fee2883315d459552b2b921edc16d7ceac6eab944dd88919c
-
-# ─────────────────────────────────────────────────────────────────────
-# IKA dWallet
-# Signing is done OFF-CHAIN via @ika.xyz/sdk TypeScript package.
-# The Sui contract only needs to:
-#   1. Store the dWallet's Ed25519 pubkey in DWalletRegistry
-#   2. Verify Ed25519 signatures using sui::ed25519::ed25519_verify
-#   3. Lock DWalletCap into SealVault after sealing
-#
-# For DWalletCap type import (when IKA publishes their Move package):
-#   IKA = { git = "https://github.com/dwallet-labs/ika.git", ... }
-#   Then replace local DWalletCap struct with:
-#     use ika_dwallet_2pc_mpc::coordinator::DWalletCap;
-#
-# IKA package addresses:
-#   Testnet: 0x6573a6c13daf26a64eb8a37d3c7a4391b353031e223072ca45b1ff9366f59293
-# ─────────────────────────────────────────────────────────────────────
 
 [addresses]
 ikatensei = "0x0"
