@@ -1,0 +1,285 @@
+/**
+ * SQLite Database — Single source of truth for all relayer state.
+ *
+ * Replaces in-memory Maps, cursor JSON files, and VAA state files.
+ * Uses better-sqlite3 (synchronous, fast, zero-config).
+ */
+
+import Database from 'better-sqlite3';
+import { logger } from './logger.js';
+import type {
+  SealSession,
+  PresignEntry,
+  PresignPoolStats,
+  EventCursor,
+} from './types.js';
+
+let db: Database.Database;
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+
+export function initDb(dbPath: string = './relayer.db'): Database.Database {
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_id       TEXT PRIMARY KEY,
+      solana_wallet    TEXT NOT NULL,
+      source_chain     TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'awaiting_payment',
+      created_at       INTEGER NOT NULL,
+      dwallet_id       TEXT,
+      deposit_address  TEXT,
+      dwallet_pubkey   BLOB,
+      payment_tx_sig   TEXT,
+      payment_verified INTEGER,
+      reborn_mint      TEXT,
+      reborn_name      TEXT,
+      reborn_image     TEXT,
+      error            TEXT,
+      updated_at       INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_deposit ON sessions(deposit_address);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+
+    CREATE TABLE IF NOT EXISTS presigns (
+      object_id      TEXT PRIMARY KEY,
+      presign_id     TEXT NOT NULL,
+      presign_bcs    BLOB NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'AVAILABLE',
+      allocated_at   INTEGER,
+      allocated_for  TEXT,
+      created_at     INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_presigns_status ON presigns(status);
+
+    CREATE TABLE IF NOT EXISTS cursors (
+      event_type  TEXT PRIMARY KEY,
+      tx_digest   TEXT NOT NULL,
+      event_seq   TEXT NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS vaa_sequences (
+      emitter_key    TEXT PRIMARY KEY,
+      last_sequence  TEXT NOT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+  `);
+
+  logger.info({ dbPath }, 'SQLite database initialized');
+  return db;
+}
+
+export function getDb(): Database.Database {
+  if (!db) throw new Error('Database not initialized — call initDb() first');
+  return db;
+}
+
+// ─── Sessions ──────────────────────────────────────────────────────────────
+
+export function createSession(session: SealSession): void {
+  const now = Date.now();
+  getDb().prepare(`
+    INSERT INTO sessions (session_id, solana_wallet, source_chain, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(session.sessionId, session.solanaWallet, session.sourceChain, session.status, session.createdAt, now);
+}
+
+export function getSession(sessionId: string): SealSession | undefined {
+  const row = getDb().prepare('SELECT * FROM sessions WHERE session_id = ?').get(sessionId) as SessionRow | undefined;
+  return row ? rowToSession(row) : undefined;
+}
+
+export function getSessionByDeposit(depositAddress: string): SealSession | undefined {
+  const row = getDb().prepare('SELECT * FROM sessions WHERE deposit_address = ? ORDER BY created_at DESC LIMIT 1').get(depositAddress) as SessionRow | undefined;
+  return row ? rowToSession(row) : undefined;
+}
+
+export function updateSession(sessionId: string, fields: Partial<SessionRow>): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (fields.status !== undefined) { sets.push('status = ?'); values.push(fields.status); }
+  if (fields.dwallet_id !== undefined) { sets.push('dwallet_id = ?'); values.push(fields.dwallet_id); }
+  if (fields.deposit_address !== undefined) { sets.push('deposit_address = ?'); values.push(fields.deposit_address); }
+  if (fields.dwallet_pubkey !== undefined) { sets.push('dwallet_pubkey = ?'); values.push(fields.dwallet_pubkey); }
+  if (fields.payment_tx_sig !== undefined) { sets.push('payment_tx_sig = ?'); values.push(fields.payment_tx_sig); }
+  if (fields.payment_verified !== undefined) { sets.push('payment_verified = ?'); values.push(fields.payment_verified); }
+  if (fields.reborn_mint !== undefined) { sets.push('reborn_mint = ?'); values.push(fields.reborn_mint); }
+  if (fields.reborn_name !== undefined) { sets.push('reborn_name = ?'); values.push(fields.reborn_name); }
+  if (fields.reborn_image !== undefined) { sets.push('reborn_image = ?'); values.push(fields.reborn_image); }
+  if (fields.error !== undefined) { sets.push('error = ?'); values.push(fields.error); }
+
+  if (sets.length === 0) return;
+
+  sets.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(sessionId);
+
+  getDb().prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_id = ?`).run(...values);
+}
+
+export function updateSessionByDeposit(depositAddress: string, status: string, error?: string): void {
+  const now = Date.now();
+  if (error !== undefined) {
+    getDb().prepare('UPDATE sessions SET status = ?, error = ?, updated_at = ? WHERE deposit_address = ?')
+      .run(status, error, now, depositAddress);
+  } else {
+    getDb().prepare('UPDATE sessions SET status = ?, updated_at = ? WHERE deposit_address = ?')
+      .run(status, now, depositAddress);
+  }
+}
+
+interface SessionRow {
+  session_id: string;
+  solana_wallet: string;
+  source_chain: string;
+  status: string;
+  created_at: number;
+  dwallet_id: string | null;
+  deposit_address: string | null;
+  dwallet_pubkey: Buffer | null;
+  payment_tx_sig: string | null;
+  payment_verified: number | null;
+  reborn_mint: string | null;
+  reborn_name: string | null;
+  reborn_image: string | null;
+  error: string | null;
+  updated_at: number;
+}
+
+function rowToSession(row: SessionRow): SealSession {
+  const session: SealSession = {
+    sessionId: row.session_id,
+    solanaWallet: row.solana_wallet,
+    sourceChain: row.source_chain,
+    status: row.status as SealSession['status'],
+    createdAt: row.created_at,
+  };
+  if (row.dwallet_id) session.dwalletId = row.dwallet_id;
+  if (row.deposit_address) session.depositAddress = row.deposit_address;
+  if (row.dwallet_pubkey) session.dwalletPubkey = new Uint8Array(row.dwallet_pubkey);
+  if (row.payment_tx_sig) session.paymentTxSignature = row.payment_tx_sig;
+  if (row.payment_verified) session.paymentVerifiedAt = row.payment_verified;
+  if (row.reborn_mint) {
+    session.rebornNFT = {
+      mint: row.reborn_mint,
+      name: row.reborn_name ?? '',
+      image: row.reborn_image ?? '',
+    };
+  }
+  if (row.error) session.error = row.error;
+  return session;
+}
+
+// ─── Presigns ──────────────────────────────────────────────────────────────
+
+export function addPresign(objectId: string, presignId: string, presignBcs: Uint8Array): void {
+  getDb().prepare(`
+    INSERT OR REPLACE INTO presigns (object_id, presign_id, presign_bcs, status, created_at)
+    VALUES (?, ?, ?, 'AVAILABLE', ?)
+  `).run(objectId, presignId, Buffer.from(presignBcs), Date.now());
+}
+
+export function allocatePresign(vaaHash: string): PresignEntry | null {
+  // Release expired first
+  releaseExpiredPresigns(5 * 60 * 1000);
+
+  const d = getDb();
+  const row = d.prepare(
+    `SELECT * FROM presigns WHERE status = 'AVAILABLE' ORDER BY created_at ASC LIMIT 1`,
+  ).get() as PresignRow | undefined;
+
+  if (!row) return null;
+
+  const now = Date.now();
+  d.prepare(
+    `UPDATE presigns SET status = 'ALLOCATED', allocated_at = ?, allocated_for = ? WHERE object_id = ?`,
+  ).run(now, vaaHash, row.object_id);
+
+  return {
+    objectId: row.object_id,
+    presignId: row.presign_id,
+    presignBcs: new Uint8Array(row.presign_bcs),
+    status: 'ALLOCATED',
+    allocatedAt: now,
+    allocatedFor: vaaHash,
+  };
+}
+
+export function markPresignUsed(objectId: string): void {
+  getDb().prepare(`UPDATE presigns SET status = 'USED' WHERE object_id = ?`).run(objectId);
+}
+
+export function releaseExpiredPresigns(ttlMs: number): number {
+  const cutoff = Date.now() - ttlMs;
+  const result = getDb().prepare(
+    `UPDATE presigns SET status = 'AVAILABLE', allocated_at = NULL, allocated_for = NULL
+     WHERE status = 'ALLOCATED' AND allocated_at < ?`,
+  ).run(cutoff);
+  return result.changes;
+}
+
+export function getPresignStats(): PresignPoolStats {
+  const d = getDb();
+  const available = (d.prepare(`SELECT COUNT(*) as c FROM presigns WHERE status = 'AVAILABLE'`).get() as { c: number }).c;
+  const allocated = (d.prepare(`SELECT COUNT(*) as c FROM presigns WHERE status = 'ALLOCATED'`).get() as { c: number }).c;
+  const used = (d.prepare(`SELECT COUNT(*) as c FROM presigns WHERE status = 'USED'`).get() as { c: number }).c;
+  return { available, allocated, used, total: available + allocated + used };
+}
+
+export function getAvailablePresignCount(): number {
+  return (getDb().prepare(`SELECT COUNT(*) as c FROM presigns WHERE status = 'AVAILABLE'`).get() as { c: number }).c;
+}
+
+interface PresignRow {
+  object_id: string;
+  presign_id: string;
+  presign_bcs: Buffer;
+  status: string;
+  allocated_at: number | null;
+  allocated_for: string | null;
+  created_at: number;
+}
+
+// ─── Cursors ───────────────────────────────────────────────────────────────
+
+export function getCursor(eventType: string): EventCursor | undefined {
+  const row = getDb().prepare('SELECT tx_digest, event_seq FROM cursors WHERE event_type = ?').get(eventType) as { tx_digest: string; event_seq: string } | undefined;
+  return row ? { txDigest: row.tx_digest, eventSeq: row.event_seq } : undefined;
+}
+
+export function saveCursor(eventType: string, cursor: EventCursor): void {
+  getDb().prepare(`
+    INSERT INTO cursors (event_type, tx_digest, event_seq, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(event_type) DO UPDATE SET tx_digest = excluded.tx_digest, event_seq = excluded.event_seq, updated_at = excluded.updated_at
+  `).run(eventType, cursor.txDigest, cursor.eventSeq, Date.now());
+}
+
+// ─── VAA Sequences ─────────────────────────────────────────────────────────
+
+export function getVaaSequence(emitterKey: string): string | undefined {
+  const row = getDb().prepare('SELECT last_sequence FROM vaa_sequences WHERE emitter_key = ?').get(emitterKey) as { last_sequence: string } | undefined;
+  return row?.last_sequence;
+}
+
+export function saveVaaSequence(emitterKey: string, sequence: string): void {
+  getDb().prepare(`
+    INSERT INTO vaa_sequences (emitter_key, last_sequence, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(emitter_key) DO UPDATE SET last_sequence = excluded.last_sequence, updated_at = excluded.updated_at
+  `).run(emitterKey, sequence, Date.now());
+}
+
+export function getAllVaaSequences(): Map<string, string> {
+  const rows = getDb().prepare('SELECT emitter_key, last_sequence FROM vaa_sequences').all() as { emitter_key: string; last_sequence: string }[];
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    map.set(row.emitter_key, row.last_sequence);
+  }
+  return map;
+}

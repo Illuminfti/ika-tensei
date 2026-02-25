@@ -66,15 +66,16 @@ export class SealSigner {
    * IKA 2PC-MPC signing ceremony and submits the result on-chain.
    */
   async signAndComplete(event: SealPendingEvent): Promise<void> {
-    const { vaa_hash: vaaHash, message_hash: messageHashHex } = event;
-    const messageHash = hexToBytes(messageHashHex);
+    const vaaHashBytes = toBytes(event.vaa_hash);
+    const vaaHashHex = bytesToHex(vaaHashBytes);
+    const messageHash = toBytes(event.message_hash);
 
-    logger.info({ vaaHash }, 'Starting signing flow for pending seal');
+    logger.info({ vaaHash: vaaHashHex }, 'Starting signing flow for pending seal');
 
     // 1. Allocate presign from pool
-    const presign = this.presignPool.allocate(vaaHash);
+    const presign = this.presignPool.allocate(vaaHashHex);
     if (!presign) {
-      throw new Error(`No presigns available for seal ${vaaHash}`);
+      throw new Error(`No presigns available for seal ${vaaHashHex}`);
     }
 
     try {
@@ -82,7 +83,7 @@ export class SealSigner {
       const protocolPublicParams = await this.getProtocolPublicParams();
 
       // 3. Generate centralized signature via IKA SDK WASM
-      logger.info({ vaaHash }, 'Computing centralized signature');
+      logger.info({ vaaHash: vaaHashHex }, 'Computing centralized signature');
       const centralizedSig = await createUserSignMessageWithPublicOutput(
         protocolPublicParams,
         this.userPublicOutput,
@@ -96,12 +97,12 @@ export class SealSigner {
 
       // 4. Call request_sign_seal on-chain
       const signatureId = await this.requestSignOnChain(
-        vaaHash,
+        vaaHashHex,
         centralizedSig,
         presign.objectId,
       );
 
-      logger.info({ vaaHash, signatureId }, 'Sign request submitted — polling IKA');
+      logger.info({ vaaHash: vaaHashHex, signatureId }, 'Sign request submitted — polling IKA');
 
       // 5. Poll IKA for signature completion
       const signResult = await this.ikaClient.getSignInParticularState(
@@ -123,7 +124,7 @@ export class SealSigner {
       );
 
       logger.info(
-        { vaaHash, signatureHex: Buffer.from(signature).toString('hex').slice(0, 32) + '...' },
+        { vaaHash: vaaHashHex, signatureHex: Buffer.from(signature).toString('hex').slice(0, 32) + '...' },
         'IKA signature obtained',
       );
 
@@ -134,9 +135,9 @@ export class SealSigner {
       );
 
       // 8. Call complete_seal on-chain
-      await this.completeSealOnChain(vaaHash, signature);
+      await this.completeSealOnChain(vaaHashHex, signature);
 
-      logger.info({ vaaHash }, 'Seal signing flow complete — SealSigned event emitted');
+      logger.info({ vaaHash: vaaHashHex }, 'Seal signing flow complete — SealSigned event emitted');
     } catch (err) {
       // Don't leave the presign in ALLOCATED state on failure
       if (presign.status === 'ALLOCATED') {
@@ -266,4 +267,39 @@ function hexToBytes(hex: string): Uint8Array {
     bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
+}
+
+/**
+ * Convert Uint8Array to hex string.
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Convert Sui event vector<u8> fields to Uint8Array.
+ * Sui SDK may return these as number[], base64 string, or hex string.
+ */
+function toBytes(value: number[] | string | Uint8Array): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) return new Uint8Array(value);
+  // Try base64 first (Sui CLI returns base64 for vector<u8>)
+  if (typeof value === 'string') {
+    if (value.startsWith('0x')) return hexToBytes(value);
+    // Check if it looks like base64
+    try {
+      const binary = atob(value);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    } catch {
+      // Fall back to hex
+      return hexToBytes(value);
+    }
+  }
+  throw new Error(`Cannot convert to bytes: ${typeof value}`);
 }

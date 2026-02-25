@@ -14,32 +14,32 @@
  * SealSigned event emitted by the Sui Orchestrator contract.
  * The relayer subscribes to these events and bridges them to Solana.
  *
- * All binary fields (nft_contract, token_id, receiver, etc.) are hex-encoded.
- * token_uri is hex-encoded UTF-8 bytes (decode with Buffer.from(hex,'hex').toString('utf8')).
+ * Sui SDK returns Move vector<u8> fields as number[] in parsedJson.
+ * Fields may also arrive as hex strings depending on SDK version.
  */
 export interface SealSignedEvent {
   /** Source chain ID (e.g. 1 = Ethereum, 2 = BNB Chain) */
   source_chain: number;
-  /** Hex-encoded NFT contract address on the source chain */
-  nft_contract: string;
-  /** Hex-encoded token ID */
-  token_id: string;
-  /** Hex-encoded UTF-8 token URI */
-  token_uri: string;
-  /** Hex-encoded 32-byte Solana public key of the NFT receiver */
-  receiver: string;
-  /** Hex-encoded deposit address (NOT the dWallet pubkey) */
-  deposit_address: string;
-  /** Hex-encoded 32-byte SHA256 message hash that was signed */
-  message_hash: string;
-  /** Hex-encoded 64-byte Ed25519 signature from the IKA dWallet */
-  signature: string;
-  /** Hex-encoded 32-byte Ed25519 public key of the IKA dWallet that produced the signature */
-  dwallet_pubkey: string;
-  /** Hex-encoded VAA hash from Wormhole (for verification) */
-  vaa_hash: string;
+  /** NFT contract address on the source chain (vector<u8>) */
+  nft_contract: number[] | string;
+  /** Token ID (vector<u8>) */
+  token_id: number[] | string;
+  /** UTF-8 token URI (vector<u8>) */
+  token_uri: number[] | string;
+  /** 32-byte Solana public key of the NFT receiver (vector<u8>) */
+  receiver: number[] | string;
+  /** Deposit address (vector<u8>) */
+  deposit_address: number[] | string;
+  /** 32-byte SHA256 message hash that was signed (vector<u8>) */
+  message_hash: number[] | string;
+  /** 64-byte Ed25519 signature from the IKA dWallet (vector<u8>) */
+  signature: number[] | string;
+  /** 32-byte Ed25519 public key of the IKA dWallet (vector<u8>) */
+  dwallet_pubkey: number[] | string;
+  /** VAA hash from Wormhole (vector<u8>) */
+  vaa_hash: number[] | string;
   /** Unix timestamp of the seal event */
-  timestamp: number;
+  timestamp: number | string;
 }
 
 /**
@@ -47,18 +47,18 @@ export interface SealSignedEvent {
  * The relayer subscribes to these events and triggers the signing flow.
  */
 export interface SealPendingEvent {
-  /** Hex-encoded VAA hash */
-  vaa_hash: string;
+  /** VAA hash (Sui SDK returns vector<u8> as number[] or base64 string) */
+  vaa_hash: number[] | string;
   /** Source chain ID */
   source_chain: number;
-  /** Hex-encoded deposit address */
-  deposit_address: string;
-  /** Hex-encoded 32-byte Solana public key of the NFT receiver */
-  receiver: string;
-  /** Hex-encoded 32-byte SHA256 message hash to be signed */
-  message_hash: string;
-  /** Unix timestamp */
-  timestamp: number;
+  /** Deposit address (Sui SDK returns vector<u8> as number[] or base64 string) */
+  deposit_address: number[] | string;
+  /** Solana receiver pubkey (Sui SDK returns vector<u8> as number[] or base64 string) */
+  receiver: number[] | string;
+  /** SHA256 message hash to be signed (Sui SDK returns vector<u8> as number[] or base64 string) */
+  message_hash: number[] | string;
+  /** Unix timestamp (string from Sui) */
+  timestamp: string | number;
 }
 
 // ─── Processed Data ──────────────────────────────────────────────────────────
@@ -242,8 +242,10 @@ export interface PresignPoolStats {
 export interface RelayerConfig {
   // Sui
   suiRpcUrl: string;
-  suiWsUrl: string;
   suiPackageId: string;
+  /** Original package ID from first publish — used for event type filtering
+   *  (Sui events always reference the original defining package, not upgrades) */
+  suiOriginalPackageId: string;
 
   // Solana
   solanaRpcUrl: string;
@@ -290,6 +292,9 @@ export interface RelayerConfig {
   wormholeStateObjectId: string;
   sourceChainEmitters: SourceChainEmitter[];
   vaaPollingIntervalMs: number;
+
+  // Database
+  dbPath: string;
 
   // Optional tuning
   healthPort: number;

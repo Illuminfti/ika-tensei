@@ -214,6 +214,28 @@ module ikatensei::orchestrator {
         authority.minting_pubkey = minting_pubkey;
     }
 
+    /// Update the signing parameters stored in SigningState.
+    /// Used after an upgrade to fix incorrect IKA curve/algorithm numbers.
+    public fun update_signing_params(
+        signing_state: &mut SigningState,
+        _cap: &OrchestratorAdminCap,
+        curve: u32,
+        signature_algorithm: u32,
+        hash_scheme: u32,
+    ) {
+        signing::update_params(signing_state, curve, signature_algorithm, hash_scheme);
+    }
+
+    /// Reset the minting cap in SigningState (e.g. after a rejected DKG).
+    /// The old DWalletCap is transferred to the caller for disposal.
+    public fun reset_minting_cap(
+        signing_state: &mut SigningState,
+        _cap: &OrchestratorAdminCap,
+        ctx: &mut TxContext,
+    ) {
+        signing::reset_minting_cap(signing_state, ctx);
+    }
+
     /// Create the contract's own minting dWallet via IKA DKG.
     /// Called once after deployment. The DWalletCap goes directly into
     /// SigningState and never leaves contract control.

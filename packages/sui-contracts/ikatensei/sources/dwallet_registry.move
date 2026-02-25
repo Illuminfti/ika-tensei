@@ -133,8 +133,12 @@ module ikatensei::dwallet_registry {
         dwallet_cap: DWalletCap,
         ctx: &mut TxContext,
     ) {
-        assert!(vector::length(&deposit_address) == 32, E_ZERO_ADDRESS);
-        assert!(vector::length(&dwallet_pubkey) == 32, E_ZERO_ADDRESS);
+        // Accept variable-length: 20 bytes (EVM) or 32 bytes (Ed25519/Solana/NEAR)
+        let addr_len = vector::length(&deposit_address);
+        assert!(addr_len == 20 || addr_len == 32, E_ZERO_ADDRESS);
+        // Accept variable-length: 32 bytes (Ed25519) or 33 bytes (compressed secp256k1)
+        let pk_len = vector::length(&dwallet_pubkey);
+        assert!(pk_len == 32 || pk_len == 33, E_ZERO_ADDRESS);
         assert!(
             !table::contains(&registry.wallets, deposit_address),
             E_ALREADY_REGISTERED

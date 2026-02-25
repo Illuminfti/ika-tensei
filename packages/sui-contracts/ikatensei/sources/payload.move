@@ -36,6 +36,12 @@ module ikatensei::payload {
     const CHAIN_OPTIMISM: u16 = 24;
     const CHAIN_BASE: u16 = 30;
 
+    // Testnet chain IDs
+    const CHAIN_ETHEREUM_SEPOLIA: u16 = 10002;
+    const CHAIN_ARBITRUM_SEPOLIA: u16 = 10003;
+    const CHAIN_BASE_SEPOLIA: u16 = 10004;
+    const CHAIN_OPTIMISM_SEPOLIA: u16 = 10005;
+
     /// Decoded seal payload from Wormhole VAA
     public struct SealPayload has copy, drop, store {
         source_chain: u16,
@@ -79,8 +85,12 @@ module ikatensei::payload {
         };
 
         // [67-98] - deposit_address (32 bytes, left-padded address)
+        // For EVM chains, strip the 12-byte zero padding → 20-byte address.
+        // For Ed25519 chains (NEAR, Solana, etc.), keep all 32 bytes.
+        let is_evm = is_evm_chain(source_chain);
+        let deposit_start = if (is_evm) { 79 } else { 67 }; // 67 + 12 = 79
         let mut deposit_address = vector::empty<u8>();
-        i = 67;
+        i = deposit_start;
         while (i < 99) {
             vector::push_back(&mut deposit_address, *vector::borrow(payload, i));
             i = i + 1;
@@ -212,6 +222,21 @@ module ikatensei::payload {
         payload
     }
 
+    /// Check if a chain ID is an EVM chain (20-byte addresses, left-padded to 32 in Wormhole).
+    public fun is_evm_chain(chain_id: u16): bool {
+        chain_id == CHAIN_ETHEREUM
+            || chain_id == CHAIN_BSC
+            || chain_id == CHAIN_POLYGON
+            || chain_id == CHAIN_AVALANCHE
+            || chain_id == CHAIN_ARBITRUM
+            || chain_id == CHAIN_OPTIMISM
+            || chain_id == CHAIN_BASE
+            || chain_id == CHAIN_ETHEREUM_SEPOLIA
+            || chain_id == CHAIN_ARBITRUM_SEPOLIA
+            || chain_id == CHAIN_BASE_SEPOLIA
+            || chain_id == CHAIN_OPTIMISM_SEPOLIA
+    }
+
     /// Check if a chain ID is supported.
     /// Supported: Ethereum, Polygon, Arbitrum, Optimism, Base, Avalanche,
     ///            BSC, Sui, Solana, NEAR, Aptos.
@@ -227,6 +252,11 @@ module ikatensei::payload {
             || chain_id == CHAIN_ARBITRUM
             || chain_id == CHAIN_OPTIMISM
             || chain_id == CHAIN_BASE
+            // Testnet chains
+            || chain_id == CHAIN_ETHEREUM_SEPOLIA
+            || chain_id == CHAIN_ARBITRUM_SEPOLIA
+            || chain_id == CHAIN_BASE_SEPOLIA
+            || chain_id == CHAIN_OPTIMISM_SEPOLIA
     }
 
     /// Get chain name as ASCII bytes for debugging/logging.

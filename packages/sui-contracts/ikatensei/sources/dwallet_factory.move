@@ -38,7 +38,7 @@ module ikatensei::dwallet_factory {
     /// Parameters (all crypto data comes from @ika.xyz/sdk prepareDKGAsync):
     ///   - coordinator: the IKA DWalletCoordinator shared object
     ///   - dwallet_network_encryption_key_id: ID of the network encryption key
-    ///   - curve: elliptic curve (0 = secp256k1, 3 = ed25519)
+    ///   - curve: elliptic curve (0 = secp256k1, 1 = secp256r1, 2 = ed25519, 3 = ristretto)
     ///   - centralized_public_key_share_and_proof: from dkgRequestInput.userDKGMessage
     ///   - user_public_output: from dkgRequestInput.userPublicOutput
     ///   - public_user_secret_key_share: from dkgRequestInput.userSecretKeyShare

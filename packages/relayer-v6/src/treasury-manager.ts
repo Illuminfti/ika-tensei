@@ -45,17 +45,17 @@ export class TreasuryManager {
     }
 
     const fields = content.fields as Record<string, unknown>;
-    const treasury = fields.treasury as Record<string, unknown> | undefined;
-    if (!treasury) {
+    // Sui JSON: struct fields are wrapped in { type, fields } objects
+    const treasuryWrapper = fields.treasury as { fields?: Record<string, unknown> } | undefined;
+    const treasuryFields = treasuryWrapper?.fields;
+    if (!treasuryFields) {
       return { ika: 0n, sui: 0n };
     }
 
-    const ikaBalance = treasury.ika_balance as Record<string, string> | undefined;
-    const suiBalance = treasury.sui_balance as Record<string, string> | undefined;
-
+    // Balance<T> in Sui JSON is serialized as a plain string value (u64)
     return {
-      ika: BigInt(ikaBalance?.value ?? '0'),
-      sui: BigInt(suiBalance?.value ?? '0'),
+      ika: BigInt((treasuryFields.ika_balance as string) ?? '0'),
+      sui: BigInt((treasuryFields.sui_balance as string) ?? '0'),
     };
   }
 

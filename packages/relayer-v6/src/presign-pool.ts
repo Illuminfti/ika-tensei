@@ -19,13 +19,16 @@ import { IkaClient } from '@ika.xyz/sdk';
 import type { IkaConfig } from '@ika.xyz/sdk';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
+import {
+  addPresign,
+  allocatePresign,
+  markPresignUsed,
+  getPresignStats,
+  getAvailablePresignCount,
+} from './db.js';
 import type { PresignEntry, PresignPoolStats } from './types.js';
 
-/** How long an allocation lasts before auto-release (5 minutes) */
-const ALLOCATION_TTL_MS = 5 * 60 * 1000;
-
 export class PresignPool {
-  private readonly pool: Map<string, PresignEntry> = new Map();
   private readonly sui: SuiClient;
   private readonly keypair: Ed25519Keypair;
   private readonly ikaClient: IkaClient;
@@ -48,12 +51,7 @@ export class PresignPool {
    * Add a completed presign to the pool.
    */
   add(objectId: string, presignId: string, presignBcs: Uint8Array): void {
-    this.pool.set(objectId, {
-      objectId,
-      presignId,
-      presignBcs,
-      status: 'AVAILABLE',
-    });
+    addPresign(objectId, presignId, presignBcs);
     logger.info({ objectId, presignId }, 'Presign added to pool');
   }
 
@@ -62,70 +60,28 @@ export class PresignPool {
    * Returns null if none available.
    */
   allocate(vaaHash: string): PresignEntry | null {
-    // First, release expired allocations
-    this.releaseExpired();
-
-    // FIFO: find the first AVAILABLE entry
-    for (const entry of this.pool.values()) {
-      if (entry.status === 'AVAILABLE') {
-        entry.status = 'ALLOCATED';
-        entry.allocatedAt = Date.now();
-        entry.allocatedFor = vaaHash;
-        logger.info(
-          { objectId: entry.objectId, vaaHash },
-          'Presign allocated',
-        );
-        return entry;
-      }
+    const entry = allocatePresign(vaaHash);
+    if (entry) {
+      logger.info({ objectId: entry.objectId, vaaHash }, 'Presign allocated');
+    } else {
+      logger.warn('No presigns available in pool');
     }
-
-    logger.warn('No presigns available in pool');
-    return null;
+    return entry;
   }
 
   /**
    * Mark a presign as used after successful signing.
    */
   markUsed(objectId: string): void {
-    const entry = this.pool.get(objectId);
-    if (entry) {
-      entry.status = 'USED';
-      logger.info({ objectId }, 'Presign marked as used');
-    }
-  }
-
-  /**
-   * Release expired allocations back to AVAILABLE.
-   */
-  releaseExpired(): void {
-    const now = Date.now();
-    for (const entry of this.pool.values()) {
-      if (
-        entry.status === 'ALLOCATED' &&
-        entry.allocatedAt &&
-        now - entry.allocatedAt > ALLOCATION_TTL_MS
-      ) {
-        entry.status = 'AVAILABLE';
-        entry.allocatedAt = undefined;
-        entry.allocatedFor = undefined;
-        logger.info({ objectId: entry.objectId }, 'Released expired presign allocation');
-      }
-    }
+    markPresignUsed(objectId);
+    logger.info({ objectId }, 'Presign marked as used');
   }
 
   /**
    * Get pool statistics.
    */
   stats(): PresignPoolStats {
-    let available = 0;
-    let allocated = 0;
-    let used = 0;
-    for (const entry of this.pool.values()) {
-      if (entry.status === 'AVAILABLE') available++;
-      else if (entry.status === 'ALLOCATED') allocated++;
-      else if (entry.status === 'USED') used++;
-    }
-    return { available, allocated, used, total: this.pool.size };
+    return getPresignStats();
   }
 
   /**
@@ -171,7 +127,7 @@ export class PresignPool {
    * Ensure minimum available presigns, replenishing if needed.
    */
   async ensureMinimumAvailable(min: number): Promise<void> {
-    const { available } = this.stats();
+    const available = getAvailablePresignCount();
     if (available < min) {
       const config = getConfig();
       const deficit = config.presignPoolReplenishBatch;
@@ -219,21 +175,6 @@ export class PresignPool {
 
     logger.info({ txDigest: result.digest }, 'Presign request transaction submitted');
 
-    // Parse PresignRequested event to get presign BCS
-    const presignEvent = result.events?.find(
-      (e) => e.type.includes('signing::PresignRequested'),
-    );
-
-    if (!presignEvent?.parsedJson) {
-      throw new Error('PresignRequested event not found in transaction');
-    }
-
-    const eventData = presignEvent.parsedJson as {
-      request: string;
-      presign_bcs: number[];
-    };
-    const presignBcs = new Uint8Array(eventData.presign_bcs);
-
     // Find the created UnverifiedPresignCap object
     const presignCapChange = result.objectChanges?.find(
       (c) => c.type === 'created' && c.objectType?.includes('UnverifiedPresignCap'),
@@ -245,12 +186,23 @@ export class PresignPool {
 
     const objectId = presignCapChange.objectId;
 
-    // Read the object to get the presign_id
-    const presignObj = await this.sui.getObject({
+    // Small delay to let Sui RPC index the newly created object
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // Read the object to get the presign_id (retry once if RPC hasn't indexed yet)
+    let presignObj = await this.sui.getObject({
       id: objectId,
       options: { showContent: true },
     });
-    const objContent = presignObj.data?.content;
+    let objContent = presignObj.data?.content;
+    if (objContent?.dataType !== 'moveObject') {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      presignObj = await this.sui.getObject({
+        id: objectId,
+        options: { showContent: true },
+      });
+      objContent = presignObj.data?.content;
+    }
     if (objContent?.dataType !== 'moveObject') {
       throw new Error('Failed to read UnverifiedPresignCap');
     }
@@ -259,13 +211,18 @@ export class PresignPool {
 
     // Wait for presign to be completed by IKA network
     logger.info({ presignId, objectId }, 'Waiting for presign completion');
-    await this.ikaClient.getPresignInParticularState(
+    const completedPresign = await this.ikaClient.getPresignInParticularState(
       presignId,
       'Completed',
       { timeout: 120_000 },
     );
 
-    // Add to pool
-    this.add(objectId, presignId, presignBcs);
+    // Extract presign bytes from the completed IKA object
+    // (NOT from the PresignRequested event's presign_bcs — that's the request data)
+    const completedState = (completedPresign as { state: { Completed: { presign: number[] } } }).state.Completed;
+    const completedPresignBytes = new Uint8Array(completedState.presign);
+
+    // Add to pool with the completed presign data
+    this.add(objectId, presignId, completedPresignBytes);
   }
 }

@@ -9,7 +9,8 @@ import {SealInitiator} from "../contracts/SealInitiator.sol";
 /// @dev Usage: forge script script/DeploySealInitiator.s.sol --rpc-url sepolia --broadcast --verify
 contract DeploySealInitiator is Script {
     /// @notice Wormhole Core Bridge addresses
-    address constant WORMHOLE_SEPOLIA = 0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78;
+    address constant WORMHOLE_ETH_SEPOLIA = 0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78;
+    address constant WORMHOLE_BASE_SEPOLIA = 0x79A1027a6A159502049F10906D333EC57E95F083;
     address constant WORMHOLE_MAINNET = 0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B;
 
     /// @notice CryptoPunks address (mainnet only; pass address(0) on testnets)
@@ -18,7 +19,7 @@ contract DeploySealInitiator is Script {
     function run() external {
         // Get deployment configuration
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        
+
         // Determine network - default to sepolia if not set
         string memory network;
         if (!vm.envExists("NETWORK")) {
@@ -33,9 +34,12 @@ contract DeploySealInitiator is Script {
         if (compareStrings(network, "mainnet")) {
             wormholeAddress = WORMHOLE_MAINNET;
             cryptoPunksAddr = CRYPTOPUNKS_MAINNET;
+        } else if (compareStrings(network, "base-sepolia")) {
+            wormholeAddress = WORMHOLE_BASE_SEPOLIA;
+            cryptoPunksAddr = address(0);
         } else {
-            // Testnets: use Sepolia Wormhole; no CryptoPunks equivalent
-            wormholeAddress = WORMHOLE_SEPOLIA;
+            // Ethereum Sepolia and other testnets
+            wormholeAddress = WORMHOLE_ETH_SEPOLIA;
             cryptoPunksAddr = address(0);
         }
 

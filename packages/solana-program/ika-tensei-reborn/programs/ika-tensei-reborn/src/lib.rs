@@ -24,7 +24,7 @@ use mpl_core::types::DataState;
 use sha2::{Sha256, Digest};
 
 // Program ID - will be overwritten on deployment
-declare_id!("GaF33RCjTAW6cGCWaiefEVuptbsDDDSAtNx3ipDmNqnj");
+declare_id!("2bW2SFSuiBMCef2xNk892uVfSTqjkRGmv6jD9PHKqzW4");
 
 pub mod constants {
     // PDA seeds
@@ -79,6 +79,20 @@ pub struct UpdateMintConfig<'info> {
     pub admin: Signer<'info>,
 }
 
+/// Initialize a RebornCollection PDA for a source collection.
+/// Must be called once before the first mint_reborn for each (source_chain, nft_contract).
+/// Separated from mint_reborn to keep the latter's try_accounts below the BPF 4KB stack limit.
+#[derive(Accounts)]
+#[instruction(source_chain: u16, nft_contract: Vec<u8>)]
+pub struct InitRebornCollection<'info> {
+    #[account(init, payer = payer, space = 8 + RebornCollection::INIT_SPACE,
+              seeds = [constants::COLLECTION_SEED, &source_chain.to_le_bytes(), &nft_contract], bump)]
+    pub collection: Box<Account<'info, RebornCollection>>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 /// Mint a reborn NFT - main entry point
 ///
 /// REPLAY PROTECTION: Instead of a ring buffer (which overflows after N entries),
@@ -87,13 +101,10 @@ pub struct UpdateMintConfig<'info> {
 /// if the PDA already exists — i.e., if the signature was already used.
 #[derive(Accounts)]
 #[instruction(
-    signature: [u8; 64],       // Ed25519 signature from IKA dWallet
-    sig_hash: [u8; 32],        // sha256(signature) — used as PDA seed for replay protection
+    sig_hash: Vec<u8>,         // sha256(signature) — used as PDA seed for replay protection
     source_chain: u16,         // Source chain ID (little-endian in PDA seeds)
     nft_contract: Vec<u8>,
     token_id: Vec<u8>,
-    token_uri: String,
-    collection_name: String,
 )]
 pub struct MintReborn<'info> {
     /// Payer for the transaction (can be relayer or user)
@@ -115,11 +126,7 @@ pub struct MintReborn<'info> {
     /// Space: 8 (discriminator) + 1 (bump byte) = 9 bytes.
     #[account(init, payer = payer, space = 8 + SigUsed::INIT_SPACE,
               seeds = [constants::SIG_USED_SEED, &sig_hash], bump)]
-    pub sig_record: Account<'info, SigUsed>,
-
-    /// Registry of created collections
-    #[account(mut, seeds = [constants::COLLECTION_REGISTRY_SEED], bump = registry.bump)]
-    pub registry: Account<'info, CollectionRegistry>,
+    pub sig_record: Box<Account<'info, SigUsed>>,
 
     /// Provenance record for this NFT (PDA).
     /// `init` ensures each (source_chain, nft_contract, token_id) can only be minted once.
@@ -129,16 +136,13 @@ pub struct MintReborn<'info> {
     #[account(init, payer = payer, space = 8 + Provenance::INIT_SPACE,
               seeds = [constants::PROVENANCE_SEED, &source_chain.to_le_bytes(), &nft_contract, &token_id],
               bump)]
-    pub provenance: Account<'info, Provenance>,
+    pub provenance: Box<Account<'info, Provenance>>,
 
     /// Our metadata PDA tracking per-collection state.
-    /// `init_if_needed`: created on first mint from a source collection, loaded on
-    /// subsequent mints. We intentionally do NOT add `!collection.is_initialized` here
-    /// — Anchor's `init_if_needed` already handles the init-once guarantee, and the
-    /// redundant constraint would block all subsequent mints (FIX 3).
-    #[account(init_if_needed, payer = payer, space = 8 + RebornCollection::INIT_SPACE,
-              seeds = [constants::COLLECTION_SEED, &source_chain.to_le_bytes(), &nft_contract], bump)]
-    pub collection: Account<'info, RebornCollection>,
+    /// Must be pre-created via `init_reborn_collection` before the first mint.
+    /// This uses `mut` instead of `init_if_needed` to stay under the BPF 4KB stack limit.
+    #[account(mut, seeds = [constants::COLLECTION_SEED, &source_chain.to_le_bytes(), &nft_contract], bump = collection.bump)]
+    pub collection: Box<Account<'info, RebornCollection>>,
 
     /// Mint authority PDA - signs the Metaplex Core CPIs
     /// CHECK: This is a PDA owned by our program; used only as a signer in CPIs.
@@ -171,100 +175,13 @@ pub struct MintReborn<'info> {
     /// Mint config PDA — stores the shared IKA minting dWallet pubkey.
     /// Loaded on every mint to verify the signature was produced by the correct key.
     #[account(seeds = [constants::MINT_CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, MintConfig>,
+    pub config: Box<Account<'info, MintConfig>>,
 }
 
-/// Seal and mint a Solana-native NFT in one transaction (no Wormhole/IKA needed).
-///
-/// The user's NFT is transferred to a program-owned PDA vault (permanent lock),
-/// and a reborn NFT is minted directly to the user.
-///
-/// SECURITY: `nft_contract` and `token_id` are derived from the on-chain NFT mint,
-/// NOT user-supplied. This prevents fake provenance attacks.
-#[derive(Accounts)]
-#[instruction(
-    token_uri: String,
-    collection_name: String,
-)]
-pub struct SealAndMintNative<'info> {
-    /// User who owns the NFT and will receive the reborn NFT
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    /// The SPL token account holding the NFT to be sealed.
-    /// Must be owned by the user and contain exactly 1 token.
-    #[account(
-        mut,
-        constraint = nft_token_account.owner == user.key() @ ErrorCode::Unauthorized,
-        constraint = nft_token_account.mint == nft_mint.key() @ ErrorCode::InvalidNftMint,
-        constraint = nft_token_account.amount == 1 @ ErrorCode::InvalidNftAmount,
-    )]
-    pub nft_token_account: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// The NFT mint account
-    pub nft_mint: Account<'info, anchor_spl::token::Mint>,
-
-    /// PDA vault token account that will permanently hold the sealed NFT.
-    /// Seeds: ["sealed_nft", nft_mint]. Initialized here on first use.
-    #[account(
-        init_if_needed,
-        payer = user,
-        token::mint = nft_mint,
-        token::authority = sealed_nft_authority,
-        seeds = [b"sealed_nft", nft_mint.key().as_ref()],
-        bump,
-    )]
-    pub sealed_nft_vault: Account<'info, anchor_spl::token::TokenAccount>,
-
-    /// PDA authority for the sealed NFT vault (can never transfer out).
-    /// Seeds: ["sealed_nft_auth"]. No withdraw function exists.
-    /// CHECK: PDA used only as token account authority; no data.
-    #[account(seeds = [b"sealed_nft_auth"], bump)]
-    pub sealed_nft_authority: UncheckedAccount<'info>,
-
-    /// Registry of created collections
-    #[account(mut, seeds = [constants::COLLECTION_REGISTRY_SEED], bump = registry.bump)]
-    pub registry: Account<'info, CollectionRegistry>,
-
-    /// Provenance record for this NFT.
-    /// Seeds use nft_mint.key() as both nft_contract and token_id (Solana NFTs are 1:1 with mints).
-    #[account(init, payer = user, space = 8 + Provenance::INIT_SPACE,
-              seeds = [constants::PROVENANCE_SEED, &1u16.to_le_bytes(), nft_mint.key().as_ref(), nft_mint.key().as_ref()],
-              bump)]
-    pub provenance: Account<'info, Provenance>,
-
-    /// Per-collection metadata PDA.
-    /// For native Solana NFTs, nft_contract = nft_mint.key().
-    #[account(init_if_needed, payer = user, space = 8 + RebornCollection::INIT_SPACE,
-              seeds = [constants::COLLECTION_SEED, &1u16.to_le_bytes(), nft_mint.key().as_ref()], bump)]
-    pub collection: Account<'info, RebornCollection>,
-
-    /// Mint authority PDA
-    /// CHECK: PDA used as signer in CPIs
-    #[account(seeds = [constants::MINT_AUTHORITY_SEED, &1u16.to_le_bytes(), nft_mint.key().as_ref()], bump)]
-    pub mint_authority: UncheckedAccount<'info>,
-
-    /// Metaplex Core collection asset
-    /// CHECK: Owned by MPL Core after first mint
-    #[account(mut)]
-    pub collection_asset: UncheckedAccount<'info>,
-
-    /// New Metaplex Core asset (keypair)
-    /// CHECK: New account created by MPL Core CPI
-    #[account(mut)]
-    pub asset: UncheckedAccount<'info>,
-
-    /// CHECK: Metaplex Core program
-    #[account(address = mpl_core::ID)]
-    pub mpl_core_program: AccountInfo<'info>,
-
-    /// SPL Token program for NFT transfer
-    pub token_program: Program<'info, anchor_spl::token::Token>,
-
-    pub system_program: Program<'info, System>,
-
-    pub rent: Sysvar<'info, Rent>,
-}
+// NOTE: SealAndMintNative (Solana-native path) is disabled pending anchor-spl 0.30.1 / spl-token 4.x
+// compatibility fix for TokenAccount/Mint Discriminator traits. The cross-chain flow (mint_reborn)
+// is unaffected. Re-enable by removing the cfg gate and fixing the token type imports.
+// See: https://github.com/coral-xyz/anchor/issues/3025
 
 // ============ Account Structs ============
 
@@ -300,7 +217,7 @@ pub struct CollectionRegistry {
     pub count: u64,
     /// Bump for PDA
     pub bump: u8,
-    #[max_len(500)]
+    #[max_len(50)]
     pub collections: Vec<CollectionEntry>,
 }
 
@@ -407,6 +324,25 @@ pub mod ika_tensei_reborn {
         Ok(())
     }
 
+    /// Initialize a RebornCollection PDA. Called once per source collection
+    /// before the first mint_reborn.
+    pub fn init_reborn_collection(
+        ctx: Context<InitRebornCollection>,
+        source_chain: u16,
+        nft_contract: Vec<u8>,
+    ) -> Result<()> {
+        let collection = &mut ctx.accounts.collection;
+        collection.source_chain = source_chain;
+        collection.nft_contract = nft_contract;
+        collection.name = String::new();
+        collection.collection_asset_address = Pubkey::default();
+        collection.total_minted = 0;
+        collection.is_initialized = false;
+        collection.bump = ctx.bumps.collection;
+        msg!("RebornCollection PDA created");
+        Ok(())
+    }
+
     /// Mint a reborn NFT after verifying IKA dWallet signature
     ///
     /// Flow:
@@ -421,15 +357,17 @@ pub mod ika_tensei_reborn {
     /// 9. Store provenance
     pub fn mint_reborn(
         ctx: Context<MintReborn>,
-        signature: [u8; 64],
-        sig_hash: [u8; 32],
+        sig_hash: Vec<u8>,
         source_chain: u16,
         nft_contract: Vec<u8>,
         token_id: Vec<u8>,
+        signature: Vec<u8>,
         token_uri: String,
         collection_name: String,
     ) -> Result<()> {
         // ============ 1. Input validation ============
+        require!(signature.len() == 64, ErrorCode::InvalidSignature);
+        require!(sig_hash.len() == 32, ErrorCode::InvalidSigHash);
         require!(nft_contract.len() <= constants::MAX_CONTRACT_LENGTH, ErrorCode::ContractTooLong);
         require!(token_id.len() <= constants::MAX_TOKEN_ID_LENGTH, ErrorCode::TokenIdTooLong);
         require!(token_uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
@@ -443,39 +381,18 @@ pub mod ika_tensei_reborn {
             ErrorCode::InvalidReceiver
         );
 
-        // ============ 2. Verify sig_hash == sha256(signature) ============
-        // This prevents a caller from supplying an arbitrary sig_hash to claim a
-        // different replay-protection PDA while using a real signature.
-        let computed_sig_hash: [u8; 32] = Sha256::digest(&signature).into();
-        require!(
-            constant_time_eq::constant_time_eq(&computed_sig_hash, &sig_hash),
-            ErrorCode::InvalidSigHash
-        );
-
-        // ============ 3. Load minting pubkey from Config PDA ============
-        // The minting pubkey is stored on-chain at init — never accepted as input.
-        // This prevents attackers from passing their own keypair.
+        // ============ 2-5. Verify sig, compute message hash, check Ed25519 ============
+        // Heavy crypto (sha256 + ed25519) is in verify_seal() which has its own
+        // stack frame (#[inline(never)]) to stay under the BPF 4KB limit.
         let dwallet_pubkey = ctx.accounts.config.minting_pubkey;
-
-        // ============ 4. Reconstruct message hash ============
-        // Message = sha256(token_uri || token_id || receiver_pubkey) (v7 order)
-        // This must match exactly what the IKA dWallet signed on Sui.
-        let mut hasher = Sha256::new();
-        hasher.update(token_uri.as_bytes());
-        hasher.update(&token_id);
-        hasher.update(receiver_pubkey.as_ref());
-        let message_hash: [u8; 32] = hasher.finalize().into();
-
-        // ============ 5. Verify Ed25519 signature ============
-        // Checks pubkey, message, AND signature bytes from the Ed25519 precompile
-        // instruction — all three must match. This prevents an attacker who holds a
-        // *different* valid signature for the same (pubkey, message) from bypassing
-        // our replay protection with a new sig_hash.
-        verify_ed25519_signature(
+        verify_seal(
             &ctx.accounts.instructions_sysvar,
             &dwallet_pubkey,
-            &message_hash,
             &signature,
+            &sig_hash,
+            &token_uri,
+            &token_id,
+            &receiver_pubkey,
         )?;
 
         msg!("Signature verified against stored minting pubkey");
@@ -518,23 +435,12 @@ pub mod ika_tensei_reborn {
 
             msg!("Created new Metaplex Core collection: {}", collection_name);
 
-            // Initialize our RebornCollection metadata PDA
+            // Finalize our RebornCollection metadata PDA (pre-created by init_reborn_collection)
             let collection = &mut ctx.accounts.collection;
-            collection.source_chain = source_chain;
-            collection.nft_contract = nft_contract.clone();
             collection.name = collection_name.clone();
             collection.collection_asset_address = collection_asset_key;
-            collection.total_minted = 0;
             collection.is_initialized = true;
-            collection.bump = ctx.bumps.collection;
 
-            // Register in the collection registry
-            ctx.accounts.registry.add_collection(CollectionEntry {
-                source_chain,
-                nft_contract: nft_contract.clone(),
-                collection_address: collection_asset_key,
-                created_at: Clock::get()?.unix_timestamp,
-            });
         } else {
             msg!("Using existing collection: {}", ctx.accounts.collection.name);
         }
@@ -542,12 +448,9 @@ pub mod ika_tensei_reborn {
         // ============ 8. Mint reborn NFT ============
         let collection = &mut ctx.accounts.collection;
 
-        // Build the NFT name: "{CollectionName} #{token_id}" if token_id is short and printable
-        let nft_name = if token_id.len() <= 8 {
-            format!("{} #{}", collection.name, String::from_utf8_lossy(&token_id))
-        } else {
-            collection.name.clone()
-        };
+        // Build the NFT name: "{CollectionName} #{decimal_token_id}"
+        // token_id is a big-endian uint256 (32 bytes), so strip leading zeros and convert to decimal.
+        let nft_name = format!("{} #{}", collection.name, token_id_to_decimal(&token_id));
 
         // CPI to Metaplex Core to mint the NFT, linked to our collection asset
         CreateV2CpiBuilder::new(&ctx.accounts.mpl_core_program)
@@ -556,7 +459,6 @@ pub mod ika_tensei_reborn {
             .authority(Some(&ctx.accounts.mint_authority))
             .payer(&ctx.accounts.payer)
             .owner(Some(&ctx.accounts.receiver))
-            .update_authority(Some(&ctx.accounts.mint_authority))
             .system_program(&ctx.accounts.system_program)
             .data_state(DataState::AccountState)
             .name(nft_name)
@@ -574,7 +476,7 @@ pub mod ika_tensei_reborn {
         provenance.token_id = token_id;
         provenance.token_uri = token_uri;
         provenance.dwallet_pubkey = dwallet_pubkey;
-        provenance.signature = signature;
+        provenance.signature = signature.try_into().unwrap(); // length validated above
         provenance.receiver = receiver_pubkey;
         provenance.sealed_at = Clock::get()?.unix_timestamp;
         provenance.is_initialized = true;
@@ -585,14 +487,10 @@ pub mod ika_tensei_reborn {
         Ok(())
     }
 
-    /// Seal a Solana-native NFT and mint a reborn NFT in one transaction.
-    ///
-    /// This is the Solana-to-Solana path — no Wormhole VAA or IKA signature needed.
-    /// The user's NFT is transferred to a program-owned PDA vault (permanent lock),
-    /// and a reborn NFT is minted directly to the user.
-    ///
-    /// SECURITY: nft_contract and token_id are derived from nft_mint.key() (on-chain),
-    /// NOT accepted as instruction parameters. This prevents fake provenance.
+    // NOTE: seal_and_mint_native disabled pending anchor-spl token type compatibility fix.
+    // See comment above SealAndMintNative struct definition.
+    // The cross-chain flow (mint_reborn) is unaffected.
+    /*
     pub fn seal_and_mint_native(
         ctx: Context<SealAndMintNative>,
         token_uri: String,
@@ -711,9 +609,67 @@ pub mod ika_tensei_reborn {
 
         Ok(())
     }
+    */
 }
 
 // ============ Helpers ============
+
+/// Convert a big-endian uint256 byte slice to a decimal string.
+/// Strips leading zeros, then converts to u128 if it fits, otherwise falls back to hex.
+fn token_id_to_decimal(bytes: &[u8]) -> String {
+    let trimmed: &[u8] = match bytes.iter().position(|&b| b != 0) {
+        Some(pos) => &bytes[pos..],
+        None => return "0".to_string(),
+    };
+    if trimmed.len() <= 16 {
+        let mut val: u128 = 0;
+        for &b in trimmed {
+            val = (val << 8) | b as u128;
+        }
+        val.to_string()
+    } else {
+        // Too large for u128, use 0x-prefixed hex
+        format!("0x{}", hex::encode(trimmed))
+    }
+}
+
+/// Verify the seal: sig_hash matches sha256(signature), message hash is correct,
+/// and Ed25519 signature is valid. Separated into its own stack frame to reduce
+/// the main mint_reborn function's stack usage below the BPF 4KB limit.
+#[inline(never)]
+fn verify_seal(
+    instructions_sysvar: &AccountInfo,
+    minting_pubkey: &[u8; 32],
+    signature: &[u8],
+    sig_hash: &[u8],
+    token_uri: &str,
+    token_id: &[u8],
+    receiver_pubkey: &Pubkey,
+) -> Result<()> {
+    // Verify sig_hash == sha256(signature)
+    let computed_sig_hash: [u8; 32] = Sha256::digest(signature).into();
+    require!(
+        constant_time_eq::constant_time_eq(&computed_sig_hash, sig_hash),
+        ErrorCode::InvalidSigHash
+    );
+
+    // Reconstruct message hash: sha256(token_uri || token_id || receiver)
+    let mut hasher = Sha256::new();
+    hasher.update(token_uri.as_bytes());
+    hasher.update(token_id);
+    hasher.update(receiver_pubkey.as_ref());
+    let message_hash: [u8; 32] = hasher.finalize().into();
+
+    // Verify Ed25519 signature via precompile
+    verify_ed25519_signature(
+        instructions_sysvar,
+        minting_pubkey,
+        &message_hash,
+        signature,
+    )?;
+
+    Ok(())
+}
 
 /// Verify an Ed25519 signature using Solana's native precompile.
 ///
@@ -739,9 +695,9 @@ pub mod ika_tensei_reborn {
 /// ```
 fn verify_ed25519_signature(
     instructions_sysvar: &AccountInfo,
-    expected_pubkey: &[u8; 32],
-    expected_message: &[u8; 32],
-    expected_signature: &[u8; 64],
+    expected_pubkey: &[u8],
+    expected_message: &[u8],
+    expected_signature: &[u8],
 ) -> Result<()> {
     // The Ed25519 precompile instruction MUST be at index 0 in the transaction.
     // This prevents confusion with Ed25519 instructions from other programs in
@@ -771,9 +727,9 @@ fn verify_ed25519_signature(
 /// Checks all three fields: signature bytes, public key, and message.
 fn verify_ed25519_ix_data(
     data: &[u8],
-    expected_pubkey: &[u8; 32],
-    expected_message: &[u8; 32],
-    expected_signature: &[u8; 64],
+    expected_pubkey: &[u8],
+    expected_message: &[u8],
+    expected_signature: &[u8],
 ) -> Result<()> {
     // Minimum header size: 2 (count + padding) + 14 (one signature entry header)
     if data.len() < 16 {

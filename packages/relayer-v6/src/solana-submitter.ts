@@ -29,7 +29,6 @@ const MPL_CORE_PROGRAM_ID = new PublicKey('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4
 // NOTE: The old "used_signatures" global PDA no longer exists in the program.
 // Replay protection now uses per-signature PDAs with seed ["sig_used", sig_hash].
 const SEED_SIG_USED = Buffer.from('sig_used');
-const SEED_COLLECTION_REGISTRY = Buffer.from('collection_registry');
 const SEED_PROVENANCE = Buffer.from('provenance');
 const SEED_COLLECTION = Buffer.from('reborn_collection');
 const SEED_MINT_AUTHORITY = Buffer.from('mint_authority');
@@ -48,6 +47,7 @@ function anchorDiscriminator(name: string): Buffer {
 }
 
 const DISCRIMINATOR_MINT_REBORN = anchorDiscriminator('mint_reborn');
+const DISCRIMINATOR_INIT_REBORN_COLLECTION = anchorDiscriminator('init_reborn_collection');
 
 // ─── On-chain account parsing ────────────────────────────────────────────────
 
@@ -94,24 +94,26 @@ function parseCollectionAssetAddress(data: Buffer): PublicKey | null {
  * Encode the mint_reborn instruction arguments using Borsh, which is what Anchor
  * expects on-chain.
  *
- * Layout (all integers are little-endian):
+ * Layout (all integers are little-endian, params reordered so PDA-seed
+ * params come first — this lets Anchor's #[instruction] skip deserializing
+ * the large signature Vec in the try_accounts stack frame):
  *   [u8; 8]  – discriminator
- *   [u8; 64] – signature (fixed-size array, no length prefix)
- *   [u8; 32] – sig_hash (SHA256 of signature, for PDA verification)
- *   u16      – source_chain
- *   u32 + [] – nft_contract (Vec<u8>)
- *   u32 + [] – token_id (Vec<u8>)
- *   u32 + [] – token_uri (String = Vec<u8> of UTF-8)
+ *   u32 + [] – sig_hash (Vec<u8>, 32 bytes, PDA seed)
+ *   u16      – source_chain (PDA seed)
+ *   u32 + [] – nft_contract (Vec<u8>, PDA seed)
+ *   u32 + [] – token_id (Vec<u8>, PDA seed)
+ *   u32 + [] – signature (Vec<u8>, 64 bytes, NOT a PDA seed)
+ *   u32 + [] – token_uri (String)
  *   u32 + [] – collection_name (String)
  *
  * NOTE: dwallet_pubkey is NOT included — it's loaded from the MintConfig PDA on-chain.
  */
 function encodeMintRebornArgs(
-  signature: Uint8Array,
   sigHash: Uint8Array,
   sourceChain: number,
   nftContract: Uint8Array,
   tokenId: Uint8Array,
+  signature: Uint8Array,
   tokenUri: string,
   collectionName: string,
 ): Buffer {
@@ -123,11 +125,11 @@ function encodeMintRebornArgs(
 
   const totalLen =
     8 +   // discriminator
-    64 +  // signature fixed array
-    32 +  // sig_hash fixed array
+    4 + sigHash.length +           // sig_hash Vec<u8>
     2 +   // source_chain u16
     4 + nftContract.length +      // Vec<u8>
     4 + tokenId.length +           // Vec<u8>
+    4 + signature.length +         // signature Vec<u8>
     4 + tokenUriBytes.length +     // String
     4 + collectionNameBytes.length; // String
 
@@ -138,29 +140,33 @@ function encodeMintRebornArgs(
   DISCRIMINATOR_MINT_REBORN.copy(buf, offset);
   offset += 8;
 
-  // 2. signature: [u8; 64] (no length prefix for fixed arrays in Borsh)
-  buf.set(signature, offset);
-  offset += 64;
-
-  // 3. sig_hash: [u8; 32] (SHA256 of signature, for PDA seed verification)
+  // 2. sig_hash: Vec<u8> (SHA256 of signature, PDA seed)
+  buf.writeUInt32LE(sigHash.length, offset);
+  offset += 4;
   buf.set(sigHash, offset);
-  offset += 32;
+  offset += sigHash.length;
 
-  // 4. source_chain: u16 LE
+  // 3. source_chain: u16 LE (PDA seed)
   buf.writeUInt16LE(sourceChain, offset);
   offset += 2;
 
-  // 5. nft_contract: Vec<u8> → u32 len + bytes
+  // 4. nft_contract: Vec<u8> (PDA seed)
   buf.writeUInt32LE(nftContract.length, offset);
   offset += 4;
   buf.set(nftContract, offset);
   offset += nftContract.length;
 
-  // 6. token_id: Vec<u8>
+  // 5. token_id: Vec<u8> (PDA seed)
   buf.writeUInt32LE(tokenId.length, offset);
   offset += 4;
   buf.set(tokenId, offset);
   offset += tokenId.length;
+
+  // 6. signature: Vec<u8> (NOT a PDA seed — placed after PDA params)
+  buf.writeUInt32LE(signature.length, offset);
+  offset += 4;
+  buf.set(signature, offset);
+  offset += signature.length;
 
   // 7. token_uri: String
   buf.writeUInt32LE(tokenUriBytes.length, offset);
@@ -173,6 +179,31 @@ function encodeMintRebornArgs(
   offset += 4;
   collectionNameBytes.copy(buf, offset);
   // offset += collectionNameBytes.length; // not needed
+
+  return buf;
+}
+
+/**
+ * Encode the init_reborn_collection instruction arguments.
+ * Layout: discriminator + source_chain(u16) + nft_contract(Vec<u8>)
+ */
+function encodeInitRebornCollectionArgs(
+  sourceChain: number,
+  nftContract: Uint8Array,
+): Buffer {
+  const totalLen = 8 + 2 + 4 + nftContract.length;
+  const buf = Buffer.alloc(totalLen);
+  let offset = 0;
+
+  DISCRIMINATOR_INIT_REBORN_COLLECTION.copy(buf, offset);
+  offset += 8;
+
+  buf.writeUInt16LE(sourceChain, offset);
+  offset += 2;
+
+  buf.writeUInt32LE(nftContract.length, offset);
+  offset += 4;
+  buf.set(nftContract, offset);
 
   return buf;
 }
@@ -347,11 +378,6 @@ export class SolanaSubmitter {
       this.programId,
     );
 
-    const [registryPda] = PublicKey.findProgramAddressSync(
-      [SEED_COLLECTION_REGISTRY],
-      this.programId,
-    );
-
     const [provenancePda] = PublicKey.findProgramAddressSync(
       [SEED_PROVENANCE, sourceChainBuf, Buffer.from(nftContract), Buffer.from(tokenId)],
       this.programId,
@@ -406,7 +432,8 @@ export class SolanaSubmitter {
         );
       }
     } else {
-      // Collection PDA doesn't exist yet — first mint for this source collection
+      // Collection PDA doesn't exist yet — first mint for this source collection.
+      // We'll call init_reborn_collection before mint_reborn in the same tx.
       collectionAssetKeypair = Keypair.generate();
       collectionAssetPubkey = collectionAssetKeypair.publicKey;
       logger.info(
@@ -414,6 +441,9 @@ export class SolanaSubmitter {
         'Generating new collection asset keypair (new collection)',
       );
     }
+
+    // If collection PDA doesn't exist, create it first via init_reborn_collection
+    const needsCollectionInit = !collectionAccountInfo || collectionAccountInfo.data.length <= 8;
 
     // ── 4. Build Ed25519 pre-instruction ─────────────────────────────────────
     // The Solana program reads the Ed25519 instruction at index 0 from the
@@ -427,11 +457,11 @@ export class SolanaSubmitter {
     // ── 5. Encode Borsh instruction data ──────────────────────────────────────
     // NOTE: dwallet_pubkey is NOT included — loaded from MintConfig PDA on-chain
     const ixData = encodeMintRebornArgs(
-      signature,
       sigHash,
       sourceChain,
       nftContract,
       tokenId,
+      signature,
       tokenUri,
       collectionName,
     );
@@ -444,7 +474,6 @@ export class SolanaSubmitter {
         { pubkey: relayerKeypair.publicKey, isSigner: true,  isWritable: true  }, // payer
         { pubkey: receiverPubkey,           isSigner: false, isWritable: false }, // receiver
         { pubkey: sigRecordPda,             isSigner: false, isWritable: true  }, // sig_record (per-sig replay PDA)
-        { pubkey: registryPda,              isSigner: false, isWritable: true  }, // registry
         { pubkey: provenancePda,            isSigner: false, isWritable: true  }, // provenance
         { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection (program metadata PDA)
         { pubkey: mintAuthorityPda,         isSigner: false, isWritable: false }, // mint_authority (PDA signer for CPIs)
@@ -458,9 +487,26 @@ export class SolanaSubmitter {
       data: ixData,
     };
 
-    // ── 7. Assemble transaction: Ed25519 verify FIRST, then mint ─────────────
+    // ── 7. Assemble transaction ──────────────────────────────────────────────
+    // Order: Ed25519 verify (index 0) → [init_reborn_collection if needed] → mint_reborn
     const transaction = new Transaction();
     transaction.add(ed25519Ix);   // index 0 → program reads this for verification
+
+    if (needsCollectionInit) {
+      // Init the RebornCollection PDA before minting (same tx for atomicity)
+      const initCollectionIx = {
+        programId: this.programId,
+        keys: [
+          { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection
+          { pubkey: relayerKeypair.publicKey,  isSigner: true,  isWritable: true  }, // payer
+          { pubkey: SystemProgram.programId,   isSigner: false, isWritable: false }, // system_program
+        ],
+        data: encodeInitRebornCollectionArgs(sourceChain, nftContract),
+      };
+      transaction.add(initCollectionIx);
+      logger.info('Added init_reborn_collection instruction to transaction');
+    }
+
     transaction.add(mintRebornIx);
 
     // ── 8. Sign and send ─────────────────────────────────────────────────────

@@ -263,10 +263,28 @@ impl SealInitiator {
         );
         Promise::new(self.wormhole_account.clone()).function_call(
             "register_emitter".to_string(),
-            vec![],
+            b"{}".to_vec(),
             env::attached_deposit(),
             Gas::from_tgas(20),
         )
+    }
+
+    /// Update the Wormhole core bridge account.
+    pub fn update_wormhole_account(&mut self, new_wormhole_account: AccountId) {
+        require!(
+            env::predecessor_account_id() == self.owner,
+            "Only owner"
+        );
+        require!(
+            env::is_valid_account_id(new_wormhole_account.as_bytes()),
+            "Invalid Wormhole account"
+        );
+        log!(
+            "Wormhole account updated: {} -> {}",
+            self.wormhole_account,
+            new_wormhole_account
+        );
+        self.wormhole_account = new_wormhole_account;
     }
 
     /// Pause/unpause the contract.
@@ -412,7 +430,8 @@ impl NonFungibleTokenReceiver for SealInitiator {
     fn nft_on_transfer(
         &mut self,
         sender_id: AccountId,
-        _previous_owner_id: AccountId,
+        #[allow(unused_variables)]
+        previous_owner_id: AccountId,
         token_id: String,
         msg: String,
     ) -> PromiseOrValue<bool> {
@@ -423,17 +442,10 @@ impl NonFungibleTokenReceiver for SealInitiator {
             return PromiseOrValue::Value(true);
         }
 
-        // Verify sufficient storage deposit to cover LookupMap/LookupSet inserts.
-        // The caller (NFT contract, on behalf of sender) should attach enough
-        // deposit. If not, refund the NFT to prevent storage-griefing.
-        if env::attached_deposit() < STORAGE_DEPOSIT_MIN {
-            log!(
-                "Insufficient storage deposit: {} < {}. Refunding NFT.",
-                env::attached_deposit(),
-                STORAGE_DEPOSIT_MIN
-            );
-            return PromiseOrValue::Value(true);
-        }
+        // NOTE: nft_on_transfer is called by the NFT contract as a cross-contract
+        // callback — env::attached_deposit() is always 0 here regardless of what
+        // the user attached to nft_transfer_call. Storage costs are covered by the
+        // contract's own balance.
 
         // Parse seal parameters from msg
         let seal_msg: SealMsg = match serde_json::from_str(&msg) {

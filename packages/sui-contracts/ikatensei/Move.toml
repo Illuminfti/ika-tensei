@@ -7,7 +7,8 @@ ika_dwallet_2pc_mpc = { git = "https://github.com/dwallet-labs/ika.git", subdir 
 ika = { git = "https://github.com/dwallet-labs/ika.git", subdir = "deployed_contracts/testnet/ika", rev = "main" }
 
 # Wormhole — REQUIRED for VAA verification (parse_and_verify)
-Wormhole = { git = "https://github.com/wormhole-foundation/wormhole.git", subdir = "sui/wormhole", rev = "main" }
+# Use sui/testnet branch which has published-at set to the official testnet deployment
+Wormhole = { git = "https://github.com/wormhole-foundation/wormhole.git", subdir = "sui/wormhole", rev = "sui/testnet" }
 
 [addresses]
 ikatensei = "0x0"

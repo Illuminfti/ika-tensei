@@ -1,44 +1,45 @@
 /**
- * Sui Listener - Subscribes to SealSigned events from the Sui Orchestrator
+ * Sui Listener — HTTP polling-based event indexer.
+ *
+ * Uses periodic queryEvents() calls instead of WebSocket subscriptions.
+ * Pattern adapted from Patara DCA backend indexer.
  *
  * Features:
- * - Real-time WebSocket subscription via `subscribeEvent`
+ * - Periodic HTTP polling via setInterval + queryEvents
  * - Cursor persistence so missed events are replayed on restart
- * - Automatic reconnect on WebSocket disconnect
+ * - Overlap guard prevents concurrent polls
+ * - Pagination handles burst of events in a single poll cycle
  */
 
 import { SuiClient, type SuiEvent } from '@mysten/sui/client';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import path from 'path';
 import { getConfig } from './config.js';
 import type { EventCursor } from './types.js';
 import { logger } from './logger.js';
+import { getCursor, saveCursor as dbSaveCursor } from './db.js';
 
 export type EventHandler<T = Record<string, unknown>> = (event: T, eventId: string) => Promise<void>;
 
-/** Base cursor filename — suffixed per event type to avoid conflicts */
-const CURSOR_DIR = process.cwd();
+/** Default poll interval in milliseconds */
+const DEFAULT_POLL_INTERVAL_MS = 5_000;
 
 /**
- * SuiListener handles subscription and historical replay of Sui Move events.
+ * SuiListener polls for Sui Move events using queryEvents (HTTP).
  * Accepts a configurable event type suffix so multiple listeners can coexist
  * (e.g., one for SealPending, one for SealSigned).
  */
 export class SuiListener<T = Record<string, unknown>> {
   private client: SuiClient;
-  private wsClient: SuiClient;
-  private _unsubscribe: (() => void) | null = null;
-  private _isConnected = false;
   private _eventHandler: EventHandler<T> | null = null;
   private _eventType: string;
-  private _cursorSuffix: string;
+  private _intervalId: ReturnType<typeof setInterval> | null = null;
+  private _polling = false;
+  private _isActive = false;
 
   constructor(eventTypeSuffix: string = 'SealSigned') {
     const config = getConfig();
     this.client = new SuiClient({ url: config.suiRpcUrl });
-    this.wsClient = new SuiClient({ url: config.suiWsUrl });
-    this._eventType = `${config.suiPackageId}::orchestrator::${eventTypeSuffix}`;
-    this._cursorSuffix = eventTypeSuffix.toLowerCase();
+    // Sui events always reference the original defining package ID, not upgrades
+    this._eventType = `${config.suiOriginalPackageId}::orchestrator::${eventTypeSuffix}`;
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -61,106 +62,104 @@ export class SuiListener<T = Record<string, unknown>> {
    *
    * 1. Loads the last-seen cursor from disk.
    * 2. Replays any missed events since that cursor.
-   * 3. Switches to a live WebSocket subscription.
+   * 3. Starts periodic polling for new events.
    */
   async start(handler: EventHandler<T>): Promise<void> {
     this._eventHandler = handler;
 
+    // Replay historical events: from saved cursor if available,
+    // otherwise from the very beginning.
     const cursor = this.loadCursor();
-    if (cursor) {
-      logger.info({ cursor }, 'Replaying missed events from cursor');
-      await this.replayFromCursor(cursor, handler);
-    }
+    logger.info(
+      { cursor: cursor ?? 'none — replaying from beginning', eventType: this._eventType },
+      'Replaying missed events',
+    );
+    await this.pollOnce(handler);
 
-    await this.subscribe(handler);
+    // Start periodic polling
+    this._intervalId = setInterval(async () => {
+      if (this._polling) return; // Guard against overlapping polls
+      try {
+        await this.pollOnce(handler);
+      } catch (err) {
+        logger.error({ err, eventType: this._eventType }, 'Poll cycle failed');
+      }
+    }, DEFAULT_POLL_INTERVAL_MS);
+
+    this._isActive = true;
+    logger.info(
+      { eventType: this._eventType, intervalMs: DEFAULT_POLL_INTERVAL_MS },
+      'Event polling started',
+    );
   }
 
   /**
-   * Unsubscribe from real-time events and clean up.
+   * Stop polling and clean up.
    */
   async unsubscribeFromEvents(): Promise<void> {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-      this._isConnected = false;
-      logger.info('Unsubscribed from Sui events');
+    if (this._intervalId) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+      this._isActive = false;
+      logger.info({ eventType: this._eventType }, 'Event polling stopped');
     }
   }
 
   /**
-   * Reconnect after a lost WebSocket connection.
+   * Restart polling (stop + replay + start).
    */
   async reconnect(): Promise<void> {
-    logger.info('Reconnecting to Sui WebSocket');
     await this.unsubscribeFromEvents();
     if (this._eventHandler) {
-      await this.subscribe(this._eventHandler);
+      await this.start(this._eventHandler);
     }
   }
 
-  /** Whether the WebSocket subscription is live. */
+  /** Whether polling is active. */
   get isActive(): boolean {
-    return this._isConnected;
+    return this._isActive;
   }
 
   // ─── Private Helpers ───────────────────────────────────────────────────────
 
   /**
-   * Subscribe to real-time events via WebSocket.
+   * Single poll cycle: query events since last cursor, process them,
+   * and paginate through all available pages.
    */
-  private async subscribe(handler: EventHandler<T>): Promise<void> {
-    logger.info({ eventType: this._eventType }, 'Subscribing to Sui events');
-
+  private async pollOnce(handler: EventHandler<T>): Promise<void> {
+    this._polling = true;
     try {
-      this._unsubscribe = await this.wsClient.subscribeEvent({
-        filter: { MoveEventType: this._eventType },
-        onMessage: async (event) => {
+      let cursor: EventCursor | undefined = this.loadCursor() ?? undefined;
+      let processed = 0;
+
+      while (true) {
+        const page = await this.client.queryEvents({
+          query: { MoveEventType: this._eventType },
+          cursor,
+          limit: 50,
+          order: 'ascending',
+        });
+
+        for (const event of page.data) {
           await this.dispatchEvent(event, handler);
-        },
-      });
-      this._isConnected = true;
-      logger.info('Live subscription active');
-    } catch (err) {
-      this._isConnected = false;
-      logger.error({ err }, 'Failed to subscribe to Sui events');
-      throw err;
-    }
-  }
+          processed++;
+        }
 
-  /**
-   * Use `queryEvents` to fetch and process all events since the given cursor.
-   * This catches up on events that arrived while the relayer was offline.
-   */
-  private async replayFromCursor(
-    startCursor: EventCursor,
-    handler: EventHandler<T>,
-  ): Promise<void> {
-    let cursor: EventCursor | undefined = startCursor;
-    let replayed = 0;
-
-    while (true) {
-      const page = await this.client.queryEvents({
-        query: { MoveEventType: this._eventType },
-        cursor,
-        limit: 50,
-        order: 'ascending',
-      });
-
-      for (const event of page.data) {
-        await this.dispatchEvent(event, handler);
-        replayed++;
+        if (!page.hasNextPage || !page.nextCursor) {
+          break;
+        }
+        cursor = {
+          txDigest: page.nextCursor.txDigest,
+          eventSeq: page.nextCursor.eventSeq,
+        };
       }
 
-      if (!page.hasNextPage || !page.nextCursor) {
-        break;
+      if (processed > 0) {
+        logger.info({ processed, eventType: this._eventType }, 'Poll cycle processed events');
       }
-      cursor = {
-        txDigest: page.nextCursor.txDigest,
-        eventSeq: page.nextCursor.eventSeq,
-      };
+    } finally {
+      this._polling = false;
     }
-
-    logger.info({ replayed }, 'Finished replaying missed events');
   }
 
   /**
@@ -195,42 +194,17 @@ export class SuiListener<T = Record<string, unknown>> {
       });
     } catch (err) {
       logger.error({ err, eventId }, 'Error processing Sui event');
-      // Do NOT update cursor on failure so we retry on next restart
+      // Do NOT update cursor on failure so we retry on next poll
     }
   }
 
   // ─── Cursor Persistence ────────────────────────────────────────────────────
 
-  /**
-   * Load the last-seen cursor from disk. Returns null if not found or corrupt.
-   */
-  private get cursorFile(): string {
-    return path.join(CURSOR_DIR, `.relayer-cursor-${this._cursorSuffix}.json`);
-  }
-
   private loadCursor(): EventCursor | null {
-    try {
-      if (!existsSync(this.cursorFile)) return null;
-      const raw = readFileSync(this.cursorFile, 'utf-8');
-      const parsed = JSON.parse(raw) as EventCursor;
-      if (parsed.txDigest && parsed.eventSeq) {
-        return parsed;
-      }
-      return null;
-    } catch {
-      logger.warn({ file: this.cursorFile }, 'Could not load cursor file, starting from live');
-      return null;
-    }
+    return getCursor(this._eventType) ?? null;
   }
 
-  /**
-   * Persist the last successfully processed event cursor.
-   */
   private saveCursor(cursor: EventCursor): void {
-    try {
-      writeFileSync(this.cursorFile, JSON.stringify(cursor), 'utf-8');
-    } catch (err) {
-      logger.warn({ err, cursor }, 'Failed to save cursor');
-    }
+    dbSaveCursor(this._eventType, cursor);
   }
 }

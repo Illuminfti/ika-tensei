@@ -29,12 +29,14 @@ import { getConfig } from './config.js';
 import { SuiListener } from './sui-listener.js';
 import { SolanaSubmitter } from './solana-submitter.js';
 import { DWalletCreator } from './dwallet-creator.js';
+import { rateLimitSuiClient } from './rate-limited-sui-client.js';
 import { TreasuryManager } from './treasury-manager.js';
 import { PresignPool } from './presign-pool.js';
 import { SealSigner } from './seal-signer.js';
 import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
+import { initDb, createSession, getSession, updateSession, updateSessionByDeposit } from './db.js';
 import type {
   SealSignedEvent,
   SealPendingEvent,
@@ -68,10 +70,10 @@ export class Relayer {
   private sealSigner?: SealSigner;
   private vaaIngester?: VAAIngester;
 
-  /** In-memory seal session tracker (production: use Redis or DB) */
-  private readonly sessions = new Map<string, SealSession>();
-
   constructor() {
+    const config = getConfig();
+    initDb(config.dbPath);
+
     this.sealSignedListener = new SuiListener<SealSignedEvent>('SealSigned');
     this.sealPendingListener = new SuiListener<SealPendingEvent>('SealPending');
     this.solanaSubmitter = new SolanaSubmitter();
@@ -110,7 +112,7 @@ export class Relayer {
           status: 'awaiting_payment',
           createdAt: Date.now(),
         };
-        this.sessions.set(sessionId, session);
+        createSession(session);
 
         logger.info({ sessionId, solanaWallet, sourceChain }, 'Seal session created — awaiting payment');
 
@@ -139,7 +141,7 @@ export class Relayer {
           return;
         }
 
-        const session = this.sessions.get(sessionId);
+        const session = getSession(sessionId);
         if (!session) {
           res.status(404).json({ error: 'Session not found' });
           return;
@@ -164,22 +166,26 @@ export class Relayer {
           return;
         }
 
-        session.status = 'payment_confirmed';
-        session.paymentTxSignature = paymentTxSignature;
-        session.paymentVerifiedAt = Date.now();
+        updateSession(sessionId, {
+          status: 'payment_confirmed',
+          payment_tx_sig: paymentTxSignature,
+          payment_verified: Date.now(),
+        });
 
         logger.info(
           { sessionId, paymentTxSignature, lamports: verification.actualLamports },
           'Payment verified — creating dWallet',
         );
 
-        session.status = 'creating_dwallet';
+        updateSession(sessionId, { status: 'creating_dwallet' });
         const dwallet = await this.dwalletCreator.create(session.sourceChain);
 
-        session.dwalletId = dwallet.id;
-        session.depositAddress = dwallet.depositAddress;
-        session.dwalletPubkey = dwallet.pubkey;
-        session.status = 'waiting_deposit';
+        updateSession(sessionId, {
+          status: 'waiting_deposit',
+          dwallet_id: dwallet.id,
+          deposit_address: dwallet.depositAddress,
+          dwallet_pubkey: Buffer.from(dwallet.pubkey),
+        });
 
         logger.info(
           { sessionId, dwalletId: dwallet.id, depositAddress: dwallet.depositAddress },
@@ -202,7 +208,7 @@ export class Relayer {
      * GET /api/seal/:id/status
      */
     this.app.get('/api/seal/:id/status', (req, res) => {
-      const session = this.sessions.get(req.params.id);
+      const session = getSession(req.params.id);
       if (!session) {
         res.status(404).json({ error: 'Seal session not found' });
         return;
@@ -273,9 +279,6 @@ export class Relayer {
     // Initialize v8 services (treasury, presign pool, seal signer)
     await this.initializeSigningServices();
 
-    // Initialize and start VAA ingester (polls Wormholescan for source chain VAAs)
-    await this.initializeVAAIngester();
-
     // Start health endpoint
     this.healthServer.start();
 
@@ -285,15 +288,18 @@ export class Relayer {
       logger.info({ port: config.apiPort }, 'API server listening');
     });
 
-    // Subscribe to SealPending events → trigger signing flow
+    // Subscribe to event listeners BEFORE starting VAA ingester
+    // (otherwise process_vaa fires SealPending before the listener is ready)
     await this.sealPendingListener.start(async (event, eventId) => {
       await this.handleSealPending(event, eventId);
     });
 
-    // Subscribe to SealSigned events → submit to Solana
     await this.sealSignedListener.start(async (event, eventId) => {
       await this.processSealEvent(event, eventId);
     });
+
+    // Initialize and start VAA ingester AFTER event listeners are subscribed
+    await this.initializeVAAIngester();
 
     this._isRunning = true;
     logger.info('Relayer is running');
@@ -332,7 +338,7 @@ export class Relayer {
       return;
     }
 
-    const sui = new SuiClient({ url: config.suiRpcUrl });
+    const sui = rateLimitSuiClient(new SuiClient({ url: config.suiRpcUrl }));
     const suiKeypair = this.loadSuiKeypair(config.suiKeypairPath);
     const ikaConfig = getNetworkConfig(config.ikaNetwork);
     const ikaClient = new IkaClient({ suiClient: sui, config: ikaConfig });
@@ -421,7 +427,10 @@ export class Relayer {
    * Handle SealPending event — trigger the signing flow.
    */
   private async handleSealPending(event: SealPendingEvent, eventId: string): Promise<void> {
-    logger.info({ eventId, vaaHash: event.vaa_hash }, 'Processing SealPending event');
+    const vaaHashDisplay = Array.isArray(event.vaa_hash)
+      ? Buffer.from(event.vaa_hash).toString('hex')
+      : event.vaa_hash;
+    logger.info({ eventId, vaaHash: vaaHashDisplay }, 'Processing SealPending event');
 
     if (!this.sealSigner) {
       logger.error({ eventId }, 'Seal signer not initialized — cannot sign');
@@ -430,9 +439,24 @@ export class Relayer {
 
     try {
       await this.sealSigner.signAndComplete(event);
-      logger.info({ eventId, vaaHash: event.vaa_hash }, 'Signing flow completed');
+      logger.info({ eventId, vaaHash: vaaHashDisplay }, 'Signing flow completed');
     } catch (err) {
-      logger.error({ err, eventId, vaaHash: event.vaa_hash }, 'Signing flow failed');
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      // MoveAbort errors are non-retriable (e.g., seal already completed, invalid state).
+      // Don't rethrow — let the cursor advance past this event.
+      if (errMsg.includes('MoveAbort') || errMsg.includes('already')) {
+        logger.warn(
+          { err, eventId, vaaHash: vaaHashDisplay },
+          'Signing flow failed with non-retriable error — skipping event',
+        );
+        return;
+      }
+
+      // For transient errors (network, timeout), rethrow so the cursor
+      // stays put and we retry on the next poll cycle.
+      logger.error({ err, eventId, vaaHash: vaaHashDisplay }, 'Signing flow failed — will retry');
+      throw err;
     }
   }
 
@@ -445,7 +469,8 @@ export class Relayer {
     try {
       const processedSeal = this.parseSealEvent(event);
 
-      this.updateSessionStatus(event.deposit_address, 'minting');
+      const depositAddressHex = Buffer.from(toBytes(event.deposit_address)).toString('hex');
+      this.updateSessionStatus(depositAddressHex, 'minting');
 
       logger.info(
         {
@@ -468,14 +493,14 @@ export class Relayer {
         );
         this.healthServer.incrementProcessed();
         this.healthServer.setLastProcessedEvent(eventId);
-        this.updateSessionStatus(event.deposit_address, 'complete');
+        this.updateSessionStatus(depositAddressHex, 'complete');
       } else {
         logger.error(
           { eventId, error: result.error, retries: result.retries },
           'Failed to process SealSigned event',
         );
         this.healthServer.incrementFailed();
-        this.updateSessionStatusError(event.deposit_address, result.error ?? 'Unknown error');
+        this.updateSessionStatusError(depositAddressHex, result.error ?? 'Unknown error');
       }
     } catch (err) {
       logger.error({ err, eventId }, 'Exception processing SealSigned event');
@@ -484,15 +509,15 @@ export class Relayer {
   }
 
   private parseSealEvent(event: SealSignedEvent): ProcessedSeal {
-    const signature = this.hexToUint8Array(event.signature, 64, 'signature');
-    const dwalletPubkey = this.hexToUint8Array(event.dwallet_pubkey, 32, 'dwallet_pubkey');
-    const messageHash = this.hexToUint8Array(event.message_hash, 32, 'message_hash');
-    const receiver = this.hexToUint8Array(event.receiver, 32, 'receiver');
-    const nftContract = this.hexToBytes(event.nft_contract);
-    const tokenId = this.hexToBytes(event.token_id);
-    const tokenUriBytes = this.hexToBytes(event.token_uri);
-    const tokenUri = Buffer.from(tokenUriBytes).toString('utf-8');
-    const collectionName = this.deriveCollectionName(event.source_chain, event.nft_contract);
+    const signature = toBytes(event.signature);
+    const dwalletPubkey = toBytes(event.dwallet_pubkey);
+    const messageHash = toBytes(event.message_hash);
+    const receiver = toBytes(event.receiver);
+    const nftContract = toBytes(event.nft_contract);
+    const tokenId = toBytes(event.token_id);
+    const tokenUri = Buffer.from(toBytes(event.token_uri)).toString('utf-8');
+    const nftContractHex = Buffer.from(nftContract).toString('hex');
+    const collectionName = this.deriveCollectionName(event.source_chain, nftContractHex);
 
     return {
       signature,
@@ -510,22 +535,11 @@ export class Relayer {
   // ─── Session Management ─────────────────────────────────────────────────────
 
   private updateSessionStatus(depositAddress: string, status: SealSession['status']): void {
-    for (const session of this.sessions.values()) {
-      if (session.depositAddress && session.depositAddress === depositAddress) {
-        session.status = status;
-        return;
-      }
-    }
+    updateSessionByDeposit(depositAddress, status);
   }
 
   private updateSessionStatusError(depositAddress: string, error: string): void {
-    for (const session of this.sessions.values()) {
-      if (session.depositAddress && session.depositAddress === depositAddress) {
-        session.status = 'error';
-        session.error = error;
-        return;
-      }
-    }
+    updateSessionByDeposit(depositAddress, 'error', error);
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -557,34 +571,8 @@ export class Relayer {
     }
   }
 
-  private hexToUint8Array(hex: string, expectedLen: number, fieldName?: string): Uint8Array {
-    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-    if (clean.length !== expectedLen * 2) {
-      throw new Error(
-        `${fieldName ?? 'field'}: expected ${expectedLen} bytes (${expectedLen * 2} hex chars), got ${clean.length} chars from "${hex.slice(0, 20)}..."`,
-      );
-    }
-    const bytes = new Uint8Array(expectedLen);
-    for (let i = 0; i < expectedLen; i++) {
-      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    }
-    return bytes;
-  }
-
-  private hexToBytes(hex: string): Uint8Array {
-    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-    if (clean.length % 2 !== 0) {
-      throw new Error('Hex string must have even length');
-    }
-    const bytes = new Uint8Array(clean.length / 2);
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    }
-    return bytes;
-  }
-
-  private deriveCollectionName(sourceChain: number, nftContract: string): string {
-    const shortId = nftContract.slice(-8);
+  private deriveCollectionName(sourceChain: number, nftContractHex: string): string {
+    const shortId = nftContractHex.slice(-8);
     return `Reborn Collection ${sourceChain}:${shortId}`;
   }
 
@@ -605,6 +593,45 @@ export class Relayer {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Convert Sui event vector<u8> fields to Uint8Array.
+ * Sui SDK may return these as number[], base64 string, or hex string.
+ */
+function toBytes(value: number[] | string | Uint8Array): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) return new Uint8Array(value);
+  if (typeof value === 'string') {
+    if (value.startsWith('0x')) {
+      const clean = value.slice(2);
+      const bytes = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    }
+    // Try base64 first (Sui SDK sometimes returns base64 for vector<u8>)
+    try {
+      const binary = atob(value);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    } catch {
+      // Fall back to hex
+      const bytes = new Uint8Array(value.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    }
+  }
+  throw new Error(`Cannot convert to bytes: ${typeof value}`);
+}
+
+/**
+ * Convert hex string to Uint8Array (for env var parsing).
+ */
 function hexToBytes(hex: string): Uint8Array {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
   const bytes = new Uint8Array(clean.length / 2);

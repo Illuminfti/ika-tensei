@@ -61,11 +61,11 @@ module ikatensei::signing {
         /// The contract's own minting dWallet capability.
         /// Created via create_minting_dwallet(), never leaves this struct.
         minting_cap: Option<DWalletCap>,
-        /// EdDSA = 4
+        /// EdDSA = 0 (relative to Ed25519 curve)
         signature_algorithm: u32,
-        /// SHA512 = 3
+        /// SHA512 = 0 (relative to Ed25519 + EdDSA)
         hash_scheme: u32,
-        /// Ed25519 = 3
+        /// Ed25519 = 2 (IKA curve: SECP256K1=0, SECP256R1=1, ED25519=2, RISTRETTO=3)
         curve: u32,
     }
 
@@ -75,9 +75,9 @@ module ikatensei::signing {
         let state = SigningState {
             id: object::new(ctx),
             minting_cap: option::none(),
-            signature_algorithm: 4,
-            hash_scheme: 3,
-            curve: 3,
+            signature_algorithm: 0,
+            hash_scheme: 0,
+            curve: 2,
         };
         sui::transfer::share_object(state);
     }
@@ -194,8 +194,8 @@ module ikatensei::signing {
 
         let presign = coordinator.request_global_presign(
             enc_key_id,
-            3, // Ed25519
-            4, // EdDSA
+            2, // Ed25519 (IKA curve number)
+            0, // EdDSA (relative to Ed25519 curve)
             session_identifier,
             payment_ika,
             payment_sui,
@@ -208,6 +208,33 @@ module ikatensei::signing {
         });
 
         transfer::public_transfer(presign, ctx.sender());
+    }
+
+    // ── Admin Migration ──
+
+    /// Update the signing parameters (curve, signature algorithm, hash scheme).
+    /// Called by orchestrator after an upgrade to fix incorrect values.
+    public(package) fun update_params(
+        state: &mut SigningState,
+        curve: u32,
+        signature_algorithm: u32,
+        hash_scheme: u32,
+    ) {
+        state.curve = curve;
+        state.signature_algorithm = signature_algorithm;
+        state.hash_scheme = hash_scheme;
+    }
+
+    /// Reset the minting cap (e.g. after a rejected DKG).
+    /// The old DWalletCap is transferred to the sender for disposal.
+    public(package) fun reset_minting_cap(
+        state: &mut SigningState,
+        ctx: &mut TxContext,
+    ) {
+        if (state.minting_cap.is_some()) {
+            let cap = state.minting_cap.extract();
+            transfer::public_transfer(cap, ctx.sender());
+        };
     }
 
     // ── Accessors ──

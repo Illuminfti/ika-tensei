@@ -28,9 +28,12 @@ import {
 import type { IkaConfig } from '@ika.xyz/sdk';
 import { getNetworkConfig } from '@ika.xyz/sdk';
 import { readFileSync } from 'fs';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import { keccak_256 } from '@noble/hashes/sha3';
+import { secp256k1 } from '@noble/curves/secp256k1';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
+import { rateLimitSuiClient } from './rate-limited-sui-client.js';
 import type { CreatedDWallet } from './types.js';
 
 // Chain family mapping for address derivation
@@ -41,6 +44,22 @@ const EVM_CHAINS = new Set([
 ]);
 
 const ED25519_CHAINS = new Set(['sui', 'solana', 'aptos', 'near']);
+
+// IKA Curve string → u32 mapping for Move contracts.
+// Curve enum in @ika.xyz/sdk is string-valued ("SECP256K1", "ED25519", etc.),
+// but the IKA coordinator expects u32 IDs.
+const CURVE_TO_U32: Record<string, number> = {
+  [Curve.SECP256K1]: 0,
+  [Curve.SECP256R1]: 1,
+  [Curve.ED25519]: 2,
+  [Curve.RISTRETTO]: 3,
+};
+
+function curveToU32(curve: typeof Curve[keyof typeof Curve]): number {
+  const id = CURVE_TO_U32[curve];
+  if (id === undefined) throw new Error(`Unknown IKA curve: ${curve}`);
+  return id;
+}
 
 // Map source chain to IKA Curve
 function curveForChain(sourceChain: string): typeof Curve[keyof typeof Curve] {
@@ -60,7 +79,7 @@ export class DWalletCreator {
 
   constructor() {
     const config = getConfig();
-    this.sui = new SuiClient({ url: config.suiRpcUrl });
+    this.sui = rateLimitSuiClient(new SuiClient({ url: config.suiRpcUrl }));
     this.suiKeypair = this.loadSuiKeypair(config.suiKeypairPath);
     this.ikaConfig = getNetworkConfig(config.ikaNetwork);
     this.ikaClient = new IkaClient({
@@ -223,7 +242,7 @@ export class DWalletCreator {
       arguments: [
         coordinatorRef,
         tx.pure.id(networkEncryptionKey.id),
-        tx.pure.u32(Number(curve)),
+        tx.pure.u32(curveToU32(curve)),
         tx.pure.vector('u8', Array.from(dkgRequestInput.userDKGMessage)),
         tx.pure.vector('u8', Array.from(dkgRequestInput.userPublicOutput)),
         tx.pure.vector('u8', Array.from(dkgRequestInput.userSecretKeyShare)),
@@ -233,8 +252,8 @@ export class DWalletCreator {
       ],
     });
 
-    // Transfer DWalletCap to the signer
-    tx.transferObjects([dwalletCap], signerAddress);
+    // Transfer DWalletCap and remaining coins back to the signer
+    tx.transferObjects([dwalletCap, ikaCoin, suiCoin], signerAddress);
 
     const txResult = await this.sui.signAndExecuteTransaction({
       transaction: tx,
@@ -253,12 +272,23 @@ export class DWalletCreator {
       throw new Error('DWalletCap not found in transaction results');
     }
 
-    // Read the DWalletCap object to get dwallet_id
-    const capObject = await this.sui.getObject({
+    // Small delay to let Sui RPC index the newly created object
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Read the DWalletCap object to get dwallet_id (retry if RPC hasn't indexed yet)
+    let capObject = await this.sui.getObject({
       id: dwalletCapChange.objectId,
       options: { showContent: true },
     });
-    const capContent = capObject.data?.content;
+    let capContent = capObject.data?.content;
+    if (capContent?.dataType !== 'moveObject') {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      capObject = await this.sui.getObject({
+        id: dwalletCapChange.objectId,
+        options: { showContent: true },
+      });
+      capContent = capObject.data?.content;
+    }
     if (capContent?.dataType !== 'moveObject') {
       throw new Error('Failed to read DWalletCap content');
     }
@@ -305,8 +335,13 @@ export class DWalletCreator {
     const chain = sourceChain.toLowerCase();
 
     if (EVM_CHAINS.has(chain)) {
-      // EVM: keccak256(uncompressed secp256k1 pubkey)[12:]
-      const hash = createHash('sha3-256').update(pubkey).digest();
+      // EVM: keccak256(uncompressed_pubkey_64_bytes)[12:]
+      // IKA returns compressed secp256k1 key (33 bytes, 02/03 prefix).
+      // Ethereum requires: decompress → strip 04 prefix → keccak256 → last 20 bytes.
+      const point = secp256k1.ProjectivePoint.fromHex(pubkey);
+      const uncompressed = point.toRawBytes(false); // 65 bytes (04 + X + Y)
+      const pubkeyNoPrefix = uncompressed.subarray(1); // 64 bytes (X + Y)
+      const hash = keccak_256(pubkeyNoPrefix);
       const address = hash.subarray(12, 32);
       return '0x' + Buffer.from(address).toString('hex');
     }
@@ -348,7 +383,7 @@ export class DWalletCreator {
         arguments: [
           tx.object(config.suiRegistryObjectId),
           tx.object(config.suiRegistryCapObjectId),
-          tx.pure.vector('u8', Buffer.from(depositAddress, 'hex')),
+          tx.pure.vector('u8', Buffer.from(depositAddress.replace(/^0x/, ''), 'hex')),
           tx.pure.vector('u8', Array.from(pubkey)),
           tx.object(capObjectId), // DWalletCap — consumed by the registry
         ],

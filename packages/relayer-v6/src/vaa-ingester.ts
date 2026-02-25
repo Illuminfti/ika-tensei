@@ -18,19 +18,14 @@
 import { SuiClient } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import path from 'path';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
+import { getAllVaaSequences, saveVaaSequence } from './db.js';
 import type {
   SourceChainEmitter,
   WormholescanVAAEntry,
   WormholescanVAAResponse,
-  VAAIngesterState,
 } from './types.js';
-
-/** State file for persisting last-seen sequences across restarts */
-const STATE_FILE = path.join(process.cwd(), '.vaa-ingester-state.json');
 
 export class VAAIngester {
   private readonly sui: SuiClient;
@@ -50,8 +45,8 @@ export class VAAIngester {
     this.keypair = keypair;
     const config = getConfig();
     this.emitters = config.sourceChainEmitters;
-    this.lastSequences = new Map();
-    this.loadState();
+    this.lastSequences = getAllVaaSequences();
+    logger.info({ entries: this.lastSequences.size }, 'Loaded VAA ingester state');
   }
 
   /**
@@ -91,7 +86,6 @@ export class VAAIngester {
       this.timer = null;
     }
     this._isRunning = false;
-    this.saveState();
     logger.info('VAA ingester stopped');
   }
 
@@ -154,7 +148,7 @@ export class VAAIngester {
 
     // Filter to VAAs after lastSeq
     let newVAAs = body.data;
-    if (lastSeq) {
+    if (lastSeq !== undefined) {
       newVAAs = newVAAs.filter(
         (v) => BigInt(v.sequence) > BigInt(lastSeq),
       );
@@ -213,8 +207,19 @@ export class VAAIngester {
       const payloadStart = signaturesEnd + 4 + 4 + 2 + 32 + 8 + 1;
       const payload = vaaBytes.slice(payloadStart);
 
-      // Extract deposit_address from payload bytes [67-98]
-      const depositAddressBytes = payload.slice(67, 99);
+      // Extract deposit_address from payload bytes [67-98] (32 bytes, Wormhole left-padded)
+      const depositAddressRaw = payload.slice(67, 99);
+
+      // Extract source_chain from payload bytes [1-2] (uint16 BE)
+      const sourceChainId = (payload[1] << 8) | payload[2];
+
+      // EVM chains use 20-byte addresses left-padded to 32 bytes in Wormhole.
+      // Strip the 12-byte zero padding for EVM chains so the registry key matches.
+      // Wormhole EVM chain IDs: 2=Ethereum, 4=BSC, 5=Polygon, 6=Avalanche,
+      // 10=Fantom, 23=Arbitrum, 24=Optimism, 30=Base, 10002=EthSepolia,
+      // 10004=BaseSepolia, 10005=OptSepolia, etc.
+      const isEVM = [2, 4, 5, 6, 10, 23, 24, 30, 10002, 10003, 10004, 10005, 10006].includes(sourceChainId);
+      const depositAddressBytes = isEVM ? depositAddressRaw.slice(12) : depositAddressRaw;
       const depositAddressHex = bytesToHex(depositAddressBytes);
 
       // Look up dWallet ID from on-chain registry
@@ -242,7 +247,19 @@ export class VAAIngester {
       logger.info({ vaaId, depositAddress: depositAddressHex }, 'VAA submitted to Sui');
       this.updateLastSequence(emitter, entry.sequence);
     } catch (err) {
-      logger.error({ err, vaaId }, 'Failed to process VAA entry');
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      // MoveAbort errors are non-retriable (dWallet already used, VAA already processed, etc.)
+      // Advance the sequence so we don't retry this VAA forever.
+      if (errMsg.includes('MoveAbort')) {
+        logger.warn(
+          { err, vaaId },
+          'VAA processing failed with non-retriable MoveAbort — skipping',
+        );
+        this.updateLastSequence(emitter, entry.sequence);
+      } else {
+        logger.error({ err, vaaId }, 'Failed to process VAA entry — will retry');
+      }
     } finally {
       this.inflight.delete(vaaId);
     }
@@ -272,9 +289,14 @@ export class VAAIngester {
 
       if (result.results?.[0]?.returnValues?.[0]) {
         const [bytes] = result.results[0].returnValues[0];
-        // Return values from devInspect are BCS-encoded
-        // For a vector<u8> (ID bytes), extract the ID hex
-        const idBytes = new Uint8Array(bytes as number[]);
+        // Return values from devInspect are BCS-encoded.
+        // vector<u8> BCS: ULEB128(length) + data.
+        // For 32-byte IDs, the first byte is 0x20 (32) = the vector length.
+        // Skip the ULEB128 length prefix to get the raw ID bytes.
+        const rawBytes = new Uint8Array(bytes as number[]);
+        // Simple ULEB128 decode: for lengths < 128, it's a single byte
+        const vecLen = rawBytes[0];
+        const idBytes = rawBytes.slice(1, 1 + vecLen);
         return '0x' + bytesToHex(idBytes);
       }
     } catch {
@@ -339,37 +361,7 @@ export class VAAIngester {
   private updateLastSequence(emitter: SourceChainEmitter, sequence: string): void {
     const key = `${emitter.chainId}:${emitter.emitterAddress}`;
     this.lastSequences.set(key, sequence);
-    this.saveState();
-  }
-
-  private loadState(): void {
-    try {
-      if (!existsSync(STATE_FILE)) return;
-      const raw = readFileSync(STATE_FILE, 'utf-8');
-      const parsed = JSON.parse(raw) as VAAIngesterState;
-      if (parsed.lastSequences) {
-        for (const [key, seq] of Object.entries(parsed.lastSequences)) {
-          this.lastSequences.set(key, seq);
-        }
-      }
-      logger.info(
-        { entries: this.lastSequences.size },
-        'Loaded VAA ingester state',
-      );
-    } catch {
-      logger.warn('Could not load VAA ingester state — starting fresh');
-    }
-  }
-
-  private saveState(): void {
-    try {
-      const state: VAAIngesterState = {
-        lastSequences: Object.fromEntries(this.lastSequences),
-      };
-      writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
-    } catch (err) {
-      logger.warn({ err }, 'Failed to save VAA ingester state');
-    }
+    saveVaaSequence(key, sequence);
   }
 }
 

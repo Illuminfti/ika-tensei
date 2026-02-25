@@ -15,7 +15,6 @@ dotenv.config();
  */
 const REQUIRED_ENV_VARS = [
   'SUI_RPC_URL',
-  'SUI_WS_URL',
   'SUI_PACKAGE_ID',
   'SOLANA_RPC_URL',
   'SOLANA_PROGRAM_ID',
@@ -46,8 +45,8 @@ export function getConfig(): RelayerConfig {
 
   return {
     suiRpcUrl: process.env.SUI_RPC_URL!,
-    suiWsUrl: process.env.SUI_WS_URL!,
     suiPackageId: process.env.SUI_PACKAGE_ID!,
+    suiOriginalPackageId: process.env.SUI_ORIGINAL_PACKAGE_ID || process.env.SUI_PACKAGE_ID!,
     solanaRpcUrl: process.env.SOLANA_RPC_URL!,
     solanaProgramId: process.env.SOLANA_PROGRAM_ID!,
     relayerKeypairPath: process.env.RELAYER_KEYPAIR_PATH!,
@@ -70,6 +69,7 @@ export function getConfig(): RelayerConfig {
     wormholeStateObjectId: process.env.WORMHOLE_STATE_OBJECT_ID || '',
     sourceChainEmitters: parseEmitters(process.env.SOURCE_CHAIN_EMITTERS || ''),
     vaaPollingIntervalMs: parseInt(process.env.VAA_POLLING_INTERVAL_MS || '30000', 10),
+    dbPath: process.env.DB_PATH || './relayer.db',
     healthPort: parseInt(process.env.HEALTH_PORT || '8080', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),
     retryDelayMs: parseInt(process.env.RETRY_DELAY_MS || '1000', 10),
