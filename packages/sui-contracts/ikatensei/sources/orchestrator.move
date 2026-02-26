@@ -59,6 +59,7 @@ module ikatensei::orchestrator {
     const E_PENDING_SEAL_NOT_FOUND: u64 = 9;
     const E_SEAL_ALREADY_COMPLETED: u64 = 10;
     const E_DWALLET_ALREADY_USED: u64 = 11;
+    const E_INVALID_RECEIVER: u64 = 12;
 
     // ==================================================================
     // Events
@@ -443,6 +444,77 @@ module ikatensei::orchestrator {
     }
 
     // ==================================================================
+    // Centralized seal — Admin-only, bypasses Wormhole VAA
+    // ==================================================================
+
+    /// Create a pending seal from relayer-provided data (centralized flow).
+    /// Bypasses Wormhole VAA verification — the relayer has already verified
+    /// the NFT deposit on the source chain via RPC.
+    /// Requires AdminCap (only the relayer operator can call this).
+    /// Emits SealPending — the existing signing flow handles the rest.
+    public fun create_centralized_seal(
+        state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
+        minting_authority: &MintingAuthority,
+        source_chain: u16,
+        nft_contract: vector<u8>,
+        token_id: vector<u8>,
+        token_uri: vector<u8>,
+        deposit_address: vector<u8>,
+        receiver: vector<u8>,
+        clock: &sui::clock::Clock,
+        _ctx: &mut TxContext,
+    ) {
+        let timestamp = sui::clock::timestamp_ms(clock) / 1000;
+
+        // Validate receiver is 32 bytes (Solana pubkey)
+        assert!(vector::length(&receiver) == 32, E_INVALID_RECEIVER);
+
+        // Compute seal_hash as unique key: sha256(source_chain_be || nft_contract || token_id || receiver)
+        let mut hash_input = vector::empty<u8>();
+        vector::push_back(&mut hash_input, ((source_chain >> 8) as u8));
+        vector::push_back(&mut hash_input, ((source_chain & 0xFF) as u8));
+        vector::append(&mut hash_input, nft_contract);
+        vector::append(&mut hash_input, token_id);
+        vector::append(&mut hash_input, receiver);
+        let seal_hash = std::hash::sha2_256(hash_input);
+
+        // Replay protection
+        assert!(!table::contains(&state.processed_vaas, seal_hash), E_VAA_ALREADY_USED);
+
+        // Construct signing message: sha256(token_uri || token_id || receiver)
+        let message_hash = payload::construct_signing_message(&token_uri, &token_id, &receiver);
+
+        // Store pending seal
+        let pending = PendingSeal {
+            source_chain,
+            nft_contract,
+            token_id,
+            token_uri,
+            receiver,
+            deposit_address,
+            dwallet_pubkey: minting_authority.minting_pubkey,
+            message_hash,
+            dwallet_id_bytes: vector::empty(),
+            timestamp,
+            completed: false,
+        };
+
+        table::add(&mut state.pending_seals, seal_hash, pending);
+        table::add(&mut state.processed_vaas, seal_hash, true);
+
+        // Emit SealPending — existing SealSigner picks this up identically to VAA-based seals
+        emit(SealPending {
+            vaa_hash: seal_hash,
+            source_chain,
+            deposit_address,
+            receiver,
+            message_hash,
+            timestamp,
+        });
+    }
+
+    // ==================================================================
     // Phase 2: complete_seal — Submit IKA signature and emit SealSigned
     // ==================================================================
 
@@ -480,7 +552,11 @@ module ikatensei::orchestrator {
 
         // ── Step 4: Mark deposit dWallet as permanently used ──
         table::add(&mut state.used_dwallets, pending.deposit_address, true);
-        dwallet_registry::mark_dwallet_used(registry, &pending.deposit_address);
+        // Only mark in registry if the deposit address has a registry record
+        // (centralized seals bypass the dWallet registry)
+        if (dwallet_registry::has_record(registry, &pending.deposit_address)) {
+            dwallet_registry::mark_dwallet_used(registry, &pending.deposit_address);
+        };
 
         // ── Step 5: Emit SealSigned event ──
         emit(SealSigned {

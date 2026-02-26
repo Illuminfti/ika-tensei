@@ -69,6 +69,18 @@ export function getConfig(): RelayerConfig {
     wormholeStateObjectId: process.env.WORMHOLE_STATE_OBJECT_ID || '',
     sourceChainEmitters: parseEmitters(process.env.SOURCE_CHAIN_EMITTERS || ''),
     vaaPollingIntervalMs: parseInt(process.env.VAA_POLLING_INTERVAL_MS || '30000', 10),
+    // Source chain RPCs (centralized flow)
+    baseRpcUrl: process.env.BASE_RPC_URL || 'https://sepolia.base.org',
+    aptosRpcUrl: process.env.APTOS_RPC_URL || 'https://fullnode.testnet.aptoslabs.com/v1',
+    nearRpcUrl: process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org',
+
+    // Arweave via Irys
+    irysPrivateKey: process.env.IRYS_PRIVATE_KEY || '',
+    irysNetwork: (process.env.IRYS_NETWORK || 'devnet') as 'devnet' | 'mainnet',
+
+    // Centralized flow toggle (VAA ingester disabled by default)
+    enableVaaIngester: process.env.ENABLE_VAA_INGESTER === 'true',
+
     dbPath: process.env.DB_PATH || './relayer.db',
     healthPort: parseInt(process.env.HEALTH_PORT || '8080', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),

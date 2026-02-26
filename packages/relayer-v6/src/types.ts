@@ -123,6 +123,21 @@ export interface ConfirmPaymentRequest {
 }
 
 /**
+ * Request to confirm NFT deposit (centralized flow).
+ * The relayer verifies the deposit on the source chain via RPC.
+ */
+export interface ConfirmDepositRequest {
+  /** Session ID from /api/seal/start */
+  sessionId: string;
+  /** NFT contract address (EVM hex, Sui type name, NEAR account, Aptos address) */
+  nftContract: string;
+  /** Token ID (EVM uint256, Sui object ID, NEAR string, Aptos object address) */
+  tokenId: string;
+  /** Optional: deposit transaction hash for faster verification */
+  txHash?: string;
+}
+
+/**
  * Result of verifying a SOL payment transaction on-chain.
  */
 export interface PaymentVerificationResult {
@@ -142,6 +157,9 @@ export type SealStatusValue =
   | 'payment_confirmed'
   | 'creating_dwallet'
   | 'waiting_deposit'
+  | 'verifying_deposit'
+  | 'uploading_metadata'
+  | 'creating_seal'
   | 'detected'
   | 'verifying_vaa'
   | 'signing'
@@ -184,6 +202,18 @@ export interface SealSession {
   paymentTxSignature?: string;
   /** Timestamp when payment was verified */
   paymentVerifiedAt?: number;
+  /** NFT contract address on source chain (set after confirm-deposit) */
+  nftContract?: string;
+  /** Token ID on source chain (set after confirm-deposit) */
+  tokenId?: string;
+  /** Arweave metadata URI (set after metadata upload) */
+  tokenUri?: string;
+  /** Deposit transaction hash (set after confirm-deposit) */
+  depositTxHash?: string;
+  /** NFT name from source chain metadata (set after verification) */
+  nftName?: string;
+  /** Collection name from source chain metadata (set after verification) */
+  collectionName?: string;
   rebornNFT?: { mint: string; name: string; image: string };
   error?: string;
 }
@@ -293,6 +323,18 @@ export interface RelayerConfig {
   sourceChainEmitters: SourceChainEmitter[];
   vaaPollingIntervalMs: number;
 
+  // Source chain RPCs (centralized flow)
+  baseRpcUrl: string;
+  aptosRpcUrl: string;
+  nearRpcUrl: string;
+
+  // Arweave uploads via Irys
+  irysPrivateKey: string;
+  irysNetwork: 'devnet' | 'mainnet';
+
+  // Centralized flow toggle
+  enableVaaIngester: boolean;
+
   // Database
   dbPath: string;
 
@@ -310,6 +352,7 @@ export interface SubmissionResult {
   txHash?: string;
   error?: string;
   retries: number;
+  assetAddress?: string;
 }
 
 /**

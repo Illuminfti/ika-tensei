@@ -21,6 +21,7 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
 import { getAllVaaSequences, saveVaaSequence } from './db.js';
+import type { SuiTxQueue } from './sui-tx-queue.js';
 import type {
   SourceChainEmitter,
   WormholescanVAAEntry,
@@ -30,6 +31,7 @@ import type {
 export class VAAIngester {
   private readonly sui: SuiClient;
   private readonly keypair: Ed25519Keypair;
+  private readonly txQueue: SuiTxQueue;
   private readonly emitters: SourceChainEmitter[];
   private timer: ReturnType<typeof setInterval> | null = null;
   private _isRunning = false;
@@ -40,9 +42,10 @@ export class VAAIngester {
   /** Set of VAA IDs currently being processed (prevents duplicate submissions) */
   private readonly inflight = new Set<string>();
 
-  constructor(sui: SuiClient, keypair: Ed25519Keypair) {
+  constructor(sui: SuiClient, keypair: Ed25519Keypair, txQueue: SuiTxQueue) {
     this.sui = sui;
     this.keypair = keypair;
+    this.txQueue = txQueue;
     const config = getConfig();
     this.emitters = config.sourceChainEmitters;
     this.lastSequences = getAllVaaSequences();
@@ -150,7 +153,7 @@ export class VAAIngester {
     let newVAAs = body.data;
     if (lastSeq !== undefined) {
       newVAAs = newVAAs.filter(
-        (v) => BigInt(v.sequence) > BigInt(lastSeq),
+        (v) => BigInt(v.sequence) > BigInt(Math.trunc(Number(lastSeq))),
       );
     }
 
@@ -342,11 +345,13 @@ export class VAAIngester {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-      options: { showEvents: true },
-    });
+    const result = await this.txQueue.enqueue('process_vaa', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: { showEvents: true },
+      }),
+    );
 
     logger.info(
       { txDigest: result.digest },

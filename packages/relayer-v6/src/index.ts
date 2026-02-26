@@ -17,7 +17,7 @@
  */
 
 import { readFileSync } from 'fs';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { Keypair } from '@solana/web3.js';
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
@@ -36,7 +36,10 @@ import { SealSigner } from './seal-signer.js';
 import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
-import { initDb, createSession, getSession, updateSession, updateSessionByDeposit } from './db.js';
+import { initDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit } from './db.js';
+import { ChainVerifier } from './chain-verifier.js';
+import { MetadataHandler } from './metadata-handler.js';
+import { SuiTxQueue } from './sui-tx-queue.js';
 import type {
   SealSignedEvent,
   SealPendingEvent,
@@ -44,6 +47,7 @@ import type {
   SealSession,
   StartSealRequest,
   ConfirmPaymentRequest,
+  ConfirmDepositRequest,
 } from './types.js';
 
 /**
@@ -59,6 +63,8 @@ export class Relayer {
   private readonly sealPendingListener: SuiListener<SealPendingEvent>;
   private readonly solanaSubmitter: SolanaSubmitter;
   private readonly dwalletCreator: DWalletCreator;
+  private readonly chainVerifier: ChainVerifier;
+  private readonly metadataHandler: MetadataHandler;
   private readonly healthServer: HealthServer;
   private readonly relayerKeypair: Keypair;
   private readonly app: express.Application;
@@ -70,6 +76,13 @@ export class Relayer {
   private sealSigner?: SealSigner;
   private vaaIngester?: VAAIngester;
 
+  // Sui client + keypair for centralized seal creation
+  private suiClient?: SuiClient;
+  private suiKeypair?: Ed25519Keypair;
+
+  // Transaction queue — serializes all Sui txns to avoid shared object version conflicts
+  readonly suiTxQueue = new SuiTxQueue();
+
   constructor() {
     const config = getConfig();
     initDb(config.dbPath);
@@ -78,6 +91,8 @@ export class Relayer {
     this.sealPendingListener = new SuiListener<SealPendingEvent>('SealPending');
     this.solanaSubmitter = new SolanaSubmitter();
     this.dwalletCreator = new DWalletCreator();
+    this.chainVerifier = new ChainVerifier();
+    this.metadataHandler = new MetadataHandler();
     this.healthServer = new HealthServer();
     this.relayerKeypair = this.loadRelayerKeypair();
     this.app = express();
@@ -205,6 +220,59 @@ export class Relayer {
     });
 
     /**
+     * POST /api/seal/confirm-deposit
+     * Centralized flow: user confirms NFT deposit, relayer verifies + processes.
+     */
+    this.app.post('/api/seal/confirm-deposit', async (req, res) => {
+      try {
+        const { sessionId, nftContract, tokenId, txHash } = req.body as ConfirmDepositRequest;
+
+        if (!sessionId || !nftContract || !tokenId) {
+          res.status(400).json({ error: 'Missing sessionId, nftContract, or tokenId' });
+          return;
+        }
+
+        const session = getSession(sessionId);
+        if (!session) {
+          res.status(404).json({ error: 'Session not found' });
+          return;
+        }
+
+        if (session.status !== 'waiting_deposit') {
+          res.status(409).json({ error: `Session status is '${session.status}', expected 'waiting_deposit'` });
+          return;
+        }
+
+        if (!session.depositAddress) {
+          res.status(409).json({ error: 'No deposit address — confirm payment first' });
+          return;
+        }
+
+        // Store deposit info
+        updateSession(sessionId, {
+          status: 'verifying_deposit',
+          nft_contract: nftContract,
+          token_id: tokenId,
+          deposit_tx_hash: txHash,
+        });
+
+        // Respond immediately — processing continues async
+        res.json({ status: 'processing', message: 'Verifying deposit and processing metadata' });
+
+        // Process asynchronously
+        this.processDeposit(sessionId, session).catch((err) => {
+          logger.error({ err, sessionId }, 'Deposit processing failed');
+          updateSession(sessionId, { status: 'error', error: err instanceof Error ? err.message : String(err) });
+        });
+      } catch (err) {
+        logger.error({ err }, 'Failed to confirm deposit');
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Internal error',
+        });
+      }
+    });
+
+    /**
      * GET /api/seal/:id/status
      */
     this.app.get('/api/seal/:id/status', (req, res) => {
@@ -219,6 +287,10 @@ export class Relayer {
         dwalletId: session.dwalletId,
         status: session.status,
         depositAddress: session.depositAddress,
+        sourceChain: session.sourceChain,
+        nftContract: session.nftContract,
+        tokenId: session.tokenId,
+        tokenUri: session.tokenUri,
         rebornNFT: session.rebornNFT,
         error: session.error,
       });
@@ -299,7 +371,12 @@ export class Relayer {
     });
 
     // Initialize and start VAA ingester AFTER event listeners are subscribed
-    await this.initializeVAAIngester();
+    // Gated behind ENABLE_VAA_INGESTER — disabled by default for centralized flow
+    if (config.enableVaaIngester) {
+      await this.initializeVAAIngester();
+    } else {
+      logger.info('VAA ingester disabled (centralized flow) — set ENABLE_VAA_INGESTER=true to enable');
+    }
 
     this._isRunning = true;
     logger.info('Relayer is running');
@@ -340,19 +417,21 @@ export class Relayer {
 
     const sui = rateLimitSuiClient(new SuiClient({ url: config.suiRpcUrl }));
     const suiKeypair = this.loadSuiKeypair(config.suiKeypairPath);
+    this.suiClient = sui;
+    this.suiKeypair = suiKeypair;
     const ikaConfig = getNetworkConfig(config.ikaNetwork);
     const ikaClient = new IkaClient({ suiClient: sui, config: ikaConfig });
     await ikaClient.initialize();
 
     // Treasury manager
-    this.treasuryManager = new TreasuryManager(sui, suiKeypair, ikaConfig);
+    this.treasuryManager = new TreasuryManager(sui, suiKeypair, ikaConfig, this.suiTxQueue);
     await this.treasuryManager.ensureMinimumBalances();
 
     // Presign pool
-    this.presignPool = new PresignPool(sui, suiKeypair, ikaClient, ikaConfig);
+    this.presignPool = new PresignPool(sui, suiKeypair, ikaClient, ikaConfig, this.suiTxQueue);
     const initialPresigns = config.presignPoolReplenishBatch;
-    logger.info({ count: initialPresigns }, 'Seeding initial presign pool');
-    await this.presignPool.replenish(initialPresigns).catch((err) => {
+    logger.info({ count: initialPresigns }, 'Seeding initial presign pool (background)');
+    this.presignPool.replenish(initialPresigns).catch((err) => {
       logger.warn({ err }, 'Initial presign seeding failed — will retry in maintenance cycle');
     });
 
@@ -373,6 +452,7 @@ export class Relayer {
         this.presignPool,
         userSecretKeyShare,
         userPublicOutput,
+        this.suiTxQueue,
       );
       logger.info('Seal signer initialized');
     } else {
@@ -402,7 +482,7 @@ export class Relayer {
     const sui = new SuiClient({ url: config.suiRpcUrl });
     const suiKeypair = this.loadSuiKeypair(config.suiKeypairPath);
 
-    this.vaaIngester = new VAAIngester(sui, suiKeypair);
+    this.vaaIngester = new VAAIngester(sui, suiKeypair, this.suiTxQueue);
     await this.vaaIngester.start();
     logger.info('VAA ingester started');
   }
@@ -472,6 +552,12 @@ export class Relayer {
       const depositAddressHex = Buffer.from(toBytes(event.deposit_address)).toString('hex');
       this.updateSessionStatus(depositAddressHex, 'minting');
 
+      // Look up session to get real names from source chain metadata
+      const session = getSessionByDeposit(depositAddressHex);
+      if (session?.collectionName) {
+        processedSeal.collectionName = session.collectionName;
+      }
+
       logger.info(
         {
           eventId,
@@ -488,12 +574,24 @@ export class Relayer {
 
       if (result.success) {
         logger.info(
-          { eventId, txHash: result.txHash, retries: result.retries },
+          { eventId, txHash: result.txHash, retries: result.retries, assetAddress: result.assetAddress },
           'Successfully processed SealSigned event',
         );
         this.healthServer.incrementProcessed();
         this.healthServer.setLastProcessedEvent(eventId);
-        this.updateSessionStatus(depositAddressHex, 'complete');
+
+        // Store reborn NFT data in session
+        if (session && result.assetAddress) {
+          const rebornName = session.nftName || processedSeal.collectionName;
+          updateSession(session.sessionId, {
+            status: 'complete',
+            reborn_mint: result.assetAddress,
+            reborn_name: rebornName,
+            reborn_image: session.tokenUri || processedSeal.tokenUri,
+          });
+        } else {
+          this.updateSessionStatus(depositAddressHex, 'complete');
+        }
       } else {
         logger.error(
           { eventId, error: result.error, retries: result.retries },
@@ -540,6 +638,244 @@ export class Relayer {
 
   private updateSessionStatusError(depositAddress: string, error: string): void {
     updateSessionByDeposit(depositAddress, 'error', error);
+  }
+
+  // ─── Centralized Deposit Processing ─────────────────────────────────────────
+
+  /**
+   * Process a confirmed deposit: verify → fetch metadata → upload → create seal.
+   * Called asynchronously after /api/seal/confirm-deposit responds.
+   */
+  private async processDeposit(sessionId: string, _session: SealSession): Promise<void> {
+    // Reload session to get the nftContract/tokenId we just stored
+    const updatedSession = getSession(sessionId);
+    if (!updatedSession?.nftContract || !updatedSession?.tokenId || !updatedSession?.depositAddress) {
+      throw new Error('Session missing required deposit fields');
+    }
+
+    // 1. Verify NFT deposit on source chain
+    logger.info({ sessionId, sourceChain: updatedSession.sourceChain }, 'Verifying NFT deposit on source chain');
+    const verifyResult = await this.chainVerifier.verifyDeposit(updatedSession.sourceChain, {
+      nftContract: updatedSession.nftContract,
+      tokenId: updatedSession.tokenId,
+      depositAddress: updatedSession.depositAddress,
+    });
+
+    if (!verifyResult.verified) {
+      throw new Error(`Deposit verification failed: ${verifyResult.error}`);
+    }
+
+    logger.info({ sessionId, tokenUri: verifyResult.tokenUri, name: verifyResult.name }, 'NFT deposit verified');
+
+    // 2. Fetch + transform + upload metadata to Arweave
+    const nftName = verifyResult.name || `${verifyResult.collectionName || 'NFT'} #${updatedSession.tokenId}`;
+    const collectionName = verifyResult.collectionName || `Reborn ${updatedSession.sourceChain}`;
+
+    updateSession(sessionId, {
+      status: 'uploading_metadata',
+      nft_name: nftName,
+      collection_name: collectionName,
+    });
+
+    const tokenUri = await this.metadataHandler.processAndUpload(
+      updatedSession.sourceChain,
+      verifyResult,
+      nftName,
+      collectionName,
+      updatedSession.solanaWallet,
+      {
+        sourceContract: updatedSession.nftContract!,
+        sourceTokenId: updatedSession.tokenId!,
+        depositAddress: updatedSession.depositAddress!,
+        sourceChainId: this.sourceChainToId(updatedSession.sourceChain),
+      },
+    );
+
+    updateSession(sessionId, { token_uri: tokenUri });
+    logger.info({ sessionId, tokenUri }, 'Metadata uploaded to Arweave');
+
+    // 3. Create centralized seal on Sui (emits SealPending → existing signing flow)
+    updateSession(sessionId, { status: 'creating_seal' });
+    await this.createCentralizedSeal(updatedSession, tokenUri);
+
+    updateSession(sessionId, { status: 'signing' });
+    logger.info({ sessionId }, 'Centralized seal created — signing flow initiated');
+  }
+
+  /**
+   * Call create_centralized_seal() on Sui orchestrator.
+   * This creates a PendingSeal and emits SealPending, which the
+   * existing SealSigner picks up and processes identically to VAA-based seals.
+   */
+  private async createCentralizedSeal(session: SealSession, tokenUri: string): Promise<void> {
+    if (!this.suiClient || !this.suiKeypair) {
+      throw new Error('Sui client not initialized');
+    }
+
+    const config = getConfig();
+
+    // Map source chain name to Wormhole chain ID
+    const chainId = this.sourceChainToId(session.sourceChain);
+
+    // Encode nft_contract as bytes (hex for EVM, UTF-8 hash for others)
+    const nftContractBytes = this.encodeNftContract(session.sourceChain, session.nftContract!);
+
+    // Encode token_id as bytes
+    const tokenIdBytes = this.encodeTokenId(session.sourceChain, session.tokenId!);
+
+    // Encode deposit_address as bytes
+    const depositAddressBytes = this.encodeDepositAddress(session.sourceChain, session.depositAddress!);
+
+    // Receiver is the Solana wallet (32-byte pubkey)
+    const { PublicKey } = await import('@solana/web3.js');
+    const receiverBytes = new PublicKey(session.solanaWallet).toBytes();
+
+    // Token URI as UTF-8 bytes
+    const tokenUriBytes = new TextEncoder().encode(tokenUri);
+
+    const { Transaction } = await import('@mysten/sui/transactions');
+    const tx = new Transaction();
+
+    tx.moveCall({
+      target: `${config.suiPackageId}::orchestrator::create_centralized_seal`,
+      arguments: [
+        tx.object(config.suiOrchestratorStateId),
+        tx.object(config.suiAdminCapId),
+        tx.object(config.suiMintingAuthorityId),
+        tx.pure.u16(chainId),
+        tx.pure.vector('u8', Array.from(nftContractBytes)),
+        tx.pure.vector('u8', Array.from(tokenIdBytes)),
+        tx.pure.vector('u8', Array.from(tokenUriBytes)),
+        tx.pure.vector('u8', Array.from(depositAddressBytes)),
+        tx.pure.vector('u8', Array.from(receiverBytes)),
+        tx.object('0x6'), // Clock
+      ],
+    });
+
+    const result = await this.suiTxQueue.enqueue('create_centralized_seal', () =>
+      this.suiClient!.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.suiKeypair!,
+        options: { showEvents: true },
+      }),
+    );
+
+    logger.info(
+      { txDigest: result.digest, sessionId: session.sessionId },
+      'create_centralized_seal submitted',
+    );
+  }
+
+  /**
+   * Map source chain name to Wormhole chain ID.
+   */
+  private sourceChainToId(sourceChain: string): number {
+    const map: Record<string, number> = {
+      ethereum: 2, polygon: 5, arbitrum: 23, optimism: 24,
+      base: 30, bsc: 4, avalanche: 6,
+      sui: 21, near: 15, aptos: 22, solana: 1,
+      // Testnets
+      'base-sepolia': 10004, 'ethereum-sepolia': 10002,
+      'arbitrum-sepolia': 10003, 'optimism-sepolia': 10005,
+    };
+    const id = map[sourceChain.toLowerCase()];
+    if (!id) throw new Error(`Unknown source chain: ${sourceChain}`);
+    return id;
+  }
+
+  /**
+   * Encode NFT contract address to 32-byte format for Sui.
+   */
+  private encodeNftContract(sourceChain: string, nftContract: string): Uint8Array {
+    const chain = sourceChain.toLowerCase();
+
+    if (['base', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'bsc', 'avalanche',
+         'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia'].includes(chain)) {
+      // EVM: 20-byte address → left-pad to 32 bytes
+      const clean = nftContract.startsWith('0x') ? nftContract.slice(2) : nftContract;
+      const bytes = new Uint8Array(32);
+      const addrBytes = hexToBytes(clean);
+      bytes.set(addrBytes, 32 - addrBytes.length);
+      return bytes;
+    }
+
+    if (chain === 'sui') {
+      // Sui: sha256(type_name) → 32 bytes (matches contract logic)
+      return new Uint8Array(createHash('sha256').update(nftContract).digest());
+    }
+
+    if (chain === 'near') {
+      // NEAR: sha256(account_id) → 32 bytes
+      return new Uint8Array(createHash('sha256').update(nftContract).digest());
+    }
+
+    if (chain === 'aptos') {
+      // Aptos: 32-byte address
+      const clean = nftContract.startsWith('0x') ? nftContract.slice(2) : nftContract;
+      const bytes = new Uint8Array(32);
+      const addrBytes = hexToBytes(clean);
+      bytes.set(addrBytes, 32 - addrBytes.length);
+      return bytes;
+    }
+
+    throw new Error(`Cannot encode nft_contract for chain: ${sourceChain}`);
+  }
+
+  /**
+   * Encode token ID to bytes for Sui.
+   */
+  private encodeTokenId(sourceChain: string, tokenId: string): Uint8Array {
+    const chain = sourceChain.toLowerCase();
+
+    if (['base', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'bsc', 'avalanche',
+         'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia'].includes(chain)) {
+      // EVM: uint256 → 32 bytes big-endian
+      const hex = BigInt(tokenId).toString(16).padStart(64, '0');
+      return hexToBytes(hex);
+    }
+
+    if (chain === 'sui' || chain === 'aptos') {
+      // Sui/Aptos: object address → 32 bytes
+      const clean = tokenId.startsWith('0x') ? tokenId.slice(2) : tokenId;
+      const bytes = new Uint8Array(32);
+      const addrBytes = hexToBytes(clean);
+      bytes.set(addrBytes, 32 - addrBytes.length);
+      return bytes;
+    }
+
+    if (chain === 'near') {
+      // NEAR: sha256(token_id_string)
+      return new Uint8Array(createHash('sha256').update(tokenId).digest());
+    }
+
+    throw new Error(`Cannot encode token_id for chain: ${sourceChain}`);
+  }
+
+  /**
+   * Encode deposit address to bytes.
+   */
+  private encodeDepositAddress(sourceChain: string, depositAddress: string): Uint8Array {
+    const chain = sourceChain.toLowerCase();
+
+    if (['base', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'bsc', 'avalanche',
+         'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia'].includes(chain)) {
+      // EVM: 20-byte address (not padded for deposit_address — matches how dwallet_creator stores it)
+      const clean = depositAddress.startsWith('0x') ? depositAddress.slice(2) : depositAddress;
+      return hexToBytes(clean);
+    }
+
+    // Ed25519 chains: 32-byte hex or base58 address
+    if (chain === 'sui' || chain === 'aptos') {
+      const clean = depositAddress.startsWith('0x') ? depositAddress.slice(2) : depositAddress;
+      return hexToBytes(clean);
+    }
+
+    if (chain === 'near') {
+      // NEAR implicit account: hex-encoded ed25519 pubkey
+      return hexToBytes(depositAddress);
+    }
+
+    throw new Error(`Cannot encode deposit_address for chain: ${sourceChain}`);
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────

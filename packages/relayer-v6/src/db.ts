@@ -35,6 +35,8 @@ export function initDb(dbPath: string = './relayer.db'): Database.Database {
       dwallet_pubkey   BLOB,
       payment_tx_sig   TEXT,
       payment_verified INTEGER,
+      nft_name         TEXT,
+      collection_name  TEXT,
       reborn_mint      TEXT,
       reborn_name      TEXT,
       reborn_image     TEXT,
@@ -69,6 +71,28 @@ export function initDb(dbPath: string = './relayer.db'): Database.Database {
     );
   `);
 
+  // Migration: add centralized flow columns (idempotent)
+  const cols = db.pragma('table_info(sessions)') as { name: string }[];
+  const colNames = new Set(cols.map(c => c.name));
+  if (!colNames.has('nft_contract')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN nft_contract TEXT');
+  }
+  if (!colNames.has('token_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN token_id TEXT');
+  }
+  if (!colNames.has('token_uri')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN token_uri TEXT');
+  }
+  if (!colNames.has('deposit_tx_hash')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN deposit_tx_hash TEXT');
+  }
+  if (!colNames.has('nft_name')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN nft_name TEXT');
+  }
+  if (!colNames.has('collection_name')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN collection_name TEXT');
+  }
+
   logger.info({ dbPath }, 'SQLite database initialized');
   return db;
 }
@@ -94,7 +118,14 @@ export function getSession(sessionId: string): SealSession | undefined {
 }
 
 export function getSessionByDeposit(depositAddress: string): SealSession | undefined {
-  const row = getDb().prepare('SELECT * FROM sessions WHERE deposit_address = ? ORDER BY created_at DESC LIMIT 1').get(depositAddress) as SessionRow | undefined;
+  // Try exact match first, then with/without 0x prefix (event vs DB format normalization)
+  let row = getDb().prepare('SELECT * FROM sessions WHERE deposit_address = ? ORDER BY created_at DESC LIMIT 1').get(depositAddress) as SessionRow | undefined;
+  if (!row && !depositAddress.startsWith('0x')) {
+    row = getDb().prepare('SELECT * FROM sessions WHERE deposit_address = ? ORDER BY created_at DESC LIMIT 1').get('0x' + depositAddress) as SessionRow | undefined;
+  }
+  if (!row && depositAddress.startsWith('0x')) {
+    row = getDb().prepare('SELECT * FROM sessions WHERE deposit_address = ? ORDER BY created_at DESC LIMIT 1').get(depositAddress.slice(2)) as SessionRow | undefined;
+  }
   return row ? rowToSession(row) : undefined;
 }
 
@@ -111,6 +142,12 @@ export function updateSession(sessionId: string, fields: Partial<SessionRow>): v
   if (fields.reborn_mint !== undefined) { sets.push('reborn_mint = ?'); values.push(fields.reborn_mint); }
   if (fields.reborn_name !== undefined) { sets.push('reborn_name = ?'); values.push(fields.reborn_name); }
   if (fields.reborn_image !== undefined) { sets.push('reborn_image = ?'); values.push(fields.reborn_image); }
+  if (fields.nft_contract !== undefined) { sets.push('nft_contract = ?'); values.push(fields.nft_contract); }
+  if (fields.token_id !== undefined) { sets.push('token_id = ?'); values.push(fields.token_id); }
+  if (fields.token_uri !== undefined) { sets.push('token_uri = ?'); values.push(fields.token_uri); }
+  if (fields.deposit_tx_hash !== undefined) { sets.push('deposit_tx_hash = ?'); values.push(fields.deposit_tx_hash); }
+  if (fields.nft_name !== undefined) { sets.push('nft_name = ?'); values.push(fields.nft_name); }
+  if (fields.collection_name !== undefined) { sets.push('collection_name = ?'); values.push(fields.collection_name); }
   if (fields.error !== undefined) { sets.push('error = ?'); values.push(fields.error); }
 
   if (sets.length === 0) return;
@@ -123,13 +160,19 @@ export function updateSession(sessionId: string, fields: Partial<SessionRow>): v
 }
 
 export function updateSessionByDeposit(depositAddress: string, status: string, error?: string): void {
+  // Normalize: try with and without 0x prefix to match DB format
+  const variants = [depositAddress];
+  if (!depositAddress.startsWith('0x')) variants.push('0x' + depositAddress);
+  else variants.push(depositAddress.slice(2));
+
   const now = Date.now();
-  if (error !== undefined) {
-    getDb().prepare('UPDATE sessions SET status = ?, error = ?, updated_at = ? WHERE deposit_address = ?')
-      .run(status, error, now, depositAddress);
-  } else {
-    getDb().prepare('UPDATE sessions SET status = ?, updated_at = ? WHERE deposit_address = ?')
-      .run(status, now, depositAddress);
+  for (const addr of variants) {
+    const result = error !== undefined
+      ? getDb().prepare('UPDATE sessions SET status = ?, error = ?, updated_at = ? WHERE deposit_address = ?')
+          .run(status, error, now, addr)
+      : getDb().prepare('UPDATE sessions SET status = ?, updated_at = ? WHERE deposit_address = ?')
+          .run(status, now, addr);
+    if (result.changes > 0) return;
   }
 }
 
@@ -144,6 +187,12 @@ interface SessionRow {
   dwallet_pubkey: Buffer | null;
   payment_tx_sig: string | null;
   payment_verified: number | null;
+  nft_contract: string | null;
+  token_id: string | null;
+  token_uri: string | null;
+  deposit_tx_hash: string | null;
+  nft_name: string | null;
+  collection_name: string | null;
   reborn_mint: string | null;
   reborn_name: string | null;
   reborn_image: string | null;
@@ -164,6 +213,12 @@ function rowToSession(row: SessionRow): SealSession {
   if (row.dwallet_pubkey) session.dwalletPubkey = new Uint8Array(row.dwallet_pubkey);
   if (row.payment_tx_sig) session.paymentTxSignature = row.payment_tx_sig;
   if (row.payment_verified) session.paymentVerifiedAt = row.payment_verified;
+  if (row.nft_contract) session.nftContract = row.nft_contract;
+  if (row.token_id) session.tokenId = row.token_id;
+  if (row.token_uri) session.tokenUri = row.token_uri;
+  if (row.deposit_tx_hash) session.depositTxHash = row.deposit_tx_hash;
+  if (row.nft_name) session.nftName = row.nft_name;
+  if (row.collection_name) session.collectionName = row.collection_name;
   if (row.reborn_mint) {
     session.rebornNFT = {
       mint: row.reborn_mint,

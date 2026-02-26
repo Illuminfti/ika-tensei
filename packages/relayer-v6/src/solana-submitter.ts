@@ -318,7 +318,7 @@ export class SolanaSubmitter {
           'mint_reborn submitted successfully',
         );
 
-        return { success: true, txHash, retries };
+        return { success: true, txHash, retries, assetAddress: assetKeypair.publicKey.toBase58() };
       } catch (err) {
         retries++;
 

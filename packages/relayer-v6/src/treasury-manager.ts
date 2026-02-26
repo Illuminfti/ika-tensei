@@ -12,16 +12,19 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import type { IkaConfig } from '@ika.xyz/sdk';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
+import type { SuiTxQueue } from './sui-tx-queue.js';
 
 export class TreasuryManager {
   private readonly sui: SuiClient;
   private readonly keypair: Ed25519Keypair;
   private readonly ikaConfig: IkaConfig;
+  private readonly txQueue: SuiTxQueue;
 
-  constructor(sui: SuiClient, keypair: Ed25519Keypair, ikaConfig: IkaConfig) {
+  constructor(sui: SuiClient, keypair: Ed25519Keypair, ikaConfig: IkaConfig, txQueue: SuiTxQueue) {
     this.sui = sui;
     this.keypair = keypair;
     this.ikaConfig = ikaConfig;
+    this.txQueue = txQueue;
   }
 
   /**
@@ -80,10 +83,12 @@ export class TreasuryManager {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-    });
+    const result = await this.txQueue.enqueue('add_ika_payment', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+      }),
+    );
 
     logger.info(
       { amount: amount.toString(), txDigest: result.digest },
@@ -110,10 +115,12 @@ export class TreasuryManager {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-    });
+    const result = await this.txQueue.enqueue('add_sui_payment', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+      }),
+    );
 
     logger.info(
       { amount: amount.toString(), txDigest: result.digest },

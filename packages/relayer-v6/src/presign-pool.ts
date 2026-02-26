@@ -26,6 +26,7 @@ import {
   getPresignStats,
   getAvailablePresignCount,
 } from './db.js';
+import type { SuiTxQueue } from './sui-tx-queue.js';
 import type { PresignEntry, PresignPoolStats } from './types.js';
 
 export class PresignPool {
@@ -33,6 +34,7 @@ export class PresignPool {
   private readonly keypair: Ed25519Keypair;
   private readonly ikaClient: IkaClient;
   private readonly ikaConfig: IkaConfig;
+  private readonly txQueue: SuiTxQueue;
   private replenishing = false;
 
   constructor(
@@ -40,11 +42,13 @@ export class PresignPool {
     keypair: Ed25519Keypair,
     ikaClient: IkaClient,
     ikaConfig: IkaConfig,
+    txQueue: SuiTxQueue,
   ) {
     this.sui = sui;
     this.keypair = keypair;
     this.ikaClient = ikaClient;
     this.ikaConfig = ikaConfig;
+    this.txQueue = txQueue;
   }
 
   /**
@@ -167,11 +171,13 @@ export class PresignPool {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-      options: { showEvents: true, showObjectChanges: true },
-    });
+    const result = await this.txQueue.enqueue('request_presign', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: { showEvents: true, showObjectChanges: true },
+      }),
+    );
 
     logger.info({ txDigest: result.digest }, 'Presign request transaction submitted');
 

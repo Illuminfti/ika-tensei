@@ -29,7 +29,8 @@ import type { IkaConfig } from '@ika.xyz/sdk';
 import { PresignPool } from './presign-pool.js';
 import { getConfig } from './config.js';
 import { logger } from './logger.js';
-import type { SealPendingEvent } from './types.js';
+import type { SuiTxQueue } from './sui-tx-queue.js';
+import type { SealPendingEvent, PresignEntry } from './types.js';
 
 export class SealSigner {
   private readonly sui: SuiClient;
@@ -39,6 +40,7 @@ export class SealSigner {
   private readonly presignPool: PresignPool;
   private readonly userSecretKeyShare: Uint8Array;
   private readonly userPublicOutput: Uint8Array;
+  private readonly txQueue: SuiTxQueue;
   private protocolPublicParams: Uint8Array | null = null;
 
   constructor(
@@ -49,6 +51,7 @@ export class SealSigner {
     presignPool: PresignPool,
     userSecretKeyShare: Uint8Array,
     userPublicOutput: Uint8Array,
+    txQueue: SuiTxQueue,
   ) {
     this.sui = sui;
     this.ikaClient = ikaClient;
@@ -57,6 +60,7 @@ export class SealSigner {
     this.presignPool = presignPool;
     this.userSecretKeyShare = userSecretKeyShare;
     this.userPublicOutput = userPublicOutput;
+    this.txQueue = txQueue;
   }
 
   /**
@@ -72,81 +76,111 @@ export class SealSigner {
 
     logger.info({ vaaHash: vaaHashHex }, 'Starting signing flow for pending seal');
 
-    // 1. Allocate presign from pool
-    const presign = this.presignPool.allocate(vaaHashHex);
-    if (!presign) {
-      throw new Error(`No presigns available for seal ${vaaHashHex}`);
-    }
-
-    try {
-      // 2. Get protocol public parameters (cached)
-      const protocolPublicParams = await this.getProtocolPublicParams();
-
-      // 3. Generate centralized signature via IKA SDK WASM
-      logger.info({ vaaHash: vaaHashHex }, 'Computing centralized signature');
-      const centralizedSig = await createUserSignMessageWithPublicOutput(
-        protocolPublicParams,
-        this.userPublicOutput,
-        this.userSecretKeyShare,
-        presign.presignBcs,
-        messageHash,
-        Hash.SHA512,
-        SignatureAlgorithm.EdDSA,
-        Curve.ED25519,
-      );
-
-      // 4. Call request_sign_seal on-chain
-      const signatureId = await this.requestSignOnChain(
-        vaaHashHex,
-        centralizedSig,
-        presign.objectId,
-      );
-
-      logger.info({ vaaHash: vaaHashHex, signatureId }, 'Sign request submitted — polling IKA');
-
-      // 5. Poll IKA for signature completion
-      const signResult = await this.ikaClient.getSignInParticularState(
-        signatureId,
-        Curve.ED25519,
-        SignatureAlgorithm.EdDSA,
-        'Completed',
-        { timeout: 120_000 },
-      );
-
-      // 6. Extract raw signature
-      const signatureOutput = new Uint8Array(
-        (signResult as { state: { Completed: { signature: number[] } } }).state.Completed.signature,
-      );
-      const signature = await parseSignatureFromSignOutput(
-        Curve.ED25519,
-        SignatureAlgorithm.EdDSA,
-        signatureOutput,
-      );
-
-      logger.info(
-        { vaaHash: vaaHashHex, signatureHex: Buffer.from(signature).toString('hex').slice(0, 32) + '...' },
-        'IKA signature obtained',
-      );
-
-      // 7. Mark presign used and trigger async replenishment
-      this.presignPool.markUsed(presign.objectId);
-      this.presignPool.replenish(1).catch((err) =>
-        logger.warn({ err }, 'Async presign replenish failed'),
-      );
-
-      // 8. Call complete_seal on-chain
-      await this.completeSealOnChain(vaaHashHex, signature);
-
-      logger.info({ vaaHash: vaaHashHex }, 'Seal signing flow complete — SealSigned event emitted');
-    } catch (err) {
-      // Don't leave the presign in ALLOCATED state on failure
-      if (presign.status === 'ALLOCATED') {
-        presign.status = 'AVAILABLE';
-        presign.allocatedAt = undefined;
-        presign.allocatedFor = undefined;
+    // Retry with different presigns if one turns out to be stale/deleted
+    const MAX_PRESIGN_RETRIES = 5;
+    for (let attempt = 0; attempt < MAX_PRESIGN_RETRIES; attempt++) {
+      // 1. Allocate presign from pool
+      const presign = this.presignPool.allocate(vaaHashHex);
+      if (!presign) {
+        throw new Error(`No presigns available for seal ${vaaHashHex}`);
       }
-      throw err;
+
+      try {
+        await this.executeSigningFlow(vaaHashHex, messageHash, presign);
+        return; // Success
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+
+        // If the presign object was deleted/invalid on-chain, evict it and retry
+        if (errMsg.includes('deleted') || errMsg.includes('invalid')) {
+          logger.warn(
+            { presignObjectId: presign.objectId, attempt, err },
+            'Presign object stale/deleted — evicting and retrying with next presign',
+          );
+          this.presignPool.markUsed(presign.objectId); // Remove from pool
+          continue;
+        }
+
+        // For other errors, return presign to pool and rethrow
+        if (presign.status === 'ALLOCATED') {
+          presign.status = 'AVAILABLE';
+          presign.allocatedAt = undefined;
+          presign.allocatedFor = undefined;
+        }
+        throw err;
+      }
     }
+
+    throw new Error(`Failed to sign seal ${vaaHashHex} after ${MAX_PRESIGN_RETRIES} presign attempts (all stale)`);
+  }
+
+  /**
+   * Execute the full signing flow with a specific presign.
+   */
+  private async executeSigningFlow(
+    vaaHashHex: string,
+    messageHash: Uint8Array,
+    presign: PresignEntry,
+  ): Promise<void> {
+    // 2. Get protocol public parameters (cached)
+    const protocolPublicParams = await this.getProtocolPublicParams();
+
+    // 3. Generate centralized signature via IKA SDK WASM
+    logger.info({ vaaHash: vaaHashHex }, 'Computing centralized signature');
+    const centralizedSig = await createUserSignMessageWithPublicOutput(
+      protocolPublicParams,
+      this.userPublicOutput,
+      this.userSecretKeyShare,
+      presign.presignBcs,
+      messageHash,
+      Hash.SHA512,
+      SignatureAlgorithm.EdDSA,
+      Curve.ED25519,
+    );
+
+    // 4. Call request_sign_seal on-chain
+    const signatureId = await this.requestSignOnChain(
+      vaaHashHex,
+      centralizedSig,
+      presign.objectId,
+    );
+
+    logger.info({ vaaHash: vaaHashHex, signatureId }, 'Sign request submitted — polling IKA');
+
+    // 5. Poll IKA for signature completion
+    const signResult = await this.ikaClient.getSignInParticularState(
+      signatureId,
+      Curve.ED25519,
+      SignatureAlgorithm.EdDSA,
+      'Completed',
+      { timeout: 120_000 },
+    );
+
+    // 6. Extract raw signature
+    const signatureOutput = new Uint8Array(
+      (signResult as { state: { Completed: { signature: number[] } } }).state.Completed.signature,
+    );
+    const signature = await parseSignatureFromSignOutput(
+      Curve.ED25519,
+      SignatureAlgorithm.EdDSA,
+      signatureOutput,
+    );
+
+    logger.info(
+      { vaaHash: vaaHashHex, signatureHex: Buffer.from(signature).toString('hex').slice(0, 32) + '...' },
+      'IKA signature obtained',
+    );
+
+    // 7. Mark presign used and trigger async replenishment
+    this.presignPool.markUsed(presign.objectId);
+    this.presignPool.replenish(1).catch((err) =>
+      logger.warn({ err }, 'Async presign replenish failed'),
+    );
+
+    // 8. Call complete_seal on-chain
+    await this.completeSealOnChain(vaaHashHex, signature);
+
+    logger.info({ vaaHash: vaaHashHex }, 'Seal signing flow complete — SealSigned event emitted');
   }
 
   /**
@@ -194,11 +228,13 @@ export class SealSigner {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-      options: { showEvents: true },
-    });
+    const result = await this.txQueue.enqueue('request_sign_seal', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: { showEvents: true },
+      }),
+    );
 
     // Parse SignRequested event to get signature_id
     const signEvent = result.events?.find(
@@ -245,10 +281,12 @@ export class SealSigner {
       ],
     });
 
-    const result = await this.sui.signAndExecuteTransaction({
-      transaction: tx,
-      signer: this.keypair,
-    });
+    const result = await this.txQueue.enqueue('complete_seal', () =>
+      this.sui.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+      }),
+    );
 
     logger.info(
       { txDigest: result.digest, vaaHash },

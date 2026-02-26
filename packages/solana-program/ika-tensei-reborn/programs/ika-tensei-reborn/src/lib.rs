@@ -19,7 +19,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::ed25519_program;
 use anchor_lang::solana_program::sysvar;
 use anchor_lang::solana_program::sysvar::instructions as ix_sysvar;
-use mpl_core::instructions::{CreateV2CpiBuilder, CreateCollectionV2CpiBuilder};
+use mpl_core::instructions::{CreateV2CpiBuilder, CreateCollectionV2CpiBuilder, UpdateV1CpiBuilder};
 use mpl_core::types::DataState;
 use sha2::{Sha256, Digest};
 
@@ -77,6 +77,33 @@ pub struct UpdateMintConfig<'info> {
               has_one = admin)]
     pub config: Account<'info, MintConfig>,
     pub admin: Signer<'info>,
+}
+
+/// Update the URI of a minted Metaplex Core asset (admin only).
+/// The mint_authority PDA is the update authority on the asset.
+#[derive(Accounts)]
+#[instruction(source_chain: u16, nft_contract: Vec<u8>)]
+pub struct UpdateAssetUri<'info> {
+    #[account(seeds = [constants::MINT_CONFIG_SEED], bump = config.bump, has_one = admin)]
+    pub config: Box<Account<'info, MintConfig>>,
+    pub admin: Signer<'info>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// The Metaplex Core asset to update
+    /// CHECK: Validated by MPL Core CPI
+    #[account(mut)]
+    pub asset: UncheckedAccount<'info>,
+    /// The collection the asset belongs to
+    /// CHECK: Validated by MPL Core CPI
+    pub collection_asset: UncheckedAccount<'info>,
+    /// Mint authority PDA - update authority on the asset
+    /// CHECK: PDA signer
+    #[account(seeds = [constants::MINT_AUTHORITY_SEED, &source_chain.to_le_bytes(), &nft_contract], bump)]
+    pub mint_authority: UncheckedAccount<'info>,
+    /// CHECK: Metaplex Core program
+    #[account(address = mpl_core::ID)]
+    pub mpl_core_program: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 /// Initialize a RebornCollection PDA for a source collection.
@@ -311,6 +338,37 @@ pub mod ika_tensei_reborn {
     ) -> Result<()> {
         ctx.accounts.config.minting_pubkey = new_minting_pubkey;
         msg!("MintConfig updated with new minting pubkey: {}", hex::encode(&new_minting_pubkey));
+        Ok(())
+    }
+
+    /// Update the URI of a minted Metaplex Core asset (admin only).
+    pub fn update_asset_uri(
+        ctx: Context<UpdateAssetUri>,
+        source_chain: u16,
+        nft_contract: Vec<u8>,
+        new_uri: String,
+    ) -> Result<()> {
+        require!(new_uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
+
+        let mint_authority_bump = ctx.bumps.mint_authority;
+        let mint_authority_seeds: &[&[u8]] = &[
+            constants::MINT_AUTHORITY_SEED,
+            &source_chain.to_le_bytes(),
+            &nft_contract,
+            &[mint_authority_bump],
+        ];
+
+        UpdateV1CpiBuilder::new(&ctx.accounts.mpl_core_program)
+            .asset(&ctx.accounts.asset)
+            .collection(Some(&ctx.accounts.collection_asset))
+            .authority(Some(&ctx.accounts.mint_authority))
+            .payer(&ctx.accounts.payer)
+            .system_program(&ctx.accounts.system_program)
+            .new_uri(new_uri.clone())
+            .invoke_signed(&[mint_authority_seeds])
+            .map_err(|_e| ErrorCode::MetaplexError)?;
+
+        msg!("Asset URI updated to: {}", new_uri);
         Ok(())
     }
 

@@ -348,7 +348,9 @@ export class DWalletCreator {
 
     if (ED25519_CHAINS.has(chain)) {
       // Ed25519 chains: pubkey IS the address
-      return Buffer.from(pubkey).toString('hex');
+      // Sui addresses use 0x prefix; NEAR implicit accounts don't
+      const hex = Buffer.from(pubkey).toString('hex');
+      return chain === 'near' ? hex : `0x${hex}`;
     }
 
     throw new Error(`Unsupported source chain: ${sourceChain}`);

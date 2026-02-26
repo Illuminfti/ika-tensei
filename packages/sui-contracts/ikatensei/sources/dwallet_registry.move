@@ -281,6 +281,12 @@ module ikatensei::dwallet_registry {
         table::borrow(&registry.wallets, *deposit_address).active
     }
 
+    /// Check if a record exists at all (regardless of active/used status).
+    /// Used by orchestrator to conditionally skip registry marking for centralized seals.
+    public fun has_record(registry: &DWalletRegistry, deposit_address: &vector<u8>): bool {
+        table::contains(&registry.wallets, *deposit_address)
+    }
+
     public fun is_dwallet_used(registry: &DWalletRegistry, deposit_address: &vector<u8>): bool {
         if (!table::contains(&registry.wallets, *deposit_address)) {
             return false
