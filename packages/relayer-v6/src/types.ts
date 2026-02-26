@@ -327,6 +327,10 @@ export interface RelayerConfig {
 
   // Source chain RPCs (centralized flow)
   baseRpcUrl: string;
+  ethereumRpcUrl: string;
+  polygonRpcUrl: string;
+  arbitrumRpcUrl: string;
+  optimismRpcUrl: string;
   aptosRpcUrl: string;
   nearRpcUrl: string;
 
@@ -345,6 +349,10 @@ export interface RelayerConfig {
 
   // Core voter weight plugin program ID (for SPL Governance NFT voting)
   coreVoterProgramId: string;
+
+  // API security
+  apiKey: string;
+  corsAllowedOrigins: string;
 
   // Optional tuning
   healthPort: number;

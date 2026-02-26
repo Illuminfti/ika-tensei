@@ -403,7 +403,8 @@ export class RealmCreator {
         programId: coreVoterProgramId,
         keys: [
           { pubkey: registrar, isSigner: false, isWritable: true },
-          { pubkey: payer, isSigner: true, isWritable: false },  // realm_authority
+          { pubkey: realm, isSigner: false, isWritable: false },     // realm (for ownership check)
+          { pubkey: payer, isSigner: true, isWritable: false },      // realm_authority
         ],
         data: configureData,
       }),
@@ -421,6 +422,7 @@ export class RealmCreator {
       new TransactionInstruction({
         programId: coreVoterProgramId,
         keys: [
+          { pubkey: registrar, isSigner: false, isWritable: false },          // registrar (for realm ownership check)
           { pubkey: maxVoterWeightRecord, isSigner: false, isWritable: true },
           { pubkey: realm, isSigner: false, isWritable: false },
           { pubkey: communityMint, isSigner: false, isWritable: false },

@@ -72,6 +72,12 @@ export function getConfig(): RelayerConfig {
     // Source chain RPCs (centralized flow)
     baseRpcUrl: process.env.BASE_RPC_URL || 'https://sepolia.base.org',
     aptosRpcUrl: process.env.APTOS_RPC_URL || 'https://fullnode.testnet.aptoslabs.com/v1',
+    // Per-chain EVM RPC URLs (all fall back to baseRpcUrl if not set)
+    ethereumRpcUrl: process.env.ETHEREUM_RPC_URL || '',
+    polygonRpcUrl: process.env.POLYGON_RPC_URL || '',
+    arbitrumRpcUrl: process.env.ARBITRUM_RPC_URL || '',
+    optimismRpcUrl: process.env.OPTIMISM_RPC_URL || '',
+
     nearRpcUrl: process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org',
 
     // Arweave via Irys
@@ -86,6 +92,10 @@ export function getConfig(): RelayerConfig {
 
     // Core voter weight plugin for SPL Governance NFT voting
     coreVoterProgramId: process.env.CORE_VOTER_PROGRAM_ID || 'E5thJCWofTMbmyhUhCai3hZiruFtYmmscDio6GwFCGaW',
+
+    // API security
+    apiKey: process.env.RELAYER_API_KEY || '',
+    corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS || '',
 
     dbPath: process.env.DB_PATH || './relayer.db',
     healthPort: parseInt(process.env.HEALTH_PORT || '8080', 10),
@@ -113,7 +123,5 @@ function parseEmitters(raw: string): SourceChainEmitter[] {
   });
 }
 
-/**
- * Export config getter for use in other modules
- */
-export const config = getConfig();
+// All modules should use getConfig() instead of importing a static config object.
+// This avoids eager evaluation at import time (which fails if .env isn't loaded yet).

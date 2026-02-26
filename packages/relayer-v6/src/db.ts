@@ -93,6 +93,13 @@ export function initDb(dbPath: string = './relayer.db'): Database.Database {
     db.exec('ALTER TABLE sessions ADD COLUMN collection_name TEXT');
   }
 
+  // Migration: add unique index on payment_tx_sig to prevent replay attacks
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_payment_tx ON sessions(payment_tx_sig) WHERE payment_tx_sig IS NOT NULL');
+  } catch {
+    // Index may already exist
+  }
+
   logger.info({ dbPath }, 'SQLite database initialized');
   return db;
 }
@@ -103,6 +110,14 @@ export function getDb(): Database.Database {
 }
 
 // ─── Sessions ──────────────────────────────────────────────────────────────
+
+/** Check if a payment tx signature has already been used (replay protection). */
+export function isPaymentTxUsed(paymentTxSignature: string): boolean {
+  const row = getDb().prepare(
+    'SELECT 1 FROM sessions WHERE payment_tx_sig = ? LIMIT 1',
+  ).get(paymentTxSignature);
+  return !!row;
+}
 
 export function createSession(session: SealSession): void {
   const now = Date.now();
@@ -244,16 +259,19 @@ export function allocatePresign(vaaHash: string): PresignEntry | null {
   releaseExpiredPresigns(5 * 60 * 1000);
 
   const d = getDb();
-  const row = d.prepare(
-    `SELECT * FROM presigns WHERE status = 'AVAILABLE' ORDER BY created_at ASC LIMIT 1`,
-  ).get() as PresignRow | undefined;
+  const now = Date.now();
+
+  // Atomic allocation: UPDATE + RETURNING in a single statement prevents race conditions
+  // where two concurrent callers could SELECT the same row.
+  const row = d.prepare(`
+    UPDATE presigns SET status = 'ALLOCATED', allocated_at = ?, allocated_for = ?
+    WHERE object_id = (
+      SELECT object_id FROM presigns WHERE status = 'AVAILABLE' ORDER BY created_at ASC LIMIT 1
+    )
+    RETURNING object_id, presign_id, presign_bcs, status, allocated_at, allocated_for, created_at
+  `).get(now, vaaHash) as PresignRow | undefined;
 
   if (!row) return null;
-
-  const now = Date.now();
-  d.prepare(
-    `UPDATE presigns SET status = 'ALLOCATED', allocated_at = ?, allocated_for = ? WHERE object_id = ?`,
-  ).run(now, vaaHash, row.object_id);
 
   return {
     objectId: row.object_id,

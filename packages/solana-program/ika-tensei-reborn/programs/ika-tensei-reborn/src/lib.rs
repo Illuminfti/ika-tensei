@@ -431,10 +431,10 @@ pub mod ika_tensei_reborn {
         // ============ 1. Input validation ============
         require!(signature.len() == 64, ErrorCode::InvalidSignature);
         require!(sig_hash.len() == 32, ErrorCode::InvalidSigHash);
-        require!(nft_contract.len() <= constants::MAX_CONTRACT_LENGTH, ErrorCode::ContractTooLong);
-        require!(token_id.len() <= constants::MAX_TOKEN_ID_LENGTH, ErrorCode::TokenIdTooLong);
-        require!(token_uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
-        require!(collection_name.len() <= constants::MAX_NAME_LENGTH, ErrorCode::NameTooLong);
+        require!(!nft_contract.is_empty() && nft_contract.len() <= constants::MAX_CONTRACT_LENGTH, ErrorCode::ContractTooLong);
+        require!(!token_id.is_empty() && token_id.len() <= constants::MAX_TOKEN_ID_LENGTH, ErrorCode::TokenIdTooLong);
+        require!(!token_uri.is_empty() && token_uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
+        require!(!collection_name.is_empty() && collection_name.len() <= constants::MAX_NAME_LENGTH, ErrorCode::NameTooLong);
         require!(royalty_basis_points <= 10000, ErrorCode::InvalidRoyalties);
 
         let receiver_pubkey = ctx.accounts.receiver.key();
@@ -784,23 +784,12 @@ fn verify_ed25519_signature(
     // a composed transaction. The relayer always places it at position 0.
     let ed25519_ix = ix_sysvar::load_instruction_at_checked(0, instructions_sysvar)
         .map_err(|_| ErrorCode::NoEd25519Instruction)?;
-    
+
     if ed25519_ix.program_id != ed25519_program::ID {
-        // Also search positions 1-3 as a fallback (in case of preflight instructions)
-        let mut found = false;
-        for i in 1..4 {
-            if let Ok(ix) = ix_sysvar::load_instruction_at_checked(i, instructions_sysvar) {
-                if ix.program_id == ed25519_program::ID {
-                    return verify_ed25519_ix_data(&ix.data, expected_pubkey, expected_message, expected_signature);
-                }
-            }
-        }
-        if !found {
-            return Err(ErrorCode::NoEd25519Instruction.into());
-        }
+        return Err(ErrorCode::NoEd25519Instruction.into());
     }
-    
-    return verify_ed25519_ix_data(&ed25519_ix.data, expected_pubkey, expected_message, expected_signature);
+
+    verify_ed25519_ix_data(&ed25519_ix.data, expected_pubkey, expected_message, expected_signature)
 }
 
 /// Inner verification of Ed25519 instruction data fields.

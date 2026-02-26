@@ -221,6 +221,7 @@ export class SealSigner {
         tx.object(config.suiOrchestratorStateId),
         tx.object(config.suiSigningStateId),
         coordinatorRef,
+        tx.object(config.suiAdminCapId),
         tx.pure.vector('u8', Array.from(hexToBytes(vaaHash))),
         tx.pure.vector('u8', Array.from(centralizedSig)),
         tx.object(presignObjectId),
@@ -275,6 +276,7 @@ export class SealSigner {
         tx.object(config.suiOrchestratorStateId),
         tx.object(config.suiRegistryObjectId),
         tx.object(config.suiMintingAuthorityId),
+        tx.object(config.suiAdminCapId),
         tx.pure.vector('u8', Array.from(hexToBytes(vaaHash))),
         tx.pure.vector('u8', Array.from(signature)),
         tx.object('0x6'), // Clock shared object

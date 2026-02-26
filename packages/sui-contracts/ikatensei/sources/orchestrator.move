@@ -60,6 +60,9 @@ module ikatensei::orchestrator {
     const E_SEAL_ALREADY_COMPLETED: u64 = 10;
     const E_DWALLET_ALREADY_USED: u64 = 11;
     const E_INVALID_RECEIVER: u64 = 12;
+    const E_NFT_ALREADY_SEALED: u64 = 13;
+    const E_INVALID_DEPOSIT_ADDRESS: u64 = 14;
+    const E_MINTING_PUBKEY_NOT_SET: u64 = 15;
 
     // ==================================================================
     // Events
@@ -125,6 +128,9 @@ module ikatensei::orchestrator {
         pending_seals: Table<vector<u8>, PendingSeal>,
         /// deposit_address -> bool (one-use dWallet tracking)
         used_dwallets: Table<vector<u8>, bool>,
+        /// sha256(source_chain_be || nft_contract || token_id) -> bool
+        /// Prevents the same source NFT from being bridged more than once.
+        sealed_nfts: Table<vector<u8>, bool>,
         total_processed: u64,
         /// On-chain IKA/SUI pool for coordinator calls
         treasury: Treasury,
@@ -155,6 +161,7 @@ module ikatensei::orchestrator {
             known_emitters: table::new(ctx),
             pending_seals: table::new(ctx),
             used_dwallets: table::new(ctx),
+            sealed_nfts: table::new(ctx),
             total_processed: 0,
             treasury: treasury::new(),
         };
@@ -327,6 +334,17 @@ module ikatensei::orchestrator {
         // ── Step 5: One-use dWallet check ──
         assert!(!table::contains(&state.used_dwallets, deposit_address), E_DWALLET_ALREADY_USED);
 
+        // ── Step 5.5: Duplicate NFT check (same source NFT can't be bridged twice) ──
+        let source_chain_val = payload::get_source_chain(&seal_payload);
+        let mut nft_key = vector::empty<u8>();
+        vector::push_back(&mut nft_key, ((source_chain_val >> 8) as u8));
+        vector::push_back(&mut nft_key, ((source_chain_val & 0xFF) as u8));
+        vector::append(&mut nft_key, *payload::get_nft_contract(&seal_payload));
+        vector::append(&mut nft_key, *payload::get_token_id(&seal_payload));
+        let nft_hash = std::hash::sha2_256(nft_key);
+        assert!(!table::contains(&state.sealed_nfts, nft_hash), E_NFT_ALREADY_SEALED);
+        table::add(&mut state.sealed_nfts, nft_hash, true);
+
         // ── Step 6: Registry validation ──
         assert!(dwallet_registry::is_registered(registry, &deposit_address), E_INVALID_DWALLET);
 
@@ -382,6 +400,7 @@ module ikatensei::orchestrator {
         state: &mut OrchestratorState,
         signing_state: &mut SigningState,
         coordinator: &mut DWalletCoordinator,
+        _cap: &OrchestratorAdminCap,
         vaa_hash: vector<u8>,
         message_centralized_signature: vector<u8>,
         unverified_cap: UnverifiedPresignCap,
@@ -470,6 +489,23 @@ module ikatensei::orchestrator {
         // Validate receiver is 32 bytes (Solana pubkey)
         assert!(vector::length(&receiver) == 32, E_INVALID_RECEIVER);
 
+        // Validate deposit_address has valid length (20 for EVM, 32 for others)
+        let addr_len = vector::length(&deposit_address);
+        assert!(addr_len == 20 || addr_len == 32, E_INVALID_DEPOSIT_ADDRESS);
+
+        // Validate minting pubkey is set (32 bytes for Ed25519)
+        assert!(vector::length(&minting_authority.minting_pubkey) == 32, E_MINTING_PUBKEY_NOT_SET);
+
+        // Prevent duplicate bridging: same (source_chain, nft_contract, token_id) can only be sealed once
+        let mut nft_key = vector::empty<u8>();
+        vector::push_back(&mut nft_key, ((source_chain >> 8) as u8));
+        vector::push_back(&mut nft_key, ((source_chain & 0xFF) as u8));
+        vector::append(&mut nft_key, copy nft_contract);
+        vector::append(&mut nft_key, copy token_id);
+        let nft_hash = std::hash::sha2_256(nft_key);
+        assert!(!table::contains(&state.sealed_nfts, nft_hash), E_NFT_ALREADY_SEALED);
+        table::add(&mut state.sealed_nfts, nft_hash, true);
+
         // Compute seal_hash as unique key: sha256(source_chain_be || nft_contract || token_id || receiver)
         let mut hash_input = vector::empty<u8>();
         vector::push_back(&mut hash_input, ((source_chain >> 8) as u8));
@@ -524,6 +560,7 @@ module ikatensei::orchestrator {
         state: &mut OrchestratorState,
         registry: &mut DWalletRegistry,
         minting_authority: &MintingAuthority,
+        _cap: &OrchestratorAdminCap,
         vaa_hash: vector<u8>,
         signature: vector<u8>,
         clock: &sui::clock::Clock,

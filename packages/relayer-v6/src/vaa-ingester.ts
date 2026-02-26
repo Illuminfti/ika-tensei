@@ -153,7 +153,7 @@ export class VAAIngester {
     let newVAAs = body.data;
     if (lastSeq !== undefined) {
       newVAAs = newVAAs.filter(
-        (v) => BigInt(v.sequence) > BigInt(Math.trunc(Number(lastSeq))),
+        (v) => BigInt(v.sequence) > BigInt(lastSeq),
       );
     }
 

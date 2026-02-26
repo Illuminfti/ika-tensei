@@ -18,6 +18,7 @@
 
 import { readFileSync } from 'fs';
 import { randomUUID, createHash } from 'crypto';
+import type { Server } from 'http';
 import { Connection, Keypair } from '@solana/web3.js';
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
@@ -36,7 +37,7 @@ import { SealSigner } from './seal-signer.js';
 import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
-import { initDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit } from './db.js';
+import { initDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed } from './db.js';
 import { ChainVerifier } from './chain-verifier.js';
 import { MetadataHandler } from './metadata-handler.js';
 import { SuiTxQueue } from './sui-tx-queue.js';
@@ -70,6 +71,7 @@ export class Relayer {
   private readonly healthServer: HealthServer;
   private readonly relayerKeypair: Keypair;
   private readonly app: express.Application;
+  private httpServer?: Server;
   private _isRunning = false;
 
   // New v8 services (initialized lazily in start())
@@ -105,18 +107,89 @@ export class Relayer {
   // ─── API Server ─────────────────────────────────────────────────────────────
 
   private setupApi(): void {
-    this.app.use(cors());
+    const config = getConfig();
+
+    // CORS: restrict to configured origins (default: allow all for dev)
+    const allowedOrigins = config.corsAllowedOrigins;
+    if (allowedOrigins) {
+      this.app.use(cors({ origin: allowedOrigins.split(',').map(o => o.trim()) }));
+    } else {
+      this.app.use(cors());
+    }
     this.app.use(express.json());
+
+    // API key middleware for admin/internal endpoints
+    const apiKey = config.apiKey;
+    const requireApiKey: express.RequestHandler = (req, res, next) => {
+      if (!apiKey) { next(); return; }
+      const provided = req.headers['x-api-key'] || req.query.apiKey;
+      if (provided !== apiKey) {
+        res.status(401).json({ error: 'Unauthorized — invalid or missing API key' });
+        return;
+      }
+      next();
+    };
+
+    // Simple in-memory rate limiter for seal endpoints
+    const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+    const rateLimit: express.RequestHandler = (req, res, next) => {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const now = Date.now();
+      const windowMs = 60_000; // 1 minute
+      const maxRequests = 20;  // max 20 requests per minute per IP
+
+      let entry = rateLimitMap.get(ip);
+      if (!entry || now > entry.resetAt) {
+        entry = { count: 0, resetAt: now + windowMs };
+        rateLimitMap.set(ip, entry);
+      }
+      entry.count++;
+      if (entry.count > maxRequests) {
+        res.status(429).json({ error: 'Too many requests — try again later' });
+        return;
+      }
+      next();
+    };
+
+    // Periodic cleanup of expired rate limit entries to prevent memory leak
+    setInterval(() => {
+      const now = Date.now();
+      for (const [ip, entry] of rateLimitMap) {
+        if (now > entry.resetAt) rateLimitMap.delete(ip);
+      }
+    }, 300_000); // every 5 minutes
+
+    // Allowed source chains for input validation
+    const ALLOWED_CHAINS = new Set([
+      'base', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'bsc', 'avalanche',
+      'sui', 'near', 'aptos',
+      'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia',
+    ]);
 
     /**
      * POST /api/seal/start
      */
-    this.app.post('/api/seal/start', (req, res) => {
+    this.app.post('/api/seal/start', rateLimit, (req, res) => {
       try {
         const { solanaWallet, sourceChain } = req.body as StartSealRequest;
 
         if (!solanaWallet || !sourceChain) {
           res.status(400).json({ error: 'Missing solanaWallet or sourceChain' });
+          return;
+        }
+
+        // Validate sourceChain is in allowed list
+        if (!ALLOWED_CHAINS.has(sourceChain.toLowerCase())) {
+          res.status(400).json({ error: `Unsupported source chain: ${sourceChain}` });
+          return;
+        }
+
+        // Validate solanaWallet is a valid base58 pubkey
+        try {
+          const { PublicKey } = require('@solana/web3.js');
+          new PublicKey(solanaWallet);
+        } catch {
+          res.status(400).json({ error: 'Invalid Solana wallet address' });
           return;
         }
 
@@ -150,7 +223,7 @@ export class Relayer {
     /**
      * POST /api/seal/confirm-payment
      */
-    this.app.post('/api/seal/confirm-payment', async (req, res) => {
+    this.app.post('/api/seal/confirm-payment', rateLimit, async (req, res) => {
       try {
         const { sessionId, paymentTxSignature } = req.body as ConfirmPaymentRequest;
 
@@ -167,6 +240,12 @@ export class Relayer {
 
         if (session.status !== 'awaiting_payment') {
           res.status(409).json({ error: 'Payment already confirmed or session in progress' });
+          return;
+        }
+
+        // Replay protection: reject payment tx signatures already used for another session
+        if (isPaymentTxUsed(paymentTxSignature)) {
+          res.status(409).json({ error: 'Payment transaction already used for another session' });
           return;
         }
 
@@ -226,12 +305,18 @@ export class Relayer {
      * POST /api/seal/confirm-deposit
      * Centralized flow: user confirms NFT deposit, relayer verifies + processes.
      */
-    this.app.post('/api/seal/confirm-deposit', async (req, res) => {
+    this.app.post('/api/seal/confirm-deposit', rateLimit, async (req, res) => {
       try {
         const { sessionId, nftContract, tokenId, txHash } = req.body as ConfirmDepositRequest;
 
         if (!sessionId || !nftContract || !tokenId) {
           res.status(400).json({ error: 'Missing sessionId, nftContract, or tokenId' });
+          return;
+        }
+
+        // Sanitize: reject obviously malformed inputs (max 256 chars each)
+        if (nftContract.length > 256 || tokenId.length > 256) {
+          res.status(400).json({ error: 'nftContract or tokenId too long (max 256 chars)' });
           return;
         }
 
@@ -302,7 +387,7 @@ export class Relayer {
     /**
      * GET /api/treasury/balances
      */
-    this.app.get('/api/treasury/balances', async (_req, res) => {
+    this.app.get('/api/treasury/balances', requireApiKey, async (_req, res) => {
       try {
         if (!this.treasuryManager) {
           res.status(503).json({ error: 'Treasury manager not initialized' });
@@ -321,7 +406,7 @@ export class Relayer {
     /**
      * GET /api/presign/stats
      */
-    this.app.get('/api/presign/stats', (_req, res) => {
+    this.app.get('/api/presign/stats', requireApiKey, (_req, res) => {
       if (!this.presignPool) {
         res.status(503).json({ error: 'Presign pool not initialized' });
         return;
@@ -359,7 +444,7 @@ export class Relayer {
 
     // Start API server
     const config = getConfig();
-    this.app.listen(config.apiPort, () => {
+    this.httpServer = this.app.listen(config.apiPort, () => {
       logger.info({ port: config.apiPort }, 'API server listening');
     });
 
@@ -496,6 +581,12 @@ export class Relayer {
     await this.sealSignedListener.unsubscribeFromEvents();
     await this.sealPendingListener.unsubscribeFromEvents();
     this.healthServer.stop();
+    // Gracefully close HTTP server (stop accepting new connections, drain existing)
+    if (this.httpServer) {
+      await new Promise<void>((resolve) => {
+        this.httpServer!.close(() => resolve());
+      });
+    }
     this._isRunning = false;
     logger.info('Relayer stopped');
   }

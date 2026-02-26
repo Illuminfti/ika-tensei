@@ -151,6 +151,55 @@ The Ed25519 signed message (`sha256(token_uri || token_id || receiver)`) is miss
 
 ---
 
+## Fixes Applied (2026-02-26)
+
+All CRITICAL and HIGH findings have been fixed, along with key MEDIUM issues. All builds verified clean.
+
+### CRITICAL Fixes (all 7 resolved)
+| # | Finding | Fix |
+|---|---------|-----|
+| 1 | No API auth | Added API key middleware + rate limiting (20 req/min/IP) |
+| 2 | Payment replay | Unique index on `payment_tx_sig` + `isPaymentTxUsed()` check |
+| 3 | Secrets in env | Documented risk (secrets manager recommended for prod) |
+| 4 | `complete_seal` no ACL | Added `_cap: &OrchestratorAdminCap` parameter |
+| 5 | `request_sign_seal` no ACL | Added `_cap: &OrchestratorAdminCap` parameter |
+| 6 | Realm authority not validated | Added realm ownership + governance program checks |
+| 7 | Private key in `.env` | Documented risk (key rotation needed) |
+
+### HIGH Fixes (all key items resolved)
+| # | Finding | Fix |
+|---|---------|-----|
+| 1 | Duplicate NFT counting | `BTreeSet<Pubkey>` deduplication in `update_voter_weight_record` |
+| 2 | Missing realm ownership | Added `realm` account with ownership constraint to `ConfigureCollection` |
+| 3 | Ed25519 index fallback | Removed fallback, strict index 0 only |
+| 4 | Duplicate NFT bridging | `sealed_nfts: Table<vector<u8>, bool>` in orchestrator |
+| 5 | Single EVM RPC | Per-chain RPC routing (`getEvmRpcUrl()`) |
+| 6 | No rate limiting | In-memory IP rate limiter on seal endpoints |
+| 7 | Unrestricted CORS | Configurable `CORS_ALLOWED_ORIGINS` |
+| 8 | Reactivate used dWallet | Added `assert!(!record.used, E_ALREADY_USED)` |
+
+### MEDIUM Fixes Applied
+| Finding | Fix |
+|---------|-----|
+| SSRF via metadata URLs | `isSafeUrl()` blocks private IPs, redirects |
+| Image size unlimited | `MAX_IMAGE_SIZE` (10 MB) with Content-Length + buffer checks |
+| Config eager eval | Removed `export const config = getConfig()` at module level |
+| Presign race condition | Atomic `UPDATE ... WHERE object_id = (SELECT ...)` RETURNING |
+| No graceful shutdown | Store `httpServer` reference, close in `stop()` |
+| No input validation | Source chain allowlist, Solana pubkey validation, length limits |
+| Rate limit memory leak | Periodic cleanup of expired entries (5-min interval) |
+| Empty nft_contract/token_id | Added `!.is_empty()` checks in ika-tensei-reborn |
+| VAA sequence precision | `BigInt(lastSeq)` instead of `BigInt(Math.trunc(Number(lastSeq)))` |
+| Deposit address validation | Length assertion (20 or 32 bytes) in Sui orchestrator |
+| Minting pubkey not set | `assert!(length == 32)` before seal creation |
+
+### Build Verification
+- `npx tsc --noEmit` — clean (relayer-v6)
+- `anchor build` — clean (ika-core-voter, ika-tensei-reborn)
+- `sui move build` — clean (Sui contracts)
+
+---
+
 ## Architecture Observations
 
 **Strengths**:

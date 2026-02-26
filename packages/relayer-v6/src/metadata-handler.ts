@@ -13,6 +13,32 @@ import { getConfig } from './config.js';
 import { logger } from './logger.js';
 import type { VerifyResult } from './chain-verifier.js';
 
+// Maximum image size: 10 MB
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Validate a URL is safe to fetch (SSRF protection).
+ * Rejects private/internal IPs and non-HTTPS URLs (unless IPFS/Arweave gateway).
+ */
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow http(s) protocols
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const hostname = parsed.hostname.toLowerCase();
+    // Block private/internal hostnames
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return false;
+    if (hostname === '::1' || hostname === '[::1]') return false;
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.')) return false;
+    if (hostname.startsWith('172.') && /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)) return false;
+    if (hostname === '169.254.169.254' || hostname.startsWith('169.254.')) return false;
+    if (hostname.endsWith('.internal') || hostname.endsWith('.local')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface ProvenanceData {
@@ -170,10 +196,15 @@ export class MetadataHandler {
     }
 
     for (const fetchUrl of urls) {
+      if (!isSafeUrl(fetchUrl)) {
+        logger.warn({ fetchUrl }, 'Skipping unsafe metadata URL (SSRF protection)');
+        continue;
+      }
       try {
         const response = await fetch(fetchUrl, {
           headers: { 'Accept': 'application/json' },
           signal: AbortSignal.timeout(10_000),
+          redirect: 'error', // Prevent open redirect SSRF
         });
 
         if (!response.ok) continue;
@@ -288,13 +319,25 @@ export class MetadataHandler {
 
     let lastError: Error | undefined;
     for (const fetchUrl of urls) {
+      if (!isSafeUrl(fetchUrl)) {
+        logger.warn({ fetchUrl }, 'Skipping unsafe image URL (SSRF protection)');
+        continue;
+      }
       try {
         const response = await fetch(fetchUrl, {
           signal: AbortSignal.timeout(15_000),
+          redirect: 'error', // Prevent open redirect SSRF
         });
 
         if (!response.ok) {
           lastError = new Error(`${response.status} ${response.statusText} from ${fetchUrl}`);
+          continue;
+        }
+
+        // Check Content-Length header before downloading
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength, 10) > MAX_IMAGE_SIZE) {
+          lastError = new Error(`Image too large (${contentLength} bytes) from ${fetchUrl}`);
           continue;
         }
 
@@ -303,6 +346,12 @@ export class MetadataHandler {
 
         if (imageBuffer.length === 0) {
           lastError = new Error(`Empty response from ${fetchUrl}`);
+          continue;
+        }
+
+        // Enforce size limit on actual downloaded bytes (Content-Length can lie)
+        if (imageBuffer.length > MAX_IMAGE_SIZE) {
+          lastError = new Error(`Image too large (${imageBuffer.length} bytes) from ${fetchUrl}`);
           continue;
         }
 

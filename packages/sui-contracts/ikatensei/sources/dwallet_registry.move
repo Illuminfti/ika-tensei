@@ -204,6 +204,7 @@ module ikatensei::dwallet_registry {
     }
 
     /// Re-activate a previously deactivated dWallet.
+    /// Cannot reactivate a dWallet that has been permanently marked as used.
     public fun reactivate_dwallet(
         registry: &mut DWalletRegistry,
         _cap: &RegistryOwnerCap,
@@ -216,6 +217,7 @@ module ikatensei::dwallet_registry {
         );
 
         let record = table::borrow_mut(&mut registry.wallets, deposit_address);
+        assert!(!record.used, E_ALREADY_USED);
         assert!(!record.active, E_ALREADY_ACTIVE);
         record.active = true;
         registry.total_active = registry.total_active + 1;

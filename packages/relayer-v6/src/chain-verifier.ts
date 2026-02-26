@@ -65,7 +65,7 @@ export class ChainVerifier {
       case 'polygon':
       case 'arbitrum':
       case 'optimism':
-        return this.verifyEvm(params);
+        return this.verifyEvm(chain, params);
       case 'sui':
         return this.verifySui(params);
       case 'near':
@@ -79,9 +79,22 @@ export class ChainVerifier {
 
   // ─── EVM (Base, Ethereum, etc.) ─────────────────────────────────────────
 
-  private async verifyEvm(params: DepositParams): Promise<VerifyResult> {
+  /** Get the RPC URL for a specific EVM chain. */
+  private getEvmRpcUrl(chain: string): string {
     const config = getConfig();
-    const provider = new ethers.JsonRpcProvider(config.baseRpcUrl);
+    switch (chain) {
+      case 'ethereum': return config.ethereumRpcUrl || config.baseRpcUrl;
+      case 'polygon': return config.polygonRpcUrl || config.baseRpcUrl;
+      case 'arbitrum': return config.arbitrumRpcUrl || config.baseRpcUrl;
+      case 'optimism': return config.optimismRpcUrl || config.baseRpcUrl;
+      case 'base':
+      default: return config.baseRpcUrl;
+    }
+  }
+
+  private async verifyEvm(chain: string, params: DepositParams): Promise<VerifyResult> {
+    const rpcUrl = this.getEvmRpcUrl(chain);
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
     const contract = new ethers.Contract(params.nftContract, ERC721_ABI, provider);
 
     try {
