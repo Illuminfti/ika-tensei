@@ -86,6 +86,8 @@ export interface ProcessedSeal {
   collectionName: string;
   /** 32-byte SHA256 message hash */
   messageHash: Uint8Array;
+  /** 32-byte Solana public key of the DAO treasury (royalty recipient) */
+  daoTreasury: Uint8Array;
 }
 
 // ─── API Types (v7: dWallet creation with SOL payment gate) ─────────────────
@@ -338,6 +340,12 @@ export interface RelayerConfig {
   // Database
   dbPath: string;
 
+  // Royalties
+  royaltyBasisPoints: number;
+
+  // Core voter weight plugin program ID (for SPL Governance NFT voting)
+  coreVoterProgramId: string;
+
   // Optional tuning
   healthPort: number;
   maxRetries: number;
@@ -353,6 +361,10 @@ export interface SubmissionResult {
   error?: string;
   retries: number;
   assetAddress?: string;
+  /** True if this mint created a new Metaplex Core collection */
+  isNewCollection?: boolean;
+  /** Address of the Metaplex Core collection asset (set on first mint) */
+  collectionAssetAddress?: string;
 }
 
 /**

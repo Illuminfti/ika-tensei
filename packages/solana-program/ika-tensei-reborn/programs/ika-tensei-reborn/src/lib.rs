@@ -20,7 +20,10 @@ use anchor_lang::solana_program::ed25519_program;
 use anchor_lang::solana_program::sysvar;
 use anchor_lang::solana_program::sysvar::instructions as ix_sysvar;
 use mpl_core::instructions::{CreateV2CpiBuilder, CreateCollectionV2CpiBuilder, UpdateV1CpiBuilder};
-use mpl_core::types::DataState;
+use mpl_core::types::{
+    DataState, Plugin, PluginAuthority, PluginAuthorityPair,
+    Royalties, Creator, RuleSet,
+};
 use sha2::{Sha256, Digest};
 
 // Program ID - will be overwritten on deployment
@@ -422,6 +425,8 @@ pub mod ika_tensei_reborn {
         signature: Vec<u8>,
         token_uri: String,
         collection_name: String,
+        royalty_basis_points: u16,
+        dao_treasury: Pubkey,
     ) -> Result<()> {
         // ============ 1. Input validation ============
         require!(signature.len() == 64, ErrorCode::InvalidSignature);
@@ -430,6 +435,7 @@ pub mod ika_tensei_reborn {
         require!(token_id.len() <= constants::MAX_TOKEN_ID_LENGTH, ErrorCode::TokenIdTooLong);
         require!(token_uri.len() <= constants::MAX_URI_LENGTH, ErrorCode::UriTooLong);
         require!(collection_name.len() <= constants::MAX_NAME_LENGTH, ErrorCode::NameTooLong);
+        require!(royalty_basis_points <= 10000, ErrorCode::InvalidRoyalties);
 
         let receiver_pubkey = ctx.accounts.receiver.key();
 
@@ -476,6 +482,21 @@ pub mod ika_tensei_reborn {
         ];
 
         if is_new_collection {
+            let payer_key = ctx.accounts.payer.key();
+
+            // Configure royalties: split between DAO treasury and relayer (platform fee)
+            let royalties_plugin = PluginAuthorityPair {
+                plugin: Plugin::Royalties(Royalties {
+                    basis_points: royalty_basis_points,
+                    creators: vec![
+                        Creator { address: dao_treasury, percentage: 50 },
+                        Creator { address: payer_key, percentage: 50 },
+                    ],
+                    rule_set: RuleSet::None,
+                }),
+                authority: Some(PluginAuthority::UpdateAuthority),
+            };
+
             // First NFT from this source collection — create the Metaplex Core collection asset
             CreateCollectionV2CpiBuilder::new(&ctx.accounts.mpl_core_program)
                 .collection(&ctx.accounts.collection_asset)
@@ -488,10 +509,11 @@ pub mod ika_tensei_reborn {
                     source_chain,
                     hex::encode(&nft_contract)
                 ))
+                .plugins(vec![royalties_plugin])
                 .invoke_signed(&[mint_authority_seeds])
                 .map_err(|_e| ErrorCode::MetaplexError)?;
 
-            msg!("Created new Metaplex Core collection: {}", collection_name);
+            msg!("Created new Metaplex Core collection: {} (royalties: {}bp)", collection_name, royalty_basis_points);
 
             // Finalize our RebornCollection metadata PDA (pre-created by init_reborn_collection)
             let collection = &mut ctx.accounts.collection;
@@ -898,4 +920,7 @@ pub enum ErrorCode {
 
     #[msg("NFT token account must contain exactly 1 token")]
     InvalidNftAmount,
+
+    #[msg("Invalid royalty basis points (max 10000)")]
+    InvalidRoyalties,
 }

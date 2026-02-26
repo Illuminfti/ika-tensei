@@ -81,6 +81,12 @@ export function getConfig(): RelayerConfig {
     // Centralized flow toggle (VAA ingester disabled by default)
     enableVaaIngester: process.env.ENABLE_VAA_INGESTER === 'true',
 
+    // Royalties on new collections (basis points, 500 = 5%)
+    royaltyBasisPoints: parseInt(process.env.ROYALTY_BASIS_POINTS || '500', 10),
+
+    // Core voter weight plugin for SPL Governance NFT voting
+    coreVoterProgramId: process.env.CORE_VOTER_PROGRAM_ID || 'E5thJCWofTMbmyhUhCai3hZiruFtYmmscDio6GwFCGaW',
+
     dbPath: process.env.DB_PATH || './relayer.db',
     healthPort: parseInt(process.env.HEALTH_PORT || '8080', 10),
     maxRetries: parseInt(process.env.MAX_RETRIES || '3', 10),

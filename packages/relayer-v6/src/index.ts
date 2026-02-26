@@ -18,7 +18,7 @@
 
 import { readFileSync } from 'fs';
 import { randomUUID, createHash } from 'crypto';
-import { Keypair } from '@solana/web3.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { IkaClient } from '@ika.xyz/sdk';
@@ -40,6 +40,7 @@ import { initDb, createSession, getSession, getSessionByDeposit, updateSession, 
 import { ChainVerifier } from './chain-verifier.js';
 import { MetadataHandler } from './metadata-handler.js';
 import { SuiTxQueue } from './sui-tx-queue.js';
+import { RealmCreator } from './realm-creator.js';
 import type {
   SealSignedEvent,
   SealPendingEvent,
@@ -65,6 +66,7 @@ export class Relayer {
   private readonly dwalletCreator: DWalletCreator;
   private readonly chainVerifier: ChainVerifier;
   private readonly metadataHandler: MetadataHandler;
+  private readonly realmCreator: RealmCreator;
   private readonly healthServer: HealthServer;
   private readonly relayerKeypair: Keypair;
   private readonly app: express.Application;
@@ -93,6 +95,7 @@ export class Relayer {
     this.dwalletCreator = new DWalletCreator();
     this.chainVerifier = new ChainVerifier();
     this.metadataHandler = new MetadataHandler();
+    this.realmCreator = new RealmCreator();
     this.healthServer = new HealthServer();
     this.relayerKeypair = this.loadRelayerKeypair();
     this.app = express();
@@ -558,11 +561,16 @@ export class Relayer {
         processedSeal.collectionName = session.collectionName;
       }
 
+      // Compute DAO treasury PDA for royalties (deterministic from collection name)
+      const treasuryPubkey = this.realmCreator.computeTreasuryAddress(processedSeal.collectionName);
+      processedSeal.daoTreasury = treasuryPubkey.toBytes();
+
       logger.info(
         {
           eventId,
           receiver: Buffer.from(processedSeal.receiver).toString('hex'),
           collectionName: processedSeal.collectionName,
+          daoTreasury: treasuryPubkey.toBase58(),
         },
         'Submitting mint_reborn to Solana',
       );
@@ -591,6 +599,43 @@ export class Relayer {
           });
         } else {
           this.updateSessionStatus(depositAddressHex, 'complete');
+        }
+
+        // Create SPL Governance Realm + voter plugin for new collections (fire-and-forget)
+        if (result.isNewCollection) {
+          const collName = processedSeal.collectionName;
+          const collAddress = result.collectionAssetAddress;
+          const conn = new Connection(getConfig().solanaRpcUrl, 'confirmed');
+
+          this.realmCreator.createRealmForCollection(
+            collName,
+            this.relayerKeypair,
+            conn,
+          ).then(async ({ realmAddress, treasuryAddress, communityMint }) => {
+            logger.info(
+              { realmAddress, treasuryAddress, collectionName: collName },
+              'Realm DAO created for collection',
+            );
+            // Phase 2: configure voter plugin with the Core collection
+            if (collAddress) {
+              await this.realmCreator.configureRealmForCollection(
+                collName,
+                collAddress,
+                communityMint,
+                this.relayerKeypair,
+                conn,
+              );
+              logger.info(
+                { collectionName: collName, collectionAsset: collAddress },
+                'Voter plugin configured for collection',
+              );
+            }
+          }).catch((err) => {
+            logger.error(
+              { err, collectionName: collName },
+              'Failed to create/configure realm DAO — can be done manually later',
+            );
+          });
         }
       } else {
         logger.error(
@@ -627,6 +672,7 @@ export class Relayer {
       receiver,
       collectionName,
       messageHash,
+      daoTreasury: new Uint8Array(32), // Placeholder — overridden by realm-creator before mint
     };
   }
 

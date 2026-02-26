@@ -105,6 +105,8 @@ function parseCollectionAssetAddress(data: Buffer): PublicKey | null {
  *   u32 + [] – signature (Vec<u8>, 64 bytes, NOT a PDA seed)
  *   u32 + [] – token_uri (String)
  *   u32 + [] – collection_name (String)
+ *   u16      – royalty_basis_points
+ *   [u8; 32] – dao_treasury (Pubkey)
  *
  * NOTE: dwallet_pubkey is NOT included — it's loaded from the MintConfig PDA on-chain.
  */
@@ -116,9 +118,12 @@ function encodeMintRebornArgs(
   signature: Uint8Array,
   tokenUri: string,
   collectionName: string,
+  royaltyBasisPoints: number,
+  daoTreasury: Uint8Array,
 ): Buffer {
   if (signature.length !== 64) throw new Error('signature must be 64 bytes');
   if (sigHash.length !== 32) throw new Error('sigHash must be 32 bytes');
+  if (daoTreasury.length !== 32) throw new Error('daoTreasury must be 32 bytes');
 
   const tokenUriBytes = Buffer.from(tokenUri, 'utf-8');
   const collectionNameBytes = Buffer.from(collectionName, 'utf-8');
@@ -131,7 +136,9 @@ function encodeMintRebornArgs(
     4 + tokenId.length +           // Vec<u8>
     4 + signature.length +         // signature Vec<u8>
     4 + tokenUriBytes.length +     // String
-    4 + collectionNameBytes.length; // String
+    4 + collectionNameBytes.length + // String
+    2 +   // royalty_basis_points u16
+    32;   // dao_treasury Pubkey
 
   const buf = Buffer.alloc(totalLen);
   let offset = 0;
@@ -178,7 +185,15 @@ function encodeMintRebornArgs(
   buf.writeUInt32LE(collectionNameBytes.length, offset);
   offset += 4;
   collectionNameBytes.copy(buf, offset);
-  // offset += collectionNameBytes.length; // not needed
+  offset += collectionNameBytes.length;
+
+  // 9. royalty_basis_points: u16 LE
+  buf.writeUInt16LE(royaltyBasisPoints, offset);
+  offset += 2;
+
+  // 10. dao_treasury: Pubkey (32 bytes, raw)
+  buf.set(daoTreasury, offset);
+  // offset += 32; // not needed — last field
 
   return buf;
 }
@@ -311,14 +326,14 @@ export class SolanaSubmitter {
         // Generate a fresh asset keypair for each attempt
         const assetKeypair = Keypair.generate();
 
-        const txHash = await this.sendTransaction(seal, relayerKeypair, assetKeypair);
+        const { txHash, isNewCollection, collectionAssetAddress } = await this.sendTransaction(seal, relayerKeypair, assetKeypair);
 
         logger.info(
-          { txHash, retries, receiver: Buffer.from(seal.receiver).toString('hex') },
+          { txHash, retries, receiver: Buffer.from(seal.receiver).toString('hex'), isNewCollection },
           'mint_reborn submitted successfully',
         );
 
-        return { success: true, txHash, retries, assetAddress: assetKeypair.publicKey.toBase58() };
+        return { success: true, txHash, retries, assetAddress: assetKeypair.publicKey.toBase58(), isNewCollection, collectionAssetAddress };
       } catch (err) {
         retries++;
 
@@ -352,7 +367,7 @@ export class SolanaSubmitter {
     seal: ProcessedSeal,
     relayerKeypair: Keypair,
     assetKeypair: Keypair,
-  ): Promise<string> {
+  ): Promise<{ txHash: string; isNewCollection: boolean; collectionAssetAddress?: string }> {
     const {
       signature,
       dwalletPubkey,
@@ -456,6 +471,7 @@ export class SolanaSubmitter {
 
     // ── 5. Encode Borsh instruction data ──────────────────────────────────────
     // NOTE: dwallet_pubkey is NOT included — loaded from MintConfig PDA on-chain
+    const royaltyBasisPoints = getConfig().royaltyBasisPoints;
     const ixData = encodeMintRebornArgs(
       sigHash,
       sourceChain,
@@ -464,6 +480,8 @@ export class SolanaSubmitter {
       signature,
       tokenUri,
       collectionName,
+      royaltyBasisPoints,
+      seal.daoTreasury,
     );
 
     // ── 6. Build mint_reborn instruction ─────────────────────────────────────
@@ -541,7 +559,11 @@ export class SolanaSubmitter {
       'confirmed',
     );
 
-    return txHash;
+    return {
+      txHash,
+      isNewCollection: isFirstMint,
+      collectionAssetAddress: isFirstMint ? collectionAssetPubkey.toBase58() : undefined,
+    };
   }
 }
 
