@@ -597,7 +597,7 @@ export default function GuildPage() {
                 <DialogueBox
                   speaker="Guild Master"
                   portrait="neutral"
-                  text="Welcome to the Adventurer's Guild, traveler. Here, reborn souls gather to shape the future of cross-chain NFTs. Vote in council or check the treasury vault."
+                  text="Welcome to the Adventurer's Guild, traveler. Each reborn collection gets its own Realm, powered by SPL Governance. Trading royalties flow into the treasury automatically. Council members decide how funds get spent."
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -808,7 +808,7 @@ export default function GuildPage() {
                     <EmptyState
                       icon={"\uD83D\uDCDC"}
                       text="No proposals yet"
-                      subtext="Proposals can be created by council members through SPL Governance"
+                      subtext="Council members create proposals through Realms to manage treasury funds"
                     />
                   </Panel>
                 ) : (
