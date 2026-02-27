@@ -71,11 +71,11 @@ module popkins::popkins_nft {
         let publisher = package::claim(otw, ctx);
 
         let mut disp = display::new<Popkins>(&publisher, ctx);
-        display::add(&mut disp, string::utf8(b"name"), string::utf8(b"{name}"));
+        display::add(&mut disp, string::utf8(b"name"), string::utf8(b"{name} #{number}"));
         display::add(&mut disp, string::utf8(b"description"), string::utf8(b"{description}"));
-        display::add(&mut disp, string::utf8(b"image_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/images/{id}"));
-        display::add(&mut disp, string::utf8(b"avatar_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/avatars/{id}"));
-        display::add(&mut disp, string::utf8(b"avatar_thumb_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/avatars-thumb/{id}"));
+        display::add(&mut disp, string::utf8(b"image_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/images/0x222a20bd7142d4e06d458c1b08da9a06c23241d8f9f09d57f2849ba9c4ecca3a"));
+        display::add(&mut disp, string::utf8(b"avatar_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/avatars/0x222a20bd7142d4e06d458c1b08da9a06c23241d8f9f09d57f2849ba9c4ecca3a"));
+        display::add(&mut disp, string::utf8(b"avatar_thumb_url"), string::utf8(b"https://storage.claynosaurz.com/popkins/avatars-thumb/0x222a20bd7142d4e06d458c1b08da9a06c23241d8f9f09d57f2849ba9c4ecca3a"));
         display::add(&mut disp, string::utf8(b"creator"), string::utf8(b"{creator}"));
         display::add(&mut disp, string::utf8(b"project_url"), string::utf8(b"{project_url}"));
         display::add(&mut disp, string::utf8(b"link"), string::utf8(b"{link}"));
@@ -117,9 +117,12 @@ module popkins::popkins_nft {
         vec_map::insert(&mut attrs, string::utf8(b"Background"), string::utf8(background));
         vec_map::insert(&mut attrs, string::utf8(b"Shape"), string::utf8(shape));
 
+        let mut name = string::utf8(b"Popkins #");
+        string::append(&mut name, u64_to_string(n));
+
         let nft = Popkins {
             id: object::new(ctx),
-            name: string::utf8(b"Popkins"),
+            name,
             number: n,
             description: string::utf8(
                 b"Who knew so much chaos could come in such a small package? Popkins are an expansive collection of 25,000 joyful, mischievous critters inhabiting the Claynosaurz Universe."
