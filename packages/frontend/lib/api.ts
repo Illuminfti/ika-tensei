@@ -35,6 +35,17 @@ export interface ConfirmDepositResponse {
   message: string;
 }
 
+export interface DetectedNFT {
+  contract: string;
+  tokenId: string;
+  name?: string;
+  imageUrl?: string;
+}
+
+export interface DetectNFTsResponse {
+  nfts: DetectedNFT[];
+}
+
 /** Status values matching the relayer's SealStatusValue type */
 export type SealStatusValue =
   | "awaiting_payment"
@@ -131,6 +142,20 @@ export async function confirmDeposit(
       tokenId,
       txHash,
     } satisfies ConfirmDepositRequest),
+  });
+}
+
+/**
+ * Detect NFTs at the deposit address for a given contract.
+ * Returns token IDs found at the address.
+ */
+export async function detectNFTs(
+  sessionId: string,
+  nftContract: string
+): Promise<DetectNFTsResponse> {
+  return fetchApi<DetectNFTsResponse>("/api/seal/detect-nfts", {
+    method: "POST",
+    body: JSON.stringify({ sessionId, nftContract }),
   });
 }
 

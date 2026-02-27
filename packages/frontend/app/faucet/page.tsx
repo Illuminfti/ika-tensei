@@ -71,6 +71,22 @@ function ChainFaucetCard({ chain }: { chain: SupportedChain }) {
 
         {/* Links */}
         <div className="space-y-2">
+          {chain.mintUrl && (
+            <a
+              href={chain.mintUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between w-full py-2.5 px-3 rounded font-silk text-xs border transition-colors"
+              style={{
+                backgroundColor: `${chain.color}15`,
+                borderColor: `${chain.color}40`,
+                color: chain.color,
+              }}
+            >
+              <span>Mint Test NFT</span>
+              <span>&rarr;</span>
+            </a>
+          )}
           {chain.faucetUrl && (
             <a
               href={chain.faucetUrl}
@@ -172,8 +188,8 @@ export default function FaucetPage() {
             style={{ boxShadow: "inset 0 0 30px rgba(139,0,0,0.1)" }}
           >
             <p className="font-silk text-xs text-faded-spirit mb-3">
-              Once you have testnet tokens, mint a test NFT from the explorer
-              and bring it to the Seal altar.
+              Once you have testnet tokens and a test NFT, bring it to the Seal
+              altar to begin the bridging ritual.
             </p>
             <Link
               href="/seal"

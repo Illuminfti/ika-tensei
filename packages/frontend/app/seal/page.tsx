@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useSealFlow, STATUS_ORDER, STATUS_LABELS } from "@/hooks/useSealFlow";
+import { useSealFlow, STATUS_ORDER, STATUS_LABELS, type DepositSubState } from "@/hooks/useSealFlow";
 import { useWalletStore } from "@/stores/wallet";
 import { getChainById, DYNAMIC_ENV_ID } from "@/lib/constants";
 import { SummoningCircle } from "@/components/ui/SummoningCircle";
@@ -14,7 +14,7 @@ import { ChainSelector } from "@/components/ui/ChainSelector";
 import { DepositAddress } from "@/components/ui/DepositAddress";
 import { DevModeConnect } from "@/components/wallet/SolanaConnect";
 import Image from "next/image";
-import type { SealStatusValue } from "@/lib/api";
+import type { SealStatusValue, DetectedNFT } from "@/lib/api";
 
 // Dynamic import to avoid SSR crash — useDynamicContext requires DynamicContextProvider
 const SolanaConnectInner = dynamic(
@@ -202,7 +202,6 @@ const STEPS = [
   "Chain",
   "Pay",
   "Deposit",
-  "Confirm",
   "Summoning",
   "Complete",
 ] as const;
@@ -213,9 +212,8 @@ function stepToIndex(step: string): number {
     case "select_chain": return 1;
     case "payment": return 2;
     case "deposit": return 3;
-    case "confirm_deposit": return 4;
-    case "waiting": return 5;
-    case "complete": return 6;
+    case "waiting": return 4;
+    case "complete": return 5;
     default: return 0;
   }
 }
@@ -472,151 +470,268 @@ function PaymentStep({
   );
 }
 
-// ─── Step 4: Show Deposit Address ─────────────────────────────────────────────
+// ─── Step 4: Deposit + Auto-Detect ───────────────────────────────────────────
 
 function DepositStep({
   address,
   chainId,
+  depositSubState,
+  detectedNFTs,
+  isLoading,
+  error,
   onConfirmSent,
+  onStartDetection,
+  onSelectNFT,
+  onManualConfirm,
   onBack,
 }: {
   address: string;
   chainId: string;
+  depositSubState: DepositSubState;
+  detectedNFTs: DetectedNFT[] | null;
+  isLoading: boolean;
+  error: string | null;
   onConfirmSent: () => void;
+  onStartDetection: (nftContract: string) => void;
+  onSelectNFT: (nft: DetectedNFT) => void;
+  onManualConfirm: (nftContract: string, tokenId: string) => void;
   onBack: () => void;
 }) {
   const chain = getChainById(chainId);
+  const [contractInput, setContractInput] = useState("");
+  const [showManual, setShowManual] = useState(false);
+  const [manualTokenId, setManualTokenId] = useState("");
+
   if (!chain) return null;
 
   return (
     <Panel>
-      <div className="mb-5">
-        <DialogueBox
-          speaker="Ika"
-          portrait="excited"
-          text={`Your sacred deposit address is ready! Send your NFT from ${chain.name} to this address.`}
-          variant="normal"
-        />
-      </div>
-
-      <DepositAddress address={address} chain={chain} onConfirmSent={onConfirmSent} />
-
-      <div className="mt-4 flex">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onBack}
-          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
-        >
-          ← Back
-        </motion.button>
-      </div>
-    </Panel>
-  );
-}
-
-// ─── Step 5: Confirm Deposit ──────────────────────────────────────────────────
-
-function ConfirmDepositStep({
-  chainId,
-  isLoading,
-  error,
-  onConfirm,
-  onBack,
-}: {
-  chainId: string;
-  isLoading: boolean;
-  error: string | null;
-  onConfirm: (nftContract: string, tokenId: string, txHash?: string) => void;
-  onBack: () => void;
-}) {
-  const [nftContract, setNftContract] = useState("");
-  const [tokenId, setTokenId] = useState("");
-  const [txHash, setTxHash] = useState("");
-  const chain = getChainById(chainId);
-
-  const contractPlaceholder = "0x993C47d2a7cBf2575076c239d03adcf4480dA141";
-  const tokenIdPlaceholder = "1";
-
-  const canSubmit = nftContract.length > 2 && tokenId.length > 0;
-
-  return (
-    <Panel>
-      <DialogueBox
-        speaker="Ika"
-        portrait="neutral"
-        text="Tell me about the NFT you deposited so I can verify it on-chain..."
-        variant="system"
-      />
-
-      <div className="mt-5 space-y-4">
-        <div>
-          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
-            NFT Contract Address
-          </label>
-          <input
-            type="text"
-            value={nftContract}
-            onChange={(e) => setNftContract(e.target.value)}
-            placeholder={contractPlaceholder}
-            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
-            Token ID
-          </label>
-          <input
-            type="text"
-            value={tokenId}
-            onChange={(e) => setTokenId(e.target.value)}
-            placeholder={tokenIdPlaceholder}
-            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
-            Transaction Hash <span className="text-faded-spirit/40">(optional)</span>
-          </label>
-          <input
-            type="text"
-            value={txHash}
-            onChange={(e) => setTxHash(e.target.value)}
-            placeholder="Optional — speeds up verification"
-            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
-          />
-        </div>
-
-        {error && (
-          <div className="p-2 border border-demon-red/30 bg-demon-red/10">
-            <span className="font-pixel text-[10px] text-demon-red">{error}</span>
+      {/* Sub-state: Show deposit address */}
+      {depositSubState === "show_address" && (
+        <>
+          <div className="mb-5">
+            <DialogueBox
+              speaker="Ika"
+              portrait="excited"
+              text={`Your sacred deposit address is ready! Send your NFT from ${chain.name} to this address.`}
+              variant="normal"
+            />
           </div>
-        )}
-      </div>
+          <DepositAddress address={address} chain={chain} onConfirmSent={onConfirmSent} />
+        </>
+      )}
 
-      <div className="flex gap-3 justify-between mt-6">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onBack}
-          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
-        >
-          ← Back
-        </motion.button>
-        <motion.button
-          whileHover={canSubmit && !isLoading ? { scale: 1.05 } : {}}
-          whileTap={canSubmit && !isLoading ? { scale: 0.95 } : {}}
-          onClick={() => onConfirm(nftContract.trim(), tokenId.trim(), txHash.trim() || undefined)}
-          disabled={!canSubmit || isLoading}
-          className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
-            !canSubmit || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
-          }`}
-        >
-          {isLoading ? "⏳ Verifying..." : "Begin the Ritual →"}
-        </motion.button>
-      </div>
+      {/* Sub-state: Enter contract address */}
+      {depositSubState === "enter_contract" && (
+        <>
+          <DialogueBox
+            speaker="Ika"
+            portrait="neutral"
+            text="Enter the NFT contract address and I'll find your token automatically..."
+            variant="system"
+          />
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+                NFT Contract Address
+              </label>
+              <input
+                type="text"
+                value={contractInput}
+                onChange={(e) => setContractInput(e.target.value)}
+                placeholder="0x993C47d2a7cBf2575076c239d03adcf4480dA141"
+                className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-between">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onBack}
+                className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+              >
+                &larr; Back
+              </motion.button>
+              <motion.button
+                whileHover={contractInput.length > 2 ? { scale: 1.05 } : {}}
+                whileTap={contractInput.length > 2 ? { scale: 0.95 } : {}}
+                onClick={() => onStartDetection(contractInput.trim())}
+                disabled={contractInput.length <= 2}
+                className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
+                  contractInput.length <= 2 ? "opacity-50 cursor-not-allowed" : "is-primary"
+                }`}
+              >
+                Detect NFT &rarr;
+              </motion.button>
+            </div>
+
+            {/* Manual fallback */}
+            <div className="pt-2 border-t border-sigil-border/30">
+              <button
+                onClick={() => setShowManual(!showManual)}
+                className="font-silk text-[10px] text-faded-spirit/60 hover:text-faded-spirit transition-colors"
+              >
+                {showManual ? "Hide manual entry" : "Enter token ID manually instead"}
+              </button>
+              {showManual && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+                      Token ID
+                    </label>
+                    <input
+                      type="text"
+                      value={manualTokenId}
+                      onChange={(e) => setManualTokenId(e.target.value)}
+                      placeholder="1"
+                      className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+                    />
+                  </div>
+                  <motion.button
+                    whileHover={contractInput.length > 2 && manualTokenId.length > 0 ? { scale: 1.05 } : {}}
+                    whileTap={contractInput.length > 2 && manualTokenId.length > 0 ? { scale: 0.95 } : {}}
+                    onClick={() => onManualConfirm(contractInput.trim(), manualTokenId.trim())}
+                    disabled={contractInput.length <= 2 || manualTokenId.length === 0 || isLoading}
+                    className={`w-full nes-btn font-pixel text-[10px] !py-2 ${
+                      contractInput.length <= 2 || manualTokenId.length === 0 || isLoading
+                        ? "opacity-50 cursor-not-allowed"
+                        : "is-warning"
+                    }`}
+                  >
+                    {isLoading ? "Verifying..." : "Submit Manually"}
+                  </motion.button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Sub-state: Detecting (polling) */}
+      {depositSubState === "detecting" && (
+        <>
+          <DialogueBox
+            speaker="Ika"
+            portrait="neutral"
+            text="Scanning the source chain for your NFT..."
+            variant="system"
+          />
+          <div className="flex flex-col items-center py-8">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="w-16 h-16 border-4 border-sigil-border border-t-soul-cyan rounded-full mb-4"
+            />
+            <p className="font-pixel text-[10px] text-faded-spirit animate-pulse">
+              Searching for NFTs at deposit address...
+            </p>
+            <p className="font-silk text-[9px] text-faded-spirit/50 mt-2">
+              This may take a moment
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Sub-state: NFTs found */}
+      {depositSubState === "found" && detectedNFTs && (
+        <>
+          <DialogueBox
+            speaker="Ika"
+            portrait="excited"
+            text={`Found ${detectedNFTs.length} NFT${detectedNFTs.length > 1 ? "s" : ""} at the deposit address! Select one to seal.`}
+            variant="normal"
+          />
+          <div className="mt-4 space-y-3">
+            {detectedNFTs.map((nft) => (
+              <motion.div
+                key={`${nft.contract}-${nft.tokenId}`}
+                whileHover={{ scale: 1.02 }}
+                className="p-4 border-2 border-sigil-border bg-card-purple/90 flex items-center gap-4 cursor-pointer hover:border-soul-cyan/50 transition-colors"
+                onClick={() => !isLoading && onSelectNFT(nft)}
+              >
+                {/* Thumbnail */}
+                {nft.imageUrl ? (
+                  <img
+                    src={nft.imageUrl}
+                    alt={nft.name || "NFT"}
+                    className="w-14 h-14 object-cover"
+                    style={{ imageRendering: "pixelated" }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="w-14 h-14 bg-void-purple border border-sigil-border/50 flex items-center justify-center">
+                    <span className="font-pixel text-faded-spirit/40 text-xl">?</span>
+                  </div>
+                )}
+
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-pixel text-xs text-ghost-white truncate">
+                    {nft.name || "NFT"}
+                  </p>
+                  <p className="font-mono text-[9px] text-faded-spirit truncate mt-1">
+                    ID: {nft.tokenId.length > 20
+                      ? `${nft.tokenId.slice(0, 10)}...${nft.tokenId.slice(-6)}`
+                      : nft.tokenId}
+                  </p>
+                </div>
+
+                {/* Select */}
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  disabled={isLoading}
+                  className={`nes-btn font-pixel text-[9px] !py-2 !px-3 flex-shrink-0 ${
+                    isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectNFT(nft);
+                  }}
+                >
+                  {isLoading ? "..." : "Seal"}
+                </motion.button>
+              </motion.div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Error display */}
+      {error && (
+        <div className="mt-3 p-2 border border-demon-red/30 bg-demon-red/10">
+          <span className="font-pixel text-[10px] text-demon-red">{error}</span>
+        </div>
+      )}
+
+      {/* Back button for detecting/found states */}
+      {(depositSubState === "detecting" || depositSubState === "found") && (
+        <div className="mt-4 flex">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onBack}
+            className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+          >
+            &larr; Back
+          </motion.button>
+        </div>
+      )}
+
+      {/* Back button for show_address */}
+      {depositSubState === "show_address" && (
+        <div className="mt-4 flex">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onBack}
+            className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+          >
+            &larr; Back
+          </motion.button>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -996,18 +1111,14 @@ export default function SealPage() {
               key="deposit"
               address={flow.depositAddress}
               chainId={flow.sourceChain!}
-              onConfirmSent={flow.goToConfirmDeposit}
-              onBack={flow.goBack}
-            />
-          )}
-
-          {effectiveStep === "confirm_deposit" && (
-            <ConfirmDepositStep
-              key="confirm_deposit"
-              chainId={flow.sourceChain!}
+              depositSubState={flow.depositSubState}
+              detectedNFTs={flow.detectedNFTs}
               isLoading={flow.isLoading}
               error={flow.error}
-              onConfirm={flow.confirmDeposit}
+              onConfirmSent={flow.goToContractEntry}
+              onStartDetection={flow.startDetection}
+              onSelectNFT={flow.selectDetectedNFT}
+              onManualConfirm={flow.manualConfirmDeposit}
               onBack={flow.goBack}
             />
           )}

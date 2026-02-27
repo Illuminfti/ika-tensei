@@ -472,7 +472,7 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 1.3 }}
           className="flex gap-8 md:gap-12 mt-16 relative z-10"
         >
-          <StatsCounter target={18} label="Chains" icon={<ChainBadge chain="ethereum" size={20} />} />
+          <StatsCounter target={4} label="Chains" icon={<ChainBadge chain="ethereum" size={20} />} />
           <StatsCounter target={0} label="Sealed" icon={<SealIcon size={20} />} />
           <StatsCounter target={0} label="Reborn" icon={<SoulOrb size={20} />} />
         </motion.div>
@@ -825,7 +825,7 @@ export default function Home() {
             {
               icon: <PortalIcon size={32} />,
               title: "Any Chain",
-              desc: "Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more EVM chains. If it has NFTs, we can seal it.",
+              desc: "Base, Ethereum, Sui, and NEAR supported. More chains coming soon.",
               accent: "#a855f7",
               symbol: "🌀",
               japanese: "次元",
@@ -996,23 +996,13 @@ export default function Home() {
 
         {/* CHAIN GRID - Clean, readable, works on all screens */}
         <div className="max-w-3xl mx-auto">
-          {/* EVM chains */}
+          {/* Supported source chains */}
           <div className="flex flex-wrap justify-center gap-3 mb-6">
             {[
-              { name: "Ethereum", abbr: "ETH", color: "#627eea" },
-              { name: "Polygon", abbr: "POL", color: "#8247e5" },
-              { name: "Arbitrum", abbr: "ARB", color: "#28a0f0" },
               { name: "Base", abbr: "BASE", color: "#0052ff" },
-              { name: "Optimism", abbr: "OP", color: "#ff0420" },
-              { name: "BNB Chain", abbr: "BNB", color: "#f0b90b" },
-              { name: "Avalanche", abbr: "AVAX", color: "#e84142" },
-              { name: "Fantom", abbr: "FTM", color: "#1969ff" },
-              { name: "Moonbeam", abbr: "GLMR", color: "#53cbc9" },
-              { name: "Celo", abbr: "CELO", color: "#35d07f" },
-              { name: "Scroll", abbr: "SCR", color: "#c39b78" },
-              { name: "Blast", abbr: "BLAST", color: "#fcfc03" },
-              { name: "Linea", abbr: "LINE", color: "#61dfff" },
-              { name: "Gnosis", abbr: "GNO", color: "#048a81" },
+              { name: "Ethereum", abbr: "ETH", color: "#627eea" },
+              { name: "Sui", abbr: "SUI", color: "#4da2ff" },
+              { name: "NEAR", abbr: "NEAR", color: "#00c1de" },
             ].map((chain, i) => (
               <motion.div
                 key={chain.name}

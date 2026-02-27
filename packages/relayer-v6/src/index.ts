@@ -39,6 +39,7 @@ import { HealthServer } from './health.js';
 import { logger } from './logger.js';
 import { initDb, getDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed, expireOldSessions, atomicStatusTransition, insertRealm, getAllRealms, getRealmByAddress, updateRealmCollectionAsset } from './db.js';
 import { ChainVerifier } from './chain-verifier.js';
+import { NFTDetector } from './nft-detector.js';
 import { MetadataHandler } from './metadata-handler.js';
 import { SuiTxQueue } from './sui-tx-queue.js';
 import { RealmCreator, deriveGovernancePda } from './realm-creator.js';
@@ -66,6 +67,7 @@ export class Relayer {
   private readonly solanaSubmitter: SolanaSubmitter;
   private readonly dwalletCreator: DWalletCreator;
   private readonly chainVerifier: ChainVerifier;
+  private readonly nftDetector: NFTDetector;
   private readonly metadataHandler: MetadataHandler;
   private readonly realmCreator: RealmCreator;
   private readonly healthServer: HealthServer;
@@ -97,6 +99,7 @@ export class Relayer {
     this.solanaSubmitter = new SolanaSubmitter();
     this.dwalletCreator = new DWalletCreator();
     this.chainVerifier = new ChainVerifier();
+    this.nftDetector = new NFTDetector();
     this.metadataHandler = new MetadataHandler();
     this.realmCreator = new RealmCreator();
     this.healthServer = new HealthServer();
@@ -325,6 +328,54 @@ export class Relayer {
         const safeMsg = msg.includes('not found') || msg.includes('Invalid') || msg.includes('already')
           ? msg : 'Failed to confirm payment';
         res.status(500).json({ error: safeMsg });
+      }
+    });
+
+    /**
+     * POST /api/seal/detect-nfts
+     * Detect NFT token IDs at the deposit address for a given contract.
+     * User provides contract address; relayer discovers which tokens are there.
+     */
+    this.app.post('/api/seal/detect-nfts', rateLimit, async (req, res) => {
+      try {
+        const { sessionId, nftContract } = req.body;
+
+        if (!sessionId || !nftContract) {
+          res.status(400).json({ error: 'Missing sessionId or nftContract' });
+          return;
+        }
+
+        if (nftContract.length > 256) {
+          res.status(400).json({ error: 'nftContract too long (max 256 chars)' });
+          return;
+        }
+
+        const session = getSession(sessionId);
+        if (!session) {
+          res.status(404).json({ error: 'Session not found' });
+          return;
+        }
+
+        if (session.status !== 'waiting_deposit') {
+          res.status(409).json({ error: 'Session not in waiting_deposit state' });
+          return;
+        }
+
+        if (!session.depositAddress) {
+          res.status(409).json({ error: 'No deposit address available' });
+          return;
+        }
+
+        const nfts = await this.nftDetector.detectTokenIds(
+          session.sourceChain,
+          nftContract,
+          session.depositAddress,
+        );
+
+        res.json({ nfts });
+      } catch (err) {
+        logger.error({ err }, 'NFT detection failed');
+        res.status(500).json({ error: 'NFT detection failed' });
       }
     });
 

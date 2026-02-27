@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { SupportedChain, EVM_CHAINS } from "@/lib/constants";
+import { SupportedChain, EVM_CHAINS, NON_EVM_CHAINS } from "@/lib/constants";
 
 // ─── Chain Logo (colored circle with abbreviation) ────────────────────────────
 
@@ -127,6 +127,29 @@ export function ChainSelector({ selected, onSelect }: ChainSelectorProps) {
           ))}
         </div>
       </div>
+
+      {/* Non-EVM Chains */}
+      {NON_EVM_CHAINS.length > 0 && (
+        <div>
+          <CategoryHeader label="Other Chains" />
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-2">
+            {NON_EVM_CHAINS.map((chain, i) => (
+              <motion.div
+                key={chain.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+              >
+                <ChainCard
+                  chain={chain}
+                  selected={selected === chain.id}
+                  onClick={() => onSelect(chain.id)}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* EVM tip */}
       {selected && EVM_CHAINS.some((c) => c.id === selected) && (

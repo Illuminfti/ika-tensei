@@ -17,7 +17,6 @@ export const CONTRACTS = {
   },
   ethereumSepolia: {
     sealInitiator: "0x986458C2f51e52342C1ca28E55D9bc64789D5075",
-    testNft: "0xC3f5B155ce06c7cBC470B4e8603AB00a65f1fDc7",
   },
 } as const;
 
@@ -47,9 +46,11 @@ export interface SupportedChain {
   abbreviation: string;
   color: string;
   textColor: string;
-  chainType: "evm";
-  wormholeChainId: number;
-  category: "evm" | "other";
+  chainType: "evm" | "sui" | "near";
+  wormholeChainId?: number;
+  category: "evm" | "sui" | "near";
+  /** External URL where users can mint test NFTs for this chain */
+  mintUrl?: string;
   explorerUrl: string;
   /** Whether this chain is testnet-ready (has contracts deployed + relayer support) */
   testnetReady: boolean;
@@ -74,6 +75,7 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     testnetReady: true,
     faucetUrl: "https://www.alchemy.com/faucets/base-sepolia",
     testNftContract: CONTRACTS.baseSepolia.testNft,
+    mintUrl: "https://nft-faucet.io",
   },
   {
     id: "ethereum-sepolia",
@@ -87,11 +89,41 @@ export const SUPPORTED_CHAINS: SupportedChain[] = [
     explorerUrl: "https://sepolia.etherscan.io",
     testnetReady: true,
     faucetUrl: "https://www.alchemy.com/faucets/ethereum-sepolia",
-    testNftContract: CONTRACTS.ethereumSepolia.testNft,
+    mintUrl: "https://nft-faucet.io",
+  },
+  // ── Sui ──
+  {
+    id: "sui",
+    name: "Sui",
+    abbreviation: "SUI",
+    color: "#4da2ff",
+    textColor: "#ffffff",
+    chainType: "sui",
+    category: "sui",
+    explorerUrl: "https://suiscan.xyz/testnet",
+    testnetReady: true,
+    faucetUrl: "https://faucet.sui.io",
+    mintUrl: "https://test-mint.ikatensei.xyz",
+  },
+  // ── NEAR ──
+  {
+    id: "near",
+    name: "NEAR Testnet",
+    abbreviation: "NEAR",
+    color: "#00c1de",
+    textColor: "#ffffff",
+    chainType: "near",
+    wormholeChainId: 15,
+    category: "near",
+    explorerUrl: "https://testnet.nearblocks.io",
+    testnetReady: true,
+    faucetUrl: "https://near-faucet.io",
+    mintUrl: "https://test-mint.ikatensei.xyz",
   },
 ];
 
 export const EVM_CHAINS = SUPPORTED_CHAINS.filter((c) => c.category === "evm");
+export const NON_EVM_CHAINS = SUPPORTED_CHAINS.filter((c) => c.category !== "evm");
 
 // Only chains that are testnet-ready
 export const TESTNET_CHAINS = SUPPORTED_CHAINS.filter((c) => c.testnetReady);

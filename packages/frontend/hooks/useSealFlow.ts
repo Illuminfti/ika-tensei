@@ -5,8 +5,10 @@ import {
   startSeal,
   confirmPayment as apiConfirmPayment,
   confirmDeposit as apiConfirmDeposit,
+  detectNFTs as apiDetectNFTs,
   getSealStatus,
   type SealStatusValue,
+  type DetectedNFT,
 } from "@/lib/api";
 import { DYNAMIC_ENV_ID } from "@/lib/constants";
 
@@ -19,9 +21,14 @@ export type SealFlowStep =
   | "select_chain"
   | "payment"
   | "deposit"
-  | "confirm_deposit"
   | "waiting"
   | "complete";
+
+export type DepositSubState =
+  | "show_address"
+  | "enter_contract"
+  | "detecting"
+  | "found";
 
 export interface SealFlowState {
   step: SealFlowStep;
@@ -35,6 +42,12 @@ export interface SealFlowState {
   rebornNFT: { mint: string; name: string; image: string } | null;
   error: string | null;
   isLoading: boolean;
+  /** Sub-state within the deposit step */
+  depositSubState: DepositSubState;
+  /** Detected NFTs at the deposit address */
+  detectedNFTs: DetectedNFT[] | null;
+  /** Contract being searched */
+  nftContract: string | null;
 }
 
 // Status label map (for UI display)
@@ -76,11 +89,16 @@ const INITIAL_STATE: SealFlowState = {
   rebornNFT: null,
   error: null,
   isLoading: false,
+  depositSubState: "show_address",
+  detectedNFTs: null,
+  nftContract: null,
 };
 
 export function useSealFlow() {
   const [state, setState] = useState<SealFlowState>(INITIAL_STATE);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelDetectRef = useRef(false);
 
   // ── Wallet connected → move to chain selection ──────────────────────────────
   const onWalletConnected = useCallback(() => {
@@ -149,6 +167,7 @@ export function useSealFlow() {
           dwalletId,
           depositAddress,
           step: "deposit",
+          depositSubState: "show_address",
           isLoading: false,
         }));
       } catch (err) {
@@ -173,6 +192,7 @@ export function useSealFlow() {
             dwalletId: "demo-dwallet-" + Date.now(),
             depositAddress: mockAddress,
             step: "deposit",
+            depositSubState: "show_address",
             isLoading: false,
           }));
         } else {
@@ -187,20 +207,109 @@ export function useSealFlow() {
     [state.sessionId, state.sourceChain]
   );
 
-  // ── User sent NFT → move to confirm_deposit form ──────────────────────────
-  const goToConfirmDeposit = useCallback(() => {
-    setState((s) => ({ ...s, step: "confirm_deposit", error: null }));
+  // ── User sent NFT → move to contract entry ──────────────────────────────────
+  const goToContractEntry = useCallback(() => {
+    setState((s) => ({ ...s, depositSubState: "enter_contract", error: null }));
   }, []);
 
-  // ── Confirm deposit → start polling ─────────────────────────────────────────
-  const confirmDeposit = useCallback(
-    async (nftContract: string, tokenId: string, txHash?: string) => {
+  // ── Detect NFTs at deposit address for the given contract ────────────────────
+  const startDetection = useCallback(
+    async (nftContract: string) => {
+      if (!state.sessionId) return;
+
+      cancelDetectRef.current = false;
+      setState((s) => ({
+        ...s,
+        nftContract,
+        depositSubState: "detecting",
+        detectedNFTs: null,
+        error: null,
+      }));
+    },
+    [state.sessionId]
+  );
+
+  // Detection polling effect
+  useEffect(() => {
+    if (
+      state.step !== "deposit" ||
+      state.depositSubState !== "detecting" ||
+      !state.sessionId ||
+      !state.nftContract
+    )
+      return;
+
+    // Demo mode
+    if (state.sessionId.startsWith("demo-")) {
+      setState((s) => ({
+        ...s,
+        depositSubState: "found",
+        detectedNFTs: [
+          {
+            contract: s.nftContract || "0xDemoContract",
+            tokenId: "42",
+            name: "Demo NFT #42",
+          },
+        ],
+      }));
+      return;
+    }
+
+    cancelDetectRef.current = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 24; // 2 minutes at 5s intervals
+
+    const poll = async () => {
+      if (cancelDetectRef.current) return;
+
+      try {
+        const result = await apiDetectNFTs(state.sessionId!, state.nftContract!);
+        if (cancelDetectRef.current) return;
+
+        if (result.nfts.length > 0) {
+          setState((s) => ({
+            ...s,
+            depositSubState: "found",
+            detectedNFTs: result.nfts,
+          }));
+          return; // Stop polling
+        }
+
+        attempts++;
+        if (attempts >= MAX_ATTEMPTS) {
+          setState((s) => ({
+            ...s,
+            error: "No NFTs found. Check the contract address and try again.",
+            depositSubState: "enter_contract",
+          }));
+          return;
+        }
+      } catch {
+        // Network error — keep polling
+      }
+
+      if (!cancelDetectRef.current) {
+        detectRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    };
+
+    poll();
+
+    return () => {
+      cancelDetectRef.current = true;
+      if (detectRef.current) clearTimeout(detectRef.current);
+    };
+  }, [state.step, state.depositSubState, state.sessionId, state.nftContract]);
+
+  // ── Select a detected NFT → confirm deposit → start processing ──────────────
+  const selectDetectedNFT = useCallback(
+    async (nft: DetectedNFT) => {
       if (!state.sessionId) return;
 
       setState((s) => ({ ...s, isLoading: true, error: null }));
 
       try {
-        await apiConfirmDeposit(state.sessionId, nftContract, tokenId, txHash);
+        await apiConfirmDeposit(state.sessionId, nft.contract, nft.tokenId);
         setState((s) => ({
           ...s,
           step: "waiting",
@@ -208,7 +317,41 @@ export function useSealFlow() {
           isLoading: false,
         }));
       } catch (err) {
-        // Demo mode fallback
+        if (state.sessionId?.startsWith("demo-")) {
+          setState((s) => ({
+            ...s,
+            step: "waiting",
+            sealStatus: "verifying_deposit",
+            isLoading: false,
+          }));
+        } else {
+          setState((s) => ({
+            ...s,
+            error: err instanceof Error ? err.message : "Failed to confirm deposit",
+            isLoading: false,
+          }));
+        }
+      }
+    },
+    [state.sessionId]
+  );
+
+  // ── Manual fallback: confirm deposit with contract + tokenId ─────────────────
+  const manualConfirmDeposit = useCallback(
+    async (nftContract: string, tokenId: string) => {
+      if (!state.sessionId) return;
+
+      setState((s) => ({ ...s, isLoading: true, error: null }));
+
+      try {
+        await apiConfirmDeposit(state.sessionId, nftContract, tokenId);
+        setState((s) => ({
+          ...s,
+          step: "waiting",
+          sealStatus: "verifying_deposit",
+          isLoading: false,
+        }));
+      } catch (err) {
         if (state.sessionId?.startsWith("demo-")) {
           setState((s) => ({
             ...s,
@@ -228,7 +371,7 @@ export function useSealFlow() {
     [state.sessionId]
   );
 
-  // ── Polling loop ─────────────────────────────────────────────────────────────
+  // ── Polling loop for seal status ──────────────────────────────────────────────
   useEffect(() => {
     if (state.step !== "waiting" || !state.sessionId) return;
     // Don't poll for demo sessions
@@ -269,16 +412,21 @@ export function useSealFlow() {
   // ── Reset everything ─────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
+    if (detectRef.current) clearTimeout(detectRef.current);
+    cancelDetectRef.current = true;
     setState(INITIAL_STATE);
   }, []);
 
   // ── Go back one step ─────────────────────────────────────────────────────────
   const goBack = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
+    if (detectRef.current) clearTimeout(detectRef.current);
+    cancelDetectRef.current = true;
+
     setState((s) => {
       switch (s.step) {
         case "select_chain":
-          return { ...INITIAL_STATE, step: "connect" };
+          return { ...INITIAL_STATE, step: "connect" as SealFlowStep };
         case "payment":
           return {
             ...s,
@@ -289,9 +437,23 @@ export function useSealFlow() {
             error: null,
           };
         case "deposit":
-          return { ...s, step: "payment" as SealFlowStep, depositAddress: null, dwalletId: null, error: null };
-        case "confirm_deposit":
-          return { ...s, step: "deposit" as SealFlowStep, error: null };
+          // If in a sub-state, go back within deposit
+          if (s.depositSubState === "enter_contract" || s.depositSubState === "detecting" || s.depositSubState === "found") {
+            return {
+              ...s,
+              depositSubState: "show_address" as DepositSubState,
+              detectedNFTs: null,
+              nftContract: null,
+              error: null,
+            };
+          }
+          return {
+            ...s,
+            step: "payment" as SealFlowStep,
+            depositAddress: null,
+            dwalletId: null,
+            error: null,
+          };
         default:
           return s;
       }
@@ -319,7 +481,7 @@ export function useSealFlow() {
           sealStatus: "complete",
           rebornNFT: {
             mint: "7x9Y2Zk...demo123",
-            name: "My NFT ✦ Reborn",
+            name: "My NFT \u2726 Reborn",
             image: "https://placehold.co/400x400/ff3366/ffd700?text=REBORN",
           },
         }));
@@ -344,8 +506,10 @@ export function useSealFlow() {
     onWalletConnected,
     selectChain,
     confirmPayment,
-    goToConfirmDeposit,
-    confirmDeposit,
+    goToContractEntry,
+    startDetection,
+    selectDetectedNFT,
+    manualConfirmDeposit,
     reset,
     goBack,
     simulateProgress,
