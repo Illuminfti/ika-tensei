@@ -16,6 +16,12 @@ import { DevModeConnect } from "@/components/wallet/SolanaConnect";
 import Image from "next/image";
 import type { SealStatusValue, DetectedNFT } from "@/lib/api";
 
+// Lazy-load Direct Pay button (needs DynamicContextProvider)
+const DirectPayButton = dynamic(
+  () => import("@/components/wallet/DirectPayButton").then((m) => m.DirectPayButton),
+  { ssr: false, loading: () => <span className="font-pixel text-[10px] text-faded-spirit">...</span> }
+);
+
 // Dynamic import to avoid SSR crash — useDynamicContext requires DynamicContextProvider
 const SolanaConnectInner = dynamic(
   () => import("@/components/wallet/SolanaConnect").then((m) => m.SolanaConnectInner),
@@ -390,15 +396,19 @@ function PaymentStep({
   onConfirmPayment: (txSig: string) => void;
   onBack: () => void;
 }) {
+  const [showManual, setShowManual] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   const [txSignature, setTxSignature] = useState("");
   const feeSol = (feeAmountLamports / 1e9).toFixed(4);
+
+  const displayError = payError || error;
 
   return (
     <Panel>
       <DialogueBox
         speaker="Ika"
         portrait="neutral"
-        text={`The ritual requires an offering of ${feeSol} SOL. Send the payment, then paste your transaction signature.`}
+        text={`The ritual requires an offering of ${feeSol} SOL.`}
         variant="normal"
       />
 
@@ -416,31 +426,28 @@ function PaymentStep({
           </p>
         </div>
 
-        <div className="p-3 bg-black/30 border border-sigil-border">
-          <p className="font-pixel text-[9px] text-faded-spirit mb-1">
-            Send SOL to this address:
-          </p>
-          <p className="font-mono text-[11px] text-ghost-white break-all select-all">
-            {paymentAddress}
-          </p>
-        </div>
-
-        <div>
-          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
-            Paste your payment transaction signature:
-          </label>
-          <input
-            type="text"
-            value={txSignature}
-            onChange={(e) => setTxSignature(e.target.value)}
-            placeholder="e.g. 5xJ7k9..."
-            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
-          />
-        </div>
-
-        {error && (
+        {displayError && (
           <div className="p-2 border border-demon-red/30 bg-demon-red/10">
-            <span className="font-pixel text-[10px] text-demon-red">{error}</span>
+            <span className="font-pixel text-[10px] text-demon-red">{displayError}</span>
+          </div>
+        )}
+
+        {/* Manual fallback (hidden by default) */}
+        {showManual && (
+          <div className="space-y-3 p-3 bg-black/30 border border-sigil-border">
+            <p className="font-pixel text-[9px] text-faded-spirit">
+              Send {feeSol} SOL to:
+            </p>
+            <p className="font-mono text-[10px] text-ghost-white break-all select-all">
+              {paymentAddress}
+            </p>
+            <input
+              type="text"
+              value={txSignature}
+              onChange={(e) => setTxSignature(e.target.value)}
+              placeholder="Paste transaction signature..."
+              className="w-full bg-void-purple border-2 border-sigil-border p-2 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+            />
           </div>
         )}
       </div>
@@ -454,17 +461,48 @@ function PaymentStep({
         >
           ← Back
         </motion.button>
-        <motion.button
-          whileHover={txSignature.length > 10 && !isLoading ? { scale: 1.05 } : {}}
-          whileTap={txSignature.length > 10 && !isLoading ? { scale: 0.95 } : {}}
-          onClick={() => onConfirmPayment(txSignature.trim())}
-          disabled={txSignature.length < 10 || isLoading}
-          className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
-            txSignature.length < 10 || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
-          }`}
-        >
-          {isLoading ? "⏳ Verifying..." : "Confirm Payment →"}
-        </motion.button>
+
+        {showManual ? (
+          <motion.button
+            whileHover={txSignature.length > 10 && !isLoading ? { scale: 1.05 } : {}}
+            whileTap={txSignature.length > 10 && !isLoading ? { scale: 0.95 } : {}}
+            onClick={() => onConfirmPayment(txSignature.trim())}
+            disabled={txSignature.length < 10 || isLoading}
+            className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
+              txSignature.length < 10 || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
+            }`}
+          >
+            {isLoading ? "⏳ Verifying..." : "Confirm →"}
+          </motion.button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowManual(true)}
+              className="font-silk text-[9px] text-faded-spirit/50 hover:text-faded-spirit underline"
+            >
+              manual
+            </button>
+            {DYNAMIC_ENV_ID ? (
+              <DirectPayButton
+                paymentAddress={paymentAddress}
+                lamports={feeAmountLamports}
+                feeSol={feeSol}
+                isVerifying={isLoading}
+                onPaid={onConfirmPayment}
+                onError={setPayError}
+              />
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowManual(true)}
+                className="nes-btn is-primary font-pixel text-[10px] !py-2 !px-6"
+              >
+                {`Pay ${feeSol} SOL →`}
+              </motion.button>
+            )}
+          </div>
+        )}
       </div>
     </Panel>
   );
