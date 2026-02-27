@@ -1,14 +1,13 @@
 // ─── Sui Test NFT ────────────────────────────────────────────────────────────
-// NOTE: The test_nft module was NOT included in the original ika_nft package publish.
-// You need to re-publish or upgrade the package to include it.
-// After publishing, update MINT_COUNTER_ID with the shared MintCounter object ID.
+// Published standalone test_nft package on Sui testnet.
 
 export const TEST_NFT_PACKAGE_ID =
   process.env.NEXT_PUBLIC_TEST_NFT_PACKAGE_ID ||
-  "0xfd39b11f25362af7b8655d98190d285b889f35d81b9367b1ddaa822bb3412fe7";
+  "0x7f08bfe51fa8b7f019857e66f7b6102e2b3e8d50ef887266c3886335a981a70b";
 
 export const MINT_COUNTER_ID =
-  process.env.NEXT_PUBLIC_MINT_COUNTER_ID || "";
+  process.env.NEXT_PUBLIC_MINT_COUNTER_ID ||
+  "0x6f0acb6e0d96c649f27cad25f55c89e80626482031b0f5e0e0054226fb10533a";
 
 export const SUI_NETWORK = "testnet";
 
