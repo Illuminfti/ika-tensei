@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/source-14_EVM_chains_+_Sui_+_NEAR_+_Aptos-gold?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/source-Base_·_Ethereum_·_NEAR_·_Sui-gold?style=for-the-badge" />
   <img src="https://img.shields.io/badge/destination-Solana-9945FF?style=for-the-badge" />
 </p>
 <p align="center">
@@ -50,9 +50,9 @@ Not a wrapped token. Not an IOU. A reborn identity.
 
 ```
   DEAD NFT                                                          REBORN NFT
-  Ethereum, Sui,                                                    Solana
-  NEAR, Aptos,                                                      (Metaplex Core)
-  any EVM chain                                                     
+  Base, Ethereum,                                                   Solana
+  NEAR, Sui                                                         (Metaplex Core)
+                                                                    
        |                                                                 ^
        v                                                                 |
   ┌─────────┐       ┌──────────┐       ┌──────────┐       ┌─────────────┐
@@ -70,7 +70,7 @@ Not a wrapped token. Not an IOU. A reborn identity.
 Connect your Solana wallet. Pay a small seal fee. The protocol creates a fresh IKA deposit dWallet on the source chain. That address belongs to the protocol's shared minting authority, split across IKA's MPC network. Nobody holds the full key.
 
 **② Deposit Your NFT**
-Transfer your NFT to the deposit address. The relayer's chain verifier detects the deposit and identifies the token ID automatically. No manual input needed. Works for ERC-721, ERC-1155, Sui objects, NEAR NEP-171, and Aptos tokens.
+Transfer your NFT to the deposit address. The relayer's chain verifier detects the deposit and identifies the token ID automatically. No manual input needed. Works for ERC-721, ERC-1155, Sui objects, and NEAR NEP-171.
 
 **③ Metadata Preservation**
 The relayer fetches the original metadata from the source chain (name, image, attributes, everything), wraps it with reborn provenance data (source chain, contract, token ID, deposit tx), and uploads the combined metadata to Arweave. Permanent. Immutable. The art and history survive the chain death.
@@ -84,7 +84,7 @@ The Ed25519 signature lands on Solana. The program verifies it via the native pr
 **⑥ Realm DAO Created**
 First NFT from a collection? The protocol spins up a full [Realms](https://realms.today) DAO. Treasury. Governance. NFT-weighted voting. All live from the moment of the first rebirth. The dead collection now has infrastructure it never had when it was alive.
 
-> **~2 minutes. ~0.003 SOL. 18 source chains. One reborn identity.**
+> **~2 minutes. ~0.003 SOL. 4 source chains (14+ on mainnet). One reborn identity.**
 
 <br/>
 
@@ -215,7 +215,7 @@ The relayer orchestrates the entire flow. Ten subsystems, one process:
 | Subsystem | Role |
 |---|---|
 | **API Server** | Express API: seal sessions, payment confirmation, NFT detection, guild/treasury endpoints |
-| **Chain Verifier** | Verifies NFT ownership on EVM, Sui, NEAR, Aptos via RPC |
+| **Chain Verifier** | Verifies NFT ownership on Base, Ethereum, Sui, NEAR via RPC (Aptos + more EVM chains on mainnet) |
 | **NFT Detector** | Auto-discovers token IDs at deposit addresses |
 | **Metadata Handler** | Fetches source metadata, transforms with provenance, uploads to Arweave |
 | **Seal Signer** | Coordinates IKA 2PC-MPC signing with the shared minting dWallet |
@@ -279,6 +279,7 @@ But the contracts are already built for the trustless version. The Sui orchestra
 | **Now** | Relayer verifies via RPC | Single operator. Fast iteration. Easy debugging. |
 | **Phase 1** | Wormhole 13/19 guardian consensus | SealInitiator contracts emit Wormhole messages. VAA Ingester (already built) polls Wormholescan, submits `process_vaa`. Relayer becomes a relay, not a verifier. |
 | **Phase 2** | Permissionless relaying | Remove AdminCap. Anyone calls `process_vaa` with a valid VAA. Relayer competition. |
+| **Phase 2.5** | 14+ source chains | Deploy SealInitiator contracts to Polygon, Arbitrum, Optimism, Avalanche, BSC, Fantom, Celo, Moonbeam, Gnosis, Klaytn, Scroll, zkSync, Aptos. Contracts are written, just need deployment + relayer config. |
 | **Phase 3** | No single point of failure | Multiple relayers. MEV protection. On-chain fee market. Community infrastructure. |
 
 ### What's Already Trust-Minimized
