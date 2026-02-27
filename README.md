@@ -1,247 +1,316 @@
 <p align="center">
-  <img src="packages/frontend/public/art/ika-mascot-v2.png" width="120" />
+  <img src="packages/frontend/public/art/ika-mascot-v2.png" width="140" />
 </p>
 
-<h1 align="center">イカ転生 - IKA TENSEI</h1>
+<h1 align="center">イカ転生 — IKA TENSEI</h1>
 
 <p align="center">
-  <strong>Resurrect dead NFT collections on Solana. Community-governed. Built to decentralize.</strong>
-</p>
-
-<p align="center">
-  <a href="#the-problem">Problem</a> · <a href="#the-solution">Solution</a> · <a href="#how-it-works">How It Works</a> · <a href="#the-guild">The Guild</a> · <a href="#architecture">Architecture</a> · <a href="#progressive-decentralization">Decentralization Roadmap</a> · <a href="#build">Build</a> · <a href="docs/PRD-v6.md">PRD</a>
+  <em>Your NFT died. We brought it back.</em>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/source_chains-EVM_+_Sui_+_NEAR_+_Aptos-gold?style=flat-square" />
-  <img src="https://img.shields.io/badge/destination-Solana_(Metaplex_Core)-9945FF?style=flat-square" />
-  <img src="https://img.shields.io/badge/signing-IKA_dWallet-ff3366?style=flat-square" />
-  <img src="https://img.shields.io/badge/governance-Realms_DAO-blueviolet?style=flat-square" />
+  <img src="https://img.shields.io/badge/source-14_EVM_chains_+_Sui_+_NEAR_+_Aptos-gold?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/destination-Solana-9945FF?style=for-the-badge" />
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/signing-IKA_2PC--MPC_dWallet-ff3366?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/governance-Realms_DAO-blueviolet?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/royalties-Metaplex_Core_6.9%25-00ccff?style=for-the-badge" />
+</p>
+
+<br/>
+
+<p align="center">
+  <a href="#the-graveyard">The Graveyard</a> · <a href="#the-ritual">The Ritual</a> · <a href="#the-guild">The Guild</a> · <a href="#the-machine">The Machine</a> · <a href="#the-road-to-trustless">The Road to Trustless</a> · <a href="#build">Build</a>
 </p>
 
 ---
 
-## The Problem
+<br/>
 
-Millions of NFTs are trapped on dead chains and in abandoned collections.
+## The Graveyard
 
-The devs rugged. The floor went to zero. The chain got sunset. But the art, the community, the memories still matter to the people who held them.
+There are millions of dead NFTs.
 
-There is no good way to bring them back. Existing bridges are custodial, centralized, or both. They ask you to trust a multisig with your identity. When that team disappears too, you lose everything again.
+Rugged projects. Sunset chains. Abandoned collections. The devs disappeared, the floor hit zero, the Discord went silent. But the art is still there. The metadata is still pinned. The community still remembers.
 
-## The Solution
+There is no way to bring them back. The few "bridges" that exist are custodial wrappers. You trust a multisig to hold your identity on one chain and issue an IOU on another. When that team disappears too (and they always do), you lose everything. Again.
 
-**Ika Tensei** (イカ転生, "squid reincarnation") is a protocol that **seals** NFTs on any source chain and **reborns** them on Solana with full on-chain provenance.
+**Ika Tensei** (イカ転生, "squid reincarnation") fixes this.
 
-| What you get | How |
-|---|---|
-| Cross-chain NFT detection | Relayer verifies ownership on source chain via RPC |
-| IKA dWallet signing | Shared minting authority via IKA Network's 2PC-MPC |
-| Provenance forever | Original chain, contract, token ID, URI stored on-chain |
-| Enforced royalties | Metaplex Core on Solana, royalties baked into the standard |
-| Community treasury | The Adventurer's Guild manages funds through Realms DAO |
+Seal your dead NFT on any chain. Get a real, first-class Metaplex Core NFT on Solana. Full provenance on-chain. Enforced royalties. And a funded DAO for your community to govern.
 
-### Supported Source Chains
+Not a wrapped token. Not an IOU. A reborn identity.
 
-**EVM:** Ethereum · Polygon · Arbitrum · Base · Optimism · Avalanche · BSC (+ testnets)
+<br/>
 
-**Other:** Sui · Aptos · NEAR
+## The Ritual
 
-**Destination:** Solana (Metaplex Core, ~0.003 SOL per mint)
-
----
-
-## How It Works
-
-The current implementation uses a **centralized relayer** for speed and reliability during the hackathon. The relayer handles verification, signing coordination, and minting. See [Progressive Decentralization](#progressive-decentralization) for the trustless roadmap.
+> *Connect. Seal. Reborn.*
 
 ```
-    YOUR DEAD NFT                                              YOUR REBORN NFT
-    on Ethereum                                                on Solana
-         |                                                          ^
-         v                                                          |
-   +-----------+         +-----------+         +-----------+  +------------+
-   |  1 SEAL   |-------->| 2 VERIFY  |-------->|  3 SIGN   |->| 4 REBORN   |
-   |           |         |           |         |           |  |            |
-   | Deposit   |  RPC    | Relayer   |  Sui TX | IKA dWallet|  | Metaplex   |
-   | NFT to    |-------->| verifies  |-------->| signs the |->| Core Mint  |
-   | dWallet   |         | ownership |         | seal msg  |  | Provenance |
-   +-----------+         +-----------+         +-----------+  +------------+
-    Source Chain            Relayer                Sui              Solana
+  DEAD NFT                                                          REBORN NFT
+  Ethereum, Sui,                                                    Solana
+  NEAR, Aptos,                                                      (Metaplex Core)
+  any EVM chain                                                     
+       |                                                                 ^
+       v                                                                 |
+  ┌─────────┐       ┌──────────┐       ┌──────────┐       ┌─────────────┐
+  │  SEAL   │──────>│  VERIFY  │──────>│   SIGN   │──────>│   REBORN    │
+  │         │       │          │       │          │       │             │
+  │ Deposit │  RPC  │ Relayer  │  Sui  │ IKA      │  Sol  │ Metaplex    │
+  │ to      │──────>│ confirms │──────>│ dWallet  │──────>│ Core mint   │
+  │ dWallet │       │ ownership│       │ 2PC-MPC  │       │ + Realm DAO │
+  └─────────┘       └──────────┘       └──────────┘       └─────────────┘
 ```
 
-### Step by Step
+### The Six Steps
 
-**1. Pay + Create dWallet** - You connect your Solana wallet and pay a small fee. The relayer creates a fresh IKA deposit dWallet on the source chain. This is the address you send your NFT to.
+**① Pay + dWallet Creation**
+Connect your Solana wallet. Pay a small seal fee. The protocol creates a fresh IKA deposit dWallet on the source chain. That address belongs to the protocol's shared minting authority, split across IKA's MPC network. Nobody holds the full key.
 
-**2. Deposit + Detect** - You transfer your NFT to the deposit address. The relayer's chain verifier confirms ownership via source chain RPC. It also detects which token IDs are at the deposit address so you don't need to enter them manually.
+**② Deposit Your NFT**
+Transfer your NFT to the deposit address. The relayer's chain verifier detects the deposit and identifies the token ID automatically. No manual input needed. Works for ERC-721, ERC-1155, Sui objects, NEAR NEP-171, and Aptos tokens.
 
-**3. Verify + Upload Metadata** - The relayer fetches the original NFT metadata (name, image, attributes) from the source chain, transforms it with reborn provenance data, and uploads it to Arweave for permanent storage. A TOCTOU re-verification confirms the NFT is still at the deposit address before proceeding.
+**③ Metadata Preservation**
+The relayer fetches the original metadata from the source chain (name, image, attributes, everything), wraps it with reborn provenance data (source chain, contract, token ID, deposit tx), and uploads the combined metadata to Arweave. Permanent. Immutable. The art and history survive the chain death.
 
-**4. Seal on Sui** - The relayer calls `create_centralized_seal` on the Sui orchestrator contract. This emits a `SealPending` event. The seal signer picks it up, coordinates with IKA's 2PC-MPC network using the shared minting dWallet, and calls `complete_seal` which emits `SealSigned`.
+**④ Seal on Sui**
+The orchestrator contract on Sui creates a `PendingSeal`. The seal signer coordinates with IKA's 2PC-MPC network using the shared minting dWallet. The key never exists in one place. The signature is produced collaboratively. `SealSigned` event fires.
 
-**5. Reborn on Solana** - The relayer delivers the Ed25519 signature to Solana, where the program verifies it via the native precompile, creates a Metaplex Core collection (if first NFT from this source collection), and mints the reborn NFT to your wallet with full provenance on-chain. Royalties are set at 6.9% with the DAO treasury as primary recipient.
+**⑤ Reborn on Solana**
+The Ed25519 signature lands on Solana. The program verifies it via the native precompile (~900 compute units). A Metaplex Core collection is created for this source collection (if first). Your reborn NFT is minted with full provenance stored on-chain. Royalties are set at **6.9%**, enforced at the protocol level.
 
-**6. Realm Created** - If this is the first NFT from a collection, the relayer automatically creates a Realms DAO on Solana. The collection now has a governed treasury that accumulates trading royalties.
+**⑥ Realm DAO Created**
+First NFT from a collection? The protocol spins up a full [Realms](https://realms.today) DAO. Treasury. Governance. NFT-weighted voting. All live from the moment of the first rebirth. The dead collection now has infrastructure it never had when it was alive.
 
-**Total time:** ~2 minutes. **Cost:** ~0.003 SOL + small seal fee.
+> **~2 minutes. ~0.003 SOL. 18 source chains. One reborn identity.**
+
+<br/>
 
 ---
+
+<br/>
 
 ## The Guild
 
-The **Adventurer's Guild** gives resurrected collections a community-owned treasury and governance layer built on [Realms](https://realms.today) (SPL Governance).
+This is where Ika Tensei stops being "just a bridge" and becomes something different.
 
-Realms is battle-tested DAO infrastructure used by hundreds of Solana DAOs. It handles proposals, voting, treasury management, and access control out of the box. We chose it because we wanted governance that works on day one, not a half-baked custom system that takes months to build and audit.
+Most cross-chain NFT solutions give you a wrapped token and call it a day. We give you **a funded community with real governance**. Every reborn collection gets its own DAO, powered by [Realms](https://realms.today), Solana's battle-tested governance framework used by hundreds of DAOs in production.
 
-### One Collection, One Realm
+### Automatic DAO Creation
 
-Every time a new collection is reborn through Ika Tensei, the protocol automatically creates a dedicated Realm for that collection on Solana. No manual setup. No governance bootstrapping. The moment the first NFT from a collection gets reborn, the community infrastructure is live.
+The moment the first NFT from any collection is reborn, the protocol creates:
 
-Each Realm includes:
-- **A NativeTreasury** that accumulates royalties from trading
-- **A Governance** with configurable vote thresholds (60% yes to pass, 3-day voting period)
-- **Council seats** for protocol-level governance (emergency actions, parameter changes)
-- **Community voting** powered by NFT ownership (see below)
+| Component | What it does |
+|---|---|
+| **Realm** | A dedicated SPL Governance realm for the collection |
+| **NativeTreasury** | A treasury wallet that accumulates royalties from every trade |
+| **Governance** | Configurable voting (60% threshold, 3-day voting period) |
+| **Council** | Protocol-level emergency governance (parameter changes, upgrades) |
+| **ika-core-voter** | Custom voter weight plugin for NFT-based voting |
 
-### NFT-Weighted Voting with ika-core-voter
+No setup. No governance bootstrapping. No token launches. The infrastructure is live before the second NFT is even minted.
 
-Standard Realms uses token-based voting. That does not work for NFT communities because there is no fungible token to distribute. We built a custom voter weight plugin (`ika-core-voter`) that lets reborn NFT holders vote directly with their NFTs.
+### NFT-Weighted Voting
 
-How it works:
-1. When a collection's Realm is created, the protocol deploys a **Registrar** that maps the Metaplex Core collection address to a vote weight (1 NFT = 1 vote)
-2. Before voting, a holder calls `update_voter_weight_record` and passes their Core asset accounts as remaining accounts
-3. The program verifies each asset on-chain: correct Metaplex Core program owner, AssetV1 key type, voter ownership, and collection membership
-4. Duplicate assets are rejected. Vote weight expires after the current slot to force re-verification on every vote (no stale weights)
-5. The resulting `VoterWeightRecord` is passed to Realms when casting a vote
+Standard Realms uses fungible token voting. That doesn't work for NFT communities because there is no token to distribute. So we built **`ika-core-voter`**, a custom Realms voter weight plugin for Metaplex Core assets.
 
-This means voting power is always live. If you sell your reborn NFT, you lose your vote. If you buy more, your weight increases. No staking, no lockups, no delegation complexity.
+```
+┌──────────────────────────────────────────────────────┐
+│                  ika-core-voter                       │
+│                                                      │
+│  Registrar                                           │
+│  ├── Collection: 0xABC... (Reborn Azuki)  weight: 1 │
+│  ├── Collection: 0xDEF... (Reborn BAYC)   weight: 1 │
+│  └── (up to 10 collections per registrar)            │
+│                                                      │
+│  On vote:                                            │
+│  1. Holder calls update_voter_weight_record          │
+│  2. Passes Core asset accounts as remaining_accounts │
+│  3. Program verifies on-chain:                       │
+│     ✓ Owned by Metaplex Core program                 │
+│     ✓ AssetV1 key type                               │
+│     ✓ Voter is the owner                             │
+│     ✓ Asset belongs to registered collection         │
+│     ✗ Duplicate assets rejected                      │
+│  4. VoterWeightRecord expires after current slot     │
+│  5. Record passed to Realms for the actual vote      │
+│                                                      │
+│  Result: 1 NFT = 1 vote. Always live.                │
+│  Sell your NFT? Lose your vote. Buy more? More power.│
+│  No staking. No lockups. No delegation complexity.   │
+└──────────────────────────────────────────────────────┘
+```
 
-### How Royalties Flow
+### Royalty-Funded Treasuries
 
-Every reborn NFT collection is minted with Metaplex Core royalties baked in at the protocol level: **6.9% total on all trades**, split automatically:
+Every reborn collection mints with **6.9% Metaplex Core royalties**, enforced at the protocol level (not advisory, not bypassable):
 
-- **72% → DAO Treasury** (~5%) flows to the collection's Realm NativeTreasury
-- **28% → Protocol** (~1.9%) funds protocol development and relayer operations
+```
+  Every Trade
+      │
+      ▼
+  6.9% royalty
+      │
+      ├── 72% ──▶ Collection's Realm NativeTreasury (~5.0%)
+      │           Controlled by NFT holders through Realms proposals
+      │
+      └── 28% ──▶ Protocol Treasury (~1.9%)
+                  Funds relayer operations and development
+```
 
-The treasury address is deterministic. It is derived from the collection name before the first mint even happens, so royalties route correctly from the very first trade. The PDA derivation is: `realm_name → realm PDA → governance PDA → native_treasury PDA`.
+The treasury address is **deterministic**. It's derived from the collection name *before* the first mint happens. PDA chain: `realm_name → realm → governance → native_treasury`. Royalties route correctly from the very first trade.
 
-### What the Treasury Funds
+### What Treasuries Fund
 
-Guild members create proposals through Realms to decide how treasury funds get spent:
+Guild members create proposals through Realms to spend treasury funds. Some ideas:
 
-- Gas subsidies for new resurrections in the same collection
-- Marketing and community growth
-- Bounties for collection-specific tooling or integrations
-- Literally anything the community votes for
+- 🔥 Gas subsidies for more resurrections in the same collection
+- 📢 Marketing and community growth campaigns
+- 🛠 Bounties for collection-specific tools or integrations
+- 🎨 Commission new art or experiences for the reborn community
+- Literally anything the DAO votes for
 
-### Why This Matters
+### The Real Difference
 
-Most NFT bridges give you a wrapped token on the other side. That is it. You get the asset, maybe the art, and nothing else.
+| | Traditional Bridge | Ika Tensei |
+|---|---|---|
+| What you get | Wrapped token | First-class Metaplex Core NFT |
+| Provenance | Maybe a memo field | Full on-chain (chain, contract, token ID, URI) |
+| Royalties | None or advisory | 6.9% enforced, protocol-level |
+| Community treasury | None | Auto-funded from every trade |
+| Governance | None | Realms DAO with NFT voting |
+| When devs leave | You're stuck again | DAO runs itself |
 
-Ika Tensei gives you a funded community. When a dead collection gets reborn, the holders don't just get their art back on Solana. They get a treasury that grows with every trade, governance to decide how it is spent, and a voting system that works with the NFTs they already hold. The original collection had none of this. The devs left, the treasury was empty (if it existed), and the community had no way to coordinate. Now they do.
+When a dead collection gets reborn, the holders don't just get their art back. They get a treasury that grows with every trade, governance to decide how it's spent, and a voting system that works with the NFTs they already hold. The original collection had none of this.
+
+<br/>
 
 ---
 
-## Architecture
+<br/>
+
+## The Machine
+
+### Repository Structure
 
 ```
 packages/
-├── eth-contracts/      Solidity     SealInitiator for EVM chains
-├── sui-contracts/      Move         Orchestrator, DWallet Registry, Treasury, Signing
-├── solana-program/     Anchor/Rust  IkaTenseiReborn (Metaplex Core CPI) + Core Voter
-├── near-contracts/     Rust         NEAR SealInitiator
-├── aptos-contracts/    Move         Aptos SealInitiator
-├── relayer-v6/         TypeScript   Full orchestration service (see below)
-├── frontend/           Next.js      Seal flow UI, Gallery, Guild
-├── test-mint/          Next.js      Test minting UI for EVM/Sui/NEAR
-└── trailer/            Remotion     Promo + demo videos
+├── eth-contracts/      Solidity      SealInitiator (EVM source chains)
+├── sui-contracts/      Move          Orchestrator · DWallet Registry · Treasury · Signing
+├── solana-program/     Anchor/Rust   IkaTenseiReborn (Metaplex Core CPI) · ika-core-voter
+├── near-contracts/     Rust          NEAR SealInitiator
+├── aptos-contracts/    Move          Aptos SealInitiator
+├── relayer-v6/         TypeScript    Orchestration service (10 subsystems)
+├── frontend/           Next.js       Seal flow · Gallery · Guild UI
+├── test-mint/          Next.js       Test minting for EVM/Sui/NEAR
+└── trailer/            Remotion      Promo + demo videos
 ```
 
-### The Relayer
+### Relayer Subsystems
 
-The relayer is the brain of the current system. It runs five parallel services:
+The relayer orchestrates the entire flow. Ten subsystems, one process:
 
-| Service | What it does |
+| Subsystem | Role |
 |---|---|
-| **API Server** | Express API for seal sessions, payment confirmation, NFT detection, guild endpoints |
-| **Chain Verifier** | Verifies NFT ownership on source chains via RPC (EVM, Sui, NEAR, Aptos) |
-| **NFT Detector** | Discovers token IDs at deposit addresses without user input |
-| **Metadata Handler** | Fetches source metadata, adds provenance, uploads to Arweave |
-| **Seal Signer** | Coordinates IKA 2PC-MPC signing using the shared minting dWallet |
-| **Solana Submitter** | Submits `mint_reborn` with Ed25519 signature verification |
-| **Realm Creator** | Creates Realms DAOs for new collections, configures voter plugins |
-| **VAA Ingester** | (Optional) Polls Wormholescan for guardian-attested VAAs |
-| **Treasury Manager** | Maintains IKA/SUI balances for signing operations |
-| **Presign Pool** | Pre-generates signing nonces for faster seal completion |
+| **API Server** | Express API: seal sessions, payment confirmation, NFT detection, guild/treasury endpoints |
+| **Chain Verifier** | Verifies NFT ownership on EVM, Sui, NEAR, Aptos via RPC |
+| **NFT Detector** | Auto-discovers token IDs at deposit addresses |
+| **Metadata Handler** | Fetches source metadata, transforms with provenance, uploads to Arweave |
+| **Seal Signer** | Coordinates IKA 2PC-MPC signing with the shared minting dWallet |
+| **Solana Submitter** | Submits `mint_reborn` with Ed25519 signature to Solana |
+| **Realm Creator** | Spins up Realms DAOs, configures ika-core-voter plugin |
+| **VAA Ingester** | (Phase 1) Polls Wormholescan for guardian-attested VAAs |
+| **Treasury Manager** | Maintains IKA/SUI balances for signing coordinator fees |
+| **Presign Pool** | Pre-generates signing nonces for sub-second seal completion |
 
-Additional infrastructure: rate limiting, per-wallet session limits, atomic status transitions (no double-processing), TOCTOU re-verification, Sui transaction queue (serializes shared object access), session expiry, and a health endpoint.
+Plus: rate limiting, per-wallet session caps, atomic status transitions, TOCTOU re-verification, Sui transaction queue (serialized shared object access), session expiry, health endpoint.
 
-### Key Design Decisions
+### Design Decisions
 
-| Decision | Why |
+| Decision | Rationale |
 |---|---|
-| Centralized relayer for hackathon | Ship fast, prove the flow works end-to-end. Decentralize in phases. |
-| IKA dWallet for signing | The minting key never exists in one place. Even in centralized mode, the relayer alone cannot forge signatures. |
-| `create_centralized_seal` on Sui | Bypasses Wormhole VAA requirement. The relayer calls it directly with an AdminCap. Same contract, same events, same downstream flow. |
-| PDA-per-signature replay (Solana) | Scales indefinitely. Anchor's `init` constraint fails atomically on replay. Zero maintenance. |
-| Ed25519 precompile + sysvar introspection | Solana programs cannot call the precompile directly. Instruction 0 verifies, instruction 1 reads from the sysvar. |
-| Metaplex Core over Token Metadata | Core has enforced royalties, lower rent, and native collection support. Token Metadata royalties are advisory and routinely bypassed. |
-| Realms for DAO governance | Battle-tested SPL Governance. Each collection gets its own Realm with treasury and proposals. |
-| Sui-side treasury | Holds IKA + SUI tokens for coordinator fees. Withdraw-use-return pattern so signing operations are funded from the protocol, not the user. |
+| **Centralized relayer (hackathon)** | Ship fast, prove the full flow, decentralize in phases |
+| **IKA dWallet for signing** | Minting key never exists in one place, even in centralized mode |
+| **`create_centralized_seal`** | Same Sui contract, same events, same downstream flow. Bypasses Wormhole for speed. |
+| **PDA-per-signature replay** | Scales indefinitely. Anchor `init` fails atomically on replay. Zero maintenance. |
+| **Ed25519 via sysvar introspection** | Solana programs can't call the precompile directly. Instruction 0 verifies, instruction 1 reads from sysvar. 64-byte constant-time comparison. |
+| **Metaplex Core over Token Metadata** | Enforced royalties (not advisory). Lower rent. Native collection support. |
+| **Realms + custom voter plugin** | Battle-tested governance. NFT voting without token launches. |
+| **Sui-side treasury** | Withdraw-use-return pattern. Users never pay coordinator fees. |
 
 ### Wire Format
 
-Cross-chain payload (131+ bytes, no ABI encoding):
+Cross-chain payload (packed binary, no ABI encoding):
 
 ```
-[0]        u8       payload_type (0x01 = SEAL)
-[1-2]      u16      source_chain (big-endian Wormhole chain ID)
-[3-34]     bytes32  nft_contract (left-padded)
-[35-66]    bytes32  token_id
-[67-98]    bytes32  deposit_address (left-padded)
-[99-130]   bytes32  receiver (Solana pubkey)
-[131+]     bytes    token_uri (raw UTF-8, variable length)
+Offset    Type      Field
+──────    ────      ─────
+[0]       u8        payload_type (0x01 = SEAL)
+[1-2]     u16       source_chain (big-endian Wormhole chain ID)
+[3-34]    bytes32   nft_contract (left-padded)
+[35-66]   bytes32   token_id
+[67-98]   bytes32   deposit_address (left-padded)
+[99-130]  bytes32   receiver (Solana pubkey)
+[131+]    bytes     token_uri (raw UTF-8, variable length)
 ```
+
+Why packed binary? `abi.encode` pads to 32 bytes with offset tables. Move has no ABI decoder. Fixed offsets are the only cross-chain format that works without chain-specific decoders.
 
 Full spec: [`docs/WIRE-FORMAT-SPEC.md`](docs/WIRE-FORMAT-SPEC.md)
 
+<br/>
+
 ---
 
-## Progressive Decentralization
+<br/>
 
-The hackathon version is intentionally centralized. A single relayer verifies deposits, coordinates signing, and submits transactions. This is the fastest path to a working demo, but it is not the end state.
+## The Road to Trustless
 
-The contracts are already built for the trustless version. The Sui orchestrator has both `process_vaa` (Wormhole-verified) and `create_centralized_seal` (relayer-authorized) entry points. The Solana program verifies Ed25519 signatures regardless of how they were produced. Switching from centralized to decentralized does not require redeploying contracts.
+The hackathon version is centralized on purpose. A single relayer verifies deposits, coordinates signing, and submits transactions. Fast to build, easy to debug, lets us handle the wild variety of metadata formats across chains.
 
-### The Roadmap
+But the contracts are already built for the trustless version. The Sui orchestrator has both entry points: `process_vaa` (Wormhole-verified) and `create_centralized_seal` (relayer-authorized). The Solana program verifies Ed25519 signatures regardless of origin. **Switching from centralized to decentralized does not require redeploying contracts.**
 
-| Phase | Trust Model | What Changes |
+### Decentralization Phases
+
+| Phase | Trust Model | Change |
 |---|---|---|
-| **Now (Hackathon)** | Relayer verifies deposits via RPC, calls `create_centralized_seal` | Single operator, fast iteration, easy debugging |
-| **Phase 1: Wormhole VAA** | Wormhole 13/19 guardian consensus attests deposits | Source chain SealInitiator contracts emit Wormhole messages. VAA Ingester (already built, currently optional) polls Wormholescan and submits `process_vaa` to Sui. The relayer becomes a thin relay, not a verifier. |
-| **Phase 2: Permissionless Relaying** | Anyone can relay VAAs and signatures | Remove AdminCap requirement. Anyone can call `process_vaa` with a valid VAA. Relayer competition for fees. |
-| **Phase 3: Full Decentralization** | No single point of failure | Multiple relayers, MEV-protected submission, on-chain fee market, community-run infrastructure |
+| **Now** | Relayer verifies via RPC | Single operator. Fast iteration. Easy debugging. |
+| **Phase 1** | Wormhole 13/19 guardian consensus | SealInitiator contracts emit Wormhole messages. VAA Ingester (already built) polls Wormholescan, submits `process_vaa`. Relayer becomes a relay, not a verifier. |
+| **Phase 2** | Permissionless relaying | Remove AdminCap. Anyone calls `process_vaa` with a valid VAA. Relayer competition. |
+| **Phase 3** | No single point of failure | Multiple relayers. MEV protection. On-chain fee market. Community infrastructure. |
 
-The key insight: IKA's dWallet signing is already trust-minimized even in the centralized flow. The relayer coordinates the signing ceremony, but it never holds the full key. The minting authority is split between the relayer's key share and IKA's MPC network. Neither party can sign alone.
+### What's Already Trust-Minimized
 
-What centralization buys us today: faster iteration, simpler debugging, the ability to handle edge cases (metadata formats vary wildly across chains) without governance overhead. What decentralization buys us on mainnet: censorship resistance, liveness guarantees, and the ability to say "this thing runs even if we disappear."
+Even in the centralized flow, the relayer **cannot forge signatures**. The minting authority is an IKA dWallet split between the relayer's key share and IKA's MPC network via 2PC-MPC. Neither party can sign alone. The relayer coordinates the ceremony, but it cannot unilaterally mint.
 
-The EVM SealInitiator contracts, the Wormhole integration in the Sui orchestrator, and the VAA ingester in the relayer are all already written and tested. Flipping `ENABLE_VAA_INGESTER=true` activates the first phase.
+What centralization buys: speed, simplicity, the ability to handle edge cases (metadata formats vary wildly) without governance overhead.
+
+What decentralization buys: censorship resistance, liveness guarantees, and the ability to say "this runs even if we disappear."
+
+> `ENABLE_VAA_INGESTER=true` activates Phase 1. The code is written. The contracts are deployed. The switch is a config flag.
+
+<br/>
 
 ---
+
+<br/>
 
 ## Build
 
 ```bash
-# EVM contracts (Foundry)
+# EVM (Foundry)
 cd packages/eth-contracts && forge build && forge test
 
-# Sui contracts (requires Wormhole git dependency)
+# Sui (requires Wormhole git dependency)
 cd packages/sui-contracts/ikatensei && sui move build
 
-# Solana program (Anchor)
+# Solana (Anchor)
 cd packages/solana-program/ika-tensei-reborn && anchor build
+
+# Voter Plugin
+cd packages/solana-program/ika-core-voter && anchor build
 
 # Relayer
 cd packages/relayer-v6 && npm install && npm run build
@@ -250,33 +319,25 @@ cd packages/relayer-v6 && npm install && npm run build
 cd packages/frontend && npm install && npm run dev
 ```
 
-### Prerequisites
+**Requires:** [Foundry](https://book.getfoundry.sh/) · [Sui CLI](https://docs.sui.io/) · [Anchor](https://www.anchor-lang.com/) · [Solana CLI](https://docs.solanalabs.com/cli/install) · Node.js 18+
 
-- [Foundry](https://book.getfoundry.sh/) for Solidity
-- [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) for Move
-- [Anchor](https://www.anchor-lang.com/) + [Solana CLI](https://docs.solanalabs.com/cli/install) for Rust
-- Node.js 18+ for Relayer + Frontend
+<br/>
 
 ---
 
-## Docs
-
-| Document | Description |
-|---|---|
-| [PRD v6](docs/PRD-v6.md) | Full protocol spec and architecture |
-| [Wire Format Spec](docs/WIRE-FORMAT-SPEC.md) | Canonical byte-level cross-chain payload format |
-
----
+<br/>
 
 ## The Name
 
-転生 (*tensei*) means reincarnation in Japanese. In anime and manga, *isekai tensei* stories follow characters who die and are reborn in another world, carrying memories of their past life.
+転生 (*tensei*) means reincarnation. In Japanese manga, *isekai tensei* stories follow characters who die and are reborn in another world, carrying memories of their past life.
 
-That is exactly what happens here. Your NFT dies on one chain and is reborn on another, carrying its full history, its provenance, its art, its identity, into a new life on Solana.
+That is exactly what happens here. Your NFT dies on one chain and is reborn on another. It carries its history, its provenance, its art, its identity into a new life on Solana.
 
-イカ (*ika*) means squid. Because [IKA Network](https://ika.xyz) is the cryptographic backbone that makes cross-chain signing possible.
+イカ (*ika*) means squid. [IKA Network](https://ika.xyz) is the cryptographic backbone that makes cross-chain signing possible without trusting anyone.
 
 🦑
+
+<br/>
 
 ---
 
