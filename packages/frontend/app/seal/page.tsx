@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useSealFlow, STATUS_ORDER, STATUS_LABELS } from "@/hooks/useSealFlow";
 import { useWalletStore } from "@/stores/wallet";
 import { getChainById, DYNAMIC_ENV_ID } from "@/lib/constants";
@@ -11,9 +12,15 @@ import { DialogueBox } from "@/components/ui/DialogueBox";
 import { BackgroundAtmosphere } from "@/components/ui/BackgroundAtmosphere";
 import { ChainSelector } from "@/components/ui/ChainSelector";
 import { DepositAddress } from "@/components/ui/DepositAddress";
-import { SolanaConnectInner, DevModeConnect } from "@/components/wallet/SolanaConnect";
+import { DevModeConnect } from "@/components/wallet/SolanaConnect";
 import Image from "next/image";
 import type { SealStatusValue } from "@/lib/api";
+
+// Dynamic import to avoid SSR crash — useDynamicContext requires DynamicContextProvider
+const SolanaConnectInner = dynamic(
+  () => import("@/components/wallet/SolanaConnect").then((m) => m.SolanaConnectInner),
+  { ssr: false }
+);
 
 // ─── Blood Pact Modal ──────────────────────────────────────────────────────────
 
