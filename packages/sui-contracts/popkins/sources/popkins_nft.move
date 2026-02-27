@@ -117,12 +117,9 @@ module popkins::popkins_nft {
         vec_map::insert(&mut attrs, string::utf8(b"Background"), string::utf8(background));
         vec_map::insert(&mut attrs, string::utf8(b"Shape"), string::utf8(shape));
 
-        let mut name = string::utf8(b"Popkins #");
-        string::append(&mut name, u64_to_string(n));
-
         let nft = Popkins {
             id: object::new(ctx),
-            name,
+            name: string::utf8(b"Popkins"),
             number: n,
             description: string::utf8(
                 b"Who knew so much chaos could come in such a small package? Popkins are an expansive collection of 25,000 joyful, mischievous critters inhabiting the Claynosaurz Universe."
