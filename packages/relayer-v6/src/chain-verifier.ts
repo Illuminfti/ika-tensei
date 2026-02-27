@@ -216,6 +216,18 @@ export class ChainVerifier {
         collectionName = d.collection || d.project_name;
       }
 
+      // Fallback: read name/description/image_url from object content fields
+      // (Display data may not be available on all RPC providers)
+      if (!name || !imageUrl) {
+        const content = obj.data.content;
+        if (content && content.dataType === 'moveObject') {
+          const fields = content.fields as Record<string, unknown>;
+          if (!name && typeof fields.name === 'string') name = fields.name;
+          if (!imageUrl && typeof fields.image_url === 'string') imageUrl = fields.image_url;
+          if (!description && typeof fields.description === 'string') description = fields.description;
+        }
+      }
+
       // Derive collection name from type if not in Display
       if (!collectionName && obj.data.type) {
         // Type format: "0xpkg::module::StructName"

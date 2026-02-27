@@ -156,6 +156,13 @@ export function getSessionByDeposit(depositAddress: string): SealSession | undef
   return row ? rowToSession(row) : undefined;
 }
 
+export function getCompletedSessionsByWallet(solanaWallet: string): SealSession[] {
+  const rows = getDb().prepare(
+    `SELECT * FROM sessions WHERE solana_wallet = ? AND status = 'complete' AND reborn_mint IS NOT NULL ORDER BY updated_at DESC`
+  ).all(solanaWallet) as SessionRow[];
+  return rows.map(rowToSession);
+}
+
 export function updateSession(sessionId: string, fields: Partial<SessionRow>): void {
   const sets: string[] = [];
   const values: unknown[] = [];

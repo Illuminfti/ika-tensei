@@ -43,6 +43,7 @@ import {
   createSession,
   getSession,
   getSessionByDeposit,
+  getCompletedSessionsByWallet,
   updateSession,
   updateSessionByDeposit,
   isPaymentTxUsed,
@@ -576,6 +577,34 @@ export class Relayer {
         rebornNFT: session.rebornNFT,
         error: session.error,
       });
+    });
+
+    /**
+     * GET /api/reborn?address=<solanaWallet>
+     * Returns all completed reborn NFTs for a given Solana wallet.
+     */
+    this.app.get("/api/reborn", (req, res) => {
+      const address = req.query.address as string;
+      if (!address) {
+        res.status(400).json({ error: "Missing address query parameter" });
+        return;
+      }
+
+      const sessions = getCompletedSessionsByWallet(address);
+      const nfts = sessions
+        .filter((s) => s.rebornNFT)
+        .map((s) => ({
+          mint: s.rebornNFT!.mint,
+          name: s.rebornNFT!.name || s.nftName || "Reborn NFT",
+          image: s.rebornNFT!.image || "",
+          originalChain: s.sourceChain,
+          originalContract: s.nftContract || "",
+          originalTokenId: s.tokenId || "",
+          sealHash: s.sessionId,
+          rebornDate: new Date(s.createdAt).toISOString(),
+        }));
+
+      res.json({ nfts });
     });
 
     /**
@@ -1311,9 +1340,13 @@ export class Relayer {
     );
 
     // 2. Fetch + transform + upload metadata to Arweave
+    // For Sui, tokenId is a full 0x... object ID — shorten for display
+    const shortTokenId = updatedSession.tokenId?.startsWith("0x") && updatedSession.tokenId.length > 16
+      ? updatedSession.tokenId.slice(0, 8) + "…" + updatedSession.tokenId.slice(-6)
+      : updatedSession.tokenId;
     const nftName =
       verifyResult.name ||
-      `${verifyResult.collectionName || "NFT"} #${updatedSession.tokenId}`;
+      `${verifyResult.collectionName || "NFT"} #${shortTokenId}`;
     const collectionName =
       verifyResult.collectionName || `Reborn ${updatedSession.sourceChain}`;
 

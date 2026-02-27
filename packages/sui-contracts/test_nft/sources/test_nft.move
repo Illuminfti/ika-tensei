@@ -49,11 +49,29 @@ module test_nft::test_nft {
         counter.count = counter.count + 1;
         let nft = TestNFT {
             id: object::new(ctx),
-            name: string::utf8(b"Ika Test NFT"),
+            name: build_name(counter.count),
             description: string::utf8(b"A test artifact for the Ika Tensei ritual. Testnet only."),
             image_url: string::utf8(b"https://placehold.co/400x400/1a0a2e/ffd700?text=IKA+TEST"),
             number: counter.count,
         };
         sui::transfer::public_transfer(nft, tx_context::sender(ctx));
+    }
+
+    /// Build "Ika Test NFT #N" by converting u64 to decimal string.
+    fun build_name(n: u64): String {
+        let mut name = string::utf8(b"Ika Test NFT #");
+        string::append(&mut name, u64_to_string(n));
+        name
+    }
+
+    fun u64_to_string(mut n: u64): String {
+        if (n == 0) return string::utf8(b"0");
+        let mut bytes = vector::empty<u8>();
+        while (n > 0) {
+            vector::push_back(&mut bytes, ((48 + n % 10) as u8));
+            n = n / 10;
+        };
+        vector::reverse(&mut bytes);
+        string::utf8(bytes)
     }
 }
