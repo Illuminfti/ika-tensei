@@ -69,6 +69,18 @@ export function initDb(dbPath: string = './relayer.db'): Database.Database {
       last_sequence  TEXT NOT NULL,
       updated_at     INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS realms (
+      realm_address      TEXT PRIMARY KEY,
+      collection_name    TEXT NOT NULL,
+      realm_name         TEXT NOT NULL,
+      community_mint     TEXT NOT NULL,
+      governance_address TEXT NOT NULL,
+      treasury_address   TEXT NOT NULL,
+      collection_asset   TEXT,
+      created_at         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_realms_collection ON realms(collection_name);
   `);
 
   // Migration: add centralized flow columns (idempotent)
@@ -296,6 +308,46 @@ export function expireOldSessions(maxAgeSeconds: number): number {
     AND created_at < ?
   `).run(Date.now(), cutoff);
   return result.changes;
+}
+
+// ─── Realms ────────────────────────────────────────────────────────────────
+
+export interface RealmRow {
+  realm_address: string;
+  collection_name: string;
+  realm_name: string;
+  community_mint: string;
+  governance_address: string;
+  treasury_address: string;
+  collection_asset: string | null;
+  created_at: number;
+}
+
+export function insertRealm(realm: Omit<RealmRow, 'collection_asset'>): void {
+  getDb().prepare(`
+    INSERT OR REPLACE INTO realms
+      (realm_address, collection_name, realm_name, community_mint, governance_address, treasury_address, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    realm.realm_address, realm.collection_name, realm.realm_name,
+    realm.community_mint, realm.governance_address, realm.treasury_address, realm.created_at,
+  );
+}
+
+export function getAllRealms(): RealmRow[] {
+  return getDb().prepare('SELECT * FROM realms ORDER BY created_at DESC').all() as RealmRow[];
+}
+
+export function getRealmByAddress(realmAddress: string): RealmRow | undefined {
+  return getDb().prepare('SELECT * FROM realms WHERE realm_address = ?').get(realmAddress) as RealmRow | undefined;
+}
+
+export function getRealmByCollection(collectionName: string): RealmRow | undefined {
+  return getDb().prepare('SELECT * FROM realms WHERE collection_name = ? LIMIT 1').get(collectionName) as RealmRow | undefined;
+}
+
+export function updateRealmCollectionAsset(realmAddress: string, collectionAsset: string): void {
+  getDb().prepare('UPDATE realms SET collection_asset = ? WHERE realm_address = ?').run(collectionAsset, realmAddress);
 }
 
 // ─── Presigns ──────────────────────────────────────────────────────────────

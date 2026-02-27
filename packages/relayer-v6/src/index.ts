@@ -37,11 +37,11 @@ import { SealSigner } from './seal-signer.js';
 import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
-import { initDb, getDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed, expireOldSessions, atomicStatusTransition } from './db.js';
+import { initDb, getDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed, expireOldSessions, atomicStatusTransition, insertRealm, getAllRealms, getRealmByAddress, updateRealmCollectionAsset } from './db.js';
 import { ChainVerifier } from './chain-verifier.js';
 import { MetadataHandler } from './metadata-handler.js';
 import { SuiTxQueue } from './sui-tx-queue.js';
-import { RealmCreator } from './realm-creator.js';
+import { RealmCreator, deriveGovernancePda } from './realm-creator.js';
 import type {
   SealSignedEvent,
   SealPendingEvent,
@@ -444,6 +444,163 @@ export class Relayer {
       }
       res.json(this.presignPool.stats());
     });
+
+    // ─── Guild / DAO Endpoints ────────────────────────────────────────────────
+
+    /**
+     * GET /api/guild/realms — All DAO realms
+     */
+    this.app.get('/api/guild/realms', async (_req, res) => {
+      try {
+        const realms = getAllRealms();
+        res.json({ realms });
+      } catch (err) {
+        logger.error({ err }, 'Failed to fetch realms');
+        res.status(500).json({ error: 'Failed to fetch realms' });
+      }
+    });
+
+    /**
+     * GET /api/guild/realm/:address/proposals — Proposals for a realm
+     */
+    this.app.get('/api/guild/realm/:address/proposals', async (req, res) => {
+      try {
+        const realmAddress = req.params.address;
+        const realm = getRealmByAddress(realmAddress);
+        if (!realm) {
+          res.status(404).json({ error: 'Realm not found' });
+          return;
+        }
+
+        const config = getConfig();
+        const connection = new Connection(config.solanaRpcUrl, 'confirmed');
+
+        // Fetch proposals via SPL Governance SDK
+        const { PublicKey } = await import('@solana/web3.js');
+        const { getGovernanceAccounts, pubkeyFilter, Governance, getProposalsByGovernance, ProposalState } = await import('@solana/spl-governance');
+
+        const SPL_GOV_PROGRAM = new PublicKey('GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw');
+        const realmPk = new PublicKey(realmAddress);
+
+        // Find all governance accounts for this realm
+        const governances = await getGovernanceAccounts(
+          connection,
+          SPL_GOV_PROGRAM,
+          Governance,
+          [pubkeyFilter(1, realmPk)!],
+        );
+
+        const proposals: Array<{
+          address: string;
+          name: string;
+          description: string;
+          state: number;
+          stateName: string;
+          yesVotes: string;
+          noVotes: string;
+          votingAt: number | null;
+          votingCompletedAt: number | null;
+          governance: string;
+        }> = [];
+
+        for (const gov of governances) {
+          const govProposals = await getProposalsByGovernance(
+            connection,
+            SPL_GOV_PROGRAM,
+            gov.pubkey,
+          );
+
+          for (const prop of govProposals) {
+            const data = prop.account;
+            proposals.push({
+              address: prop.pubkey.toBase58(),
+              name: data.name,
+              description: data.descriptionLink || '',
+              state: data.state,
+              stateName: ProposalState[data.state] || 'Unknown',
+              yesVotes: data.getYesVoteCount().toString(),
+              noVotes: data.getNoVoteCount().toString(),
+              votingAt: data.votingAt ? data.votingAt.toNumber() : null,
+              votingCompletedAt: data.votingCompletedAt ? data.votingCompletedAt.toNumber() : null,
+              governance: gov.pubkey.toBase58(),
+            });
+          }
+        }
+
+        res.json({ proposals, realmAddress, realmName: realm.realm_name });
+      } catch (err) {
+        logger.error({ err, realmAddress: req.params.address }, 'Failed to fetch proposals');
+        res.status(500).json({ error: 'Failed to fetch proposals' });
+      }
+    });
+
+    /**
+     * GET /api/guild/realm/:address/treasury — Treasury balance
+     */
+    this.app.get('/api/guild/realm/:address/treasury', async (req, res) => {
+      try {
+        const realmAddress = req.params.address;
+        const realm = getRealmByAddress(realmAddress);
+        if (!realm) {
+          res.status(404).json({ error: 'Realm not found' });
+          return;
+        }
+
+        const config = getConfig();
+        const connection = new Connection(config.solanaRpcUrl, 'confirmed');
+        const { PublicKey } = await import('@solana/web3.js');
+
+        const treasuryPk = new PublicKey(realm.treasury_address);
+        const balance = await connection.getBalance(treasuryPk);
+
+        res.json({
+          realmAddress,
+          treasuryAddress: realm.treasury_address,
+          balanceLamports: balance,
+          balanceSol: balance / 1e9,
+        });
+      } catch (err) {
+        logger.error({ err, realmAddress: req.params.address }, 'Failed to fetch treasury');
+        res.status(500).json({ error: 'Failed to fetch treasury balance' });
+      }
+    });
+
+    /**
+     * GET /api/guild/stats — Aggregate guild stats
+     */
+    this.app.get('/api/guild/stats', async (_req, res) => {
+      try {
+        const d = getDb();
+        const totalSealed = (d.prepare(`SELECT COUNT(*) as c FROM sessions WHERE status = 'complete'`).get() as { c: number }).c;
+        const realms = getAllRealms();
+        const realmCount = realms.length;
+        const collectionCount = new Set(realms.map(r => r.collection_name)).size;
+
+        // Sum treasury balances
+        let totalTreasurySol = 0;
+        try {
+          const config = getConfig();
+          const connection = new Connection(config.solanaRpcUrl, 'confirmed');
+          const { PublicKey } = await import('@solana/web3.js');
+          for (const realm of realms) {
+            const bal = await connection.getBalance(new PublicKey(realm.treasury_address));
+            totalTreasurySol += bal / 1e9;
+          }
+        } catch {
+          // Best-effort treasury sum
+        }
+
+        res.json({
+          totalSealed,
+          realmCount,
+          collectionCount,
+          totalTreasurySol,
+        });
+      } catch (err) {
+        logger.error({ err }, 'Failed to fetch guild stats');
+        res.status(500).json({ error: 'Failed to fetch guild stats' });
+      }
+    });
   }
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
@@ -749,6 +906,24 @@ export class Relayer {
               { realmAddress, treasuryAddress, collectionName: collName },
               'Realm DAO created for collection',
             );
+
+            // Derive governance address for DB storage
+            const { PublicKey } = await import('@solana/web3.js');
+            const realmPk = new PublicKey(realmAddress);
+            const governancePk = deriveGovernancePda(realmPk, realmPk);
+
+            // Persist realm data to DB
+            insertRealm({
+              realm_address: realmAddress,
+              collection_name: collName,
+              realm_name: `Reborn: ${collName}`,
+              community_mint: communityMint,
+              governance_address: governancePk.toBase58(),
+              treasury_address: treasuryAddress,
+              created_at: Date.now(),
+            });
+            logger.info({ realmAddress, collectionName: collName }, 'Realm persisted to database');
+
             // Phase 2: configure voter plugin with the Core collection
             if (collAddress) {
               await this.realmCreator.configureRealmForCollection(
@@ -758,6 +933,8 @@ export class Relayer {
                 this.relayerKeypair,
                 conn,
               );
+              // Persist collection asset address
+              updateRealmCollectionAsset(realmAddress, collAddress);
               logger.info(
                 { collectionName: collName, collectionAsset: collAddress },
                 'Voter plugin configured for collection',

@@ -50,7 +50,7 @@ import { logger } from './logger.js';
 import { getConfig } from './config.js';
 
 // SPL Governance program ID (mainnet & devnet)
-const SPL_GOVERNANCE_PROGRAM_ID = new PublicKey(
+export const SPL_GOVERNANCE_PROGRAM_ID = new PublicKey(
   'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
 );
 
@@ -59,21 +59,21 @@ const GOVERNANCE_PROGRAM_VERSION = 3;
 
 // ─── PDA Derivation ──────────────────────────────────────────────────────────
 
-function deriveRealmPda(realmName: string): PublicKey {
+export function deriveRealmPda(realmName: string): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('governance'), Buffer.from(realmName)],
     SPL_GOVERNANCE_PROGRAM_ID,
   )[0];
 }
 
-function deriveGovernancePda(realm: PublicKey, governedAccount: PublicKey): PublicKey {
+export function deriveGovernancePda(realm: PublicKey, governedAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('account-governance'), realm.toBuffer(), governedAccount.toBuffer()],
     SPL_GOVERNANCE_PROGRAM_ID,
   )[0];
 }
 
-function deriveNativeTreasuryPda(governance: PublicKey): PublicKey {
+export function deriveNativeTreasuryPda(governance: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('native-treasury'), governance.toBuffer()],
     SPL_GOVERNANCE_PROGRAM_ID,

@@ -160,30 +160,70 @@ export async function getRebornNfts(solanaAddress: string) {
   }>(`/api/reborn?address=${encodeURIComponent(solanaAddress)}`);
 }
 
-export async function getProposals() {
-  return fetchApi<{
-    proposals: Array<{
-      id: string;
-      title: string;
-      description: string;
-      votesFor: number;
-      votesAgainst: number;
-      totalVotes: number;
-      status: string;
-      endsAt: string;
-    }>;
-  }>("/api/guild/proposals");
+// ─── Guild / DAO Types ───────────────────────────────────────────────────────
+
+export interface GuildRealm {
+  realm_address: string;
+  collection_name: string;
+  realm_name: string;
+  community_mint: string;
+  governance_address: string;
+  treasury_address: string;
+  collection_asset: string | null;
+  created_at: number;
 }
 
-export async function castVote(
-  proposalId: string,
-  vote: "for" | "against" | "abstain",
-  signature: string
-) {
-  return fetchApi<{ success: boolean }>("/api/guild/vote", {
-    method: "POST",
-    body: JSON.stringify({ proposalId, vote, signature }),
-  });
+export interface GuildProposal {
+  address: string;
+  name: string;
+  description: string;
+  state: number;
+  stateName: string;
+  yesVotes: string;
+  noVotes: string;
+  votingAt: number | null;
+  votingCompletedAt: number | null;
+  governance: string;
+}
+
+export interface GuildTreasury {
+  realmAddress: string;
+  treasuryAddress: string;
+  balanceLamports: number;
+  balanceSol: number;
+}
+
+export interface GuildStats {
+  totalSealed: number;
+  realmCount: number;
+  collectionCount: number;
+  totalTreasurySol: number;
+}
+
+// ─── Guild / DAO Fetchers ────────────────────────────────────────────────────
+
+export async function getGuildRealms(): Promise<{ realms: GuildRealm[] }> {
+  return fetchApi<{ realms: GuildRealm[] }>("/api/guild/realms");
+}
+
+export async function getGuildProposals(
+  realmAddress: string
+): Promise<{ proposals: GuildProposal[]; realmAddress: string; realmName: string }> {
+  return fetchApi<{ proposals: GuildProposal[]; realmAddress: string; realmName: string }>(
+    `/api/guild/realm/${encodeURIComponent(realmAddress)}/proposals`
+  );
+}
+
+export async function getGuildTreasury(
+  realmAddress: string
+): Promise<GuildTreasury> {
+  return fetchApi<GuildTreasury>(
+    `/api/guild/realm/${encodeURIComponent(realmAddress)}/treasury`
+  );
+}
+
+export async function getGuildStats(): Promise<GuildStats> {
+  return fetchApi<GuildStats>("/api/guild/stats");
 }
 
 export async function getStats() {
