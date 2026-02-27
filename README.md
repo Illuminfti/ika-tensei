@@ -2,7 +2,7 @@
   <img src="packages/frontend/public/art/ika-mascot-v2.png" width="120" />
 </p>
 
-<h1 align="center">イカ転生 — IKA TENSEI</h1>
+<h1 align="center">イカ転生 - IKA TENSEI</h1>
 
 <p align="center">
   <strong>Resurrect dead NFT collections on Solana. Trustlessly. Community-governed.</strong>
@@ -25,33 +25,31 @@
 
 ## The Problem
 
-**Millions of NFTs are trapped on dead chains and in abandoned collections.**
+Millions of NFTs are trapped on dead chains and in abandoned collections.
 
-The devs rugged. The floor went to zero. The chain is sunset. But the art, the community, the memories — those still matter to the people who held them.
+The devs rugged. The floor went to zero. The chain got sunset. But the art, the community, the memories still matter to the people who held them.
 
-There's no trustless way to bring them back. Existing bridges are custodial, centralized, or both. They ask you to trust a multisig with your identity. And when *that* team disappears? You lose everything. Again.
-
-> *"Your NFT deserves better than dying on a chain nobody uses."*
+There is no trustless way to bring them back. Existing bridges are custodial, centralized, or both. They ask you to trust a multisig with your identity. When that team disappears too, you lose everything again.
 
 ## The Solution
 
-**Ika Tensei** (イカ転生, *squid reincarnation*) is a permissionless protocol that **seals** NFTs on any source chain and **reborns** them on Solana with full on-chain provenance.
+**Ika Tensei** (イカ転生, "squid reincarnation") is a permissionless protocol that **seals** NFTs on any source chain and **reborns** them on Solana with full on-chain provenance.
 
 No backend. No admin keys. No custodian. Just math.
 
 | What you get | How |
 |---|---|
-| **Cross-chain verification** | Wormhole's 13/19 guardian consensus attests the seal |
-| **Threshold signing** | IKA Network's 2PC-MPC — neither party can sign alone |
-| **Provenance forever** | Original chain, contract, token ID, URI stored on-chain |
-| **Enforced royalties** | Metaplex Core on Solana — royalties baked into the standard |
-| **Community governance** | The Adventurer's Guild decides which collections to resurrect |
+| Cross-chain verification | Wormhole 13/19 guardian consensus attests the seal |
+| Threshold signing | IKA Network 2PC-MPC, neither party can sign alone |
+| Provenance forever | Original chain, contract, token ID, URI stored on-chain |
+| Enforced royalties | Metaplex Core on Solana, royalties baked into the standard |
+| Community treasury | The Adventurer's Guild manages funds from trading royalties |
 
 ### Supported Source Chains
 
 **EVM:** Ethereum · Polygon · Arbitrum · Base · Optimism · Avalanche · BSC · Fantom · Celo · Moonbeam · Gnosis · Klaytn · Scroll · zkSync
 
-**Other:** Sui · Aptos · NEAR · Solana (old Token Metadata → reborn as Metaplex Core)
+**Other:** Sui · Aptos · NEAR · Solana (old Token Metadata reborn as Metaplex Core)
 
 **Destination:** Solana (Metaplex Core, ~0.003 SOL per mint)
 
@@ -62,31 +60,31 @@ No backend. No admin keys. No custodian. Just math.
 ```
     YOUR DEAD NFT                                              YOUR REBORN NFT
     on Ethereum                                                on Solana
-         │                                                          ▲
-         ▼                                                          │
-   ┌───────────┐         ┌───────────┐         ┌───────────┐  ┌────────────┐
-   │  ① SEAL   │────────▶│ ② VERIFY  │────────▶│  ③ SIGN   │─▶│ ④ REBORN   │
-   │           │         │           │         │           │  │            │
-   │ Lock NFT  │  VAA    │ Wormhole  │  Proof  │ IKA dWallet│  │ Metaplex   │
-   │ Read URI  │────────▶│ 13/19     │────────▶│ 2PC-MPC   │─▶│ Core Mint  │
-   │ Emit msg  │         │ consensus │         │ threshold │  │ Provenance │
-   └───────────┘         └───────────┘         └───────────┘  └────────────┘
+         |                                                          ^
+         v                                                          |
+   +-----------+         +-----------+         +-----------+  +------------+
+   |  1 SEAL   |-------->| 2 VERIFY  |-------->|  3 SIGN   |->| 4 REBORN   |
+   |           |         |           |         |           |  |            |
+   | Lock NFT  |  VAA    | Wormhole  |  Proof  | IKA dWallet|  | Metaplex   |
+   | Read URI  |-------->| 13/19     |-------->| 2PC-MPC   |->| Core Mint  |
+   | Emit msg  |         | consensus |         | threshold |  | Provenance |
+   +-----------+         +-----------+         +-----------+  +------------+
     Source Chain            Wormhole               Sui              Solana
 ```
 
 ### Step by Step
 
-**① Seal** — You connect your wallet and select an NFT from a dead collection. The source chain contract verifies you own it (`ownerOf` / `balanceOf`), reads the `tokenURI`, and publishes a Wormhole message with a packed binary payload.
+**1. Seal** - You connect your wallet and select an NFT from a dead collection. The source chain contract verifies you own it (`ownerOf` / `balanceOf`), reads the `tokenURI`, and publishes a Wormhole message with a packed binary payload.
 
-**② Verify** — Wormhole's 19 guardian nodes observe the seal transaction. When 13/19 reach consensus, they produce a Verified Action Approval (VAA) — a cryptographic attestation that the seal happened.
+**2. Verify** - Wormhole's 19 guardian nodes observe the seal transaction. When 13/19 reach consensus, they produce a Verified Action Approval (VAA), a cryptographic attestation that the seal happened.
 
-**③ Sign** — The VAA lands on Sui, where the Orchestrator contract:
+**3. Sign** - The VAA lands on Sui, where the Orchestrator contract:
 - Verifies all 13+ guardian signatures via `wormhole::vaa::parse_and_verify()`
 - Validates the emitter address against a per-chain registry
 - Constructs a message: `sha256(token_id || token_uri || receiver)`
-- Signs it with IKA's shared minting dWallet (2PC-MPC — the key never exists in one place)
+- Signs it with IKA's shared minting dWallet (2PC-MPC, the key never exists in one place)
 
-**④ Reborn** — The relayer delivers the signature to Solana, where the program:
+**4. Reborn** - The relayer delivers the signature to Solana, where the program:
 - Verifies the Ed25519 signature via the native precompile (~900 compute units)
 - Creates a Metaplex Core collection for this source collection (if first NFT)
 - Mints the reborn NFT to your wallet with full provenance on-chain
@@ -98,21 +96,25 @@ No backend. No admin keys. No custodian. Just math.
 
 ## The Guild
 
-> *"Dead collections reborn. Royalties to holders. The community decides everything."*
+The **Adventurer's Guild** gives resurrected collections a community-owned treasury and governance layer built on SPL Governance.
 
-The **Adventurer's Guild** is Ika Tensei's DAO governance layer.
+### How Royalties Flow
 
-### How it works
+Every reborn NFT collection is minted with Metaplex Core royalties baked in at the protocol level: **6.9% total on all trades**, split automatically:
 
-1. **Proposal** — Any guild member can propose a dead collection for resurrection
-2. **Vote** — Token-weighted governance. 67% quorum required.
-3. **Resurrection** — If approved, the collection is whitelisted and the seal flow opens
-4. **Royalties** — 5% royalties on all reborn NFT trades, split to original holders
-5. **Treasury** — Guild treasury funds gas subsidies, marketing, and protocol development
+- **72% → DAO Treasury** (~5%) - Controlled by the guild, managed through proposals and votes
+- **28% → Protocol** (~1.9%) - Funds protocol development and relayer operations
 
-### Why it matters
+The treasury is a real SPL Governance vault on Solana. Guild members (reborn NFT holders) can view the treasury balance, create proposals for how to spend funds, and vote on them through the Council tab in the app.
 
-The NFT space is littered with abandoned projects. Ika Tensei doesn't just bridge tokens — it **rebuilds communities**. Original holders get royalties. New collectors get provenance. Everyone gets a say.
+### What the Treasury Funds
+
+- Gas subsidies for new resurrections
+- Marketing and community growth for reborn collections
+- Protocol development and infrastructure
+- Whatever the guild members vote for
+
+The point: when a collection gets reborn through Ika Tensei, it gets more than new life on Solana. It gets a funded community with real governance. The original holders had nothing - no devs, no treasury, no roadmap. Now they have all three.
 
 ---
 
@@ -123,7 +125,7 @@ packages/
 ├── eth-contracts/      Solidity     SealInitiator (518 LoC) + Forge tests
 ├── sui-contracts/      Move         Orchestrator, Payload, DWallet Registry (2,329 LoC)
 ├── solana-program/     Anchor/Rust  IkaTenseiReborn, Metaplex Core CPI (586 LoC)
-├── relayer-v6/         TypeScript   Sui→Solana bridge, Borsh encoding (1,229 LoC)
+├── relayer-v6/         TypeScript   Sui->Solana bridge, Borsh encoding (1,229 LoC)
 ├── frontend/           Next.js      Seal flow UI (32 components)
 └── trailer/            Remotion     Promo + demo videos
 ```
@@ -134,10 +136,11 @@ packages/
 |---|---|
 | `abi.encodePacked` not `abi.encode` | ABI encoding pads to 32 bytes with offset tables. Move has no ABI decoder. Packed binary with fixed offsets is the only cross-chain format that works. |
 | Two-phase seal on Sui | IKA 2PC-MPC signing is asynchronous. Transaction 1 verifies the VAA, transaction 2 completes the signature. The relayer bridges them. |
-| PDA-per-signature replay | A bounded buffer overflows. PDA-per-signature scales indefinitely — Anchor's `init` constraint fails atomically on replay. Zero maintenance. |
-| Ed25519 precompile + sysvar introspection | Solana programs can't call the precompile directly. Instruction 0 is the Ed25519 verify, instruction 1 reads it from the sysvar and checks all 64 bytes with `constant_time_eq`. |
+| PDA-per-signature replay | A bounded buffer overflows. PDA-per-signature scales indefinitely. Anchor's `init` constraint fails atomically on replay. Zero maintenance. |
+| Ed25519 precompile + sysvar introspection | Solana programs cannot call the precompile directly. Instruction 0 is the Ed25519 verify, instruction 1 reads it from the sysvar and checks all 64 bytes with `constant_time_eq`. |
 | DWalletCap burn via transfer | Sui has no `destroy` for arbitrary types. Transfer to `address::from_bytes(object_id)` makes the cap permanently inaccessible. |
 | Metaplex Core over Token Metadata | Core has enforced royalties, lower rent, and native collection support. Token Metadata royalties are advisory and routinely bypassed. |
+| Sui-side treasury | Holds IKA + SUI tokens for coordinator fees. Uses a withdraw-use-return pattern so signing operations are funded from the protocol treasury, not the user. |
 
 ### Wire Format
 
@@ -159,7 +162,7 @@ Full spec: [`docs/WIRE-FORMAT-SPEC.md`](docs/WIRE-FORMAT-SPEC.md)
 
 ## Security
 
-**3 audit rounds. 12 audit agents. 58 findings. All critical and high severity fixed.**
+3 audit rounds. 12 audit agents. 58 findings total. All critical and high severity fixed.
 
 | Round | Agents | Findings | Result |
 |---|---|---|---|
@@ -167,17 +170,17 @@ Full spec: [`docs/WIRE-FORMAT-SPEC.md`](docs/WIRE-FORMAT-SPEC.md)
 | Round 2 | 4 re-audit agents | 3 new relayer bugs | Fixed |
 | Round 3 | Erina (Opus 4.6) | Batch limits, Ed25519 hardening | Fixed |
 
-**Score progression:** 10/100 → 76/100 → ~85/100
+Score progression: 10/100 → 76/100 → ~85/100
 
 | Property | Implementation |
 |---|---|
 | Cross-chain verification | Wormhole 13/19 guardian consensus |
 | Signing | IKA 2PC-MPC (neither party signs alone) |
 | Replay (EVM) | `mapping(bytes32 => bool) sealedNFTs` |
-| Replay (Solana) | PDA per `sha256(signature)` — atomic, indefinite |
+| Replay (Solana) | PDA per `sha256(signature)`, atomic, indefinite |
 | Replay (Sui) | `processed_vaas` table + Wormhole `consumed_vaas` |
 | Signature verification | Ed25519 precompile, 64-byte constant-time comparison |
-| Admin keys (Solana) | **None** |
+| Admin keys (Solana) | None |
 | Reentrancy (EVM) | Checks-effects-interactions pattern |
 
 Full report: [`audits/v3/MASTER-AUDIT-V6.md`](audits/v3/MASTER-AUDIT-V6.md)
@@ -205,31 +208,31 @@ cd packages/frontend && npm install && npm run dev
 
 ### Prerequisites
 
-- [Foundry](https://book.getfoundry.sh/) (Solidity)
-- [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) (Move)
-- [Anchor](https://www.anchor-lang.com/) + [Solana CLI](https://docs.solanalabs.com/cli/install) (Rust)
-- Node.js 18+ (Relayer + Frontend)
+- [Foundry](https://book.getfoundry.sh/) for Solidity
+- [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) for Move
+- [Anchor](https://www.anchor-lang.com/) + [Solana CLI](https://docs.solanalabs.com/cli/install) for Rust
+- Node.js 18+ for Relayer + Frontend
 
 ---
 
-## Documentation
+## Docs
 
 | Document | Description |
 |---|---|
-| [PRD v6](docs/PRD-v6.md) | Full protocol specification — Fesal's architecture |
+| [PRD v6](docs/PRD-v6.md) | Full protocol spec, Fesal's architecture |
 | [Wire Format Spec](docs/WIRE-FORMAT-SPEC.md) | Canonical byte-level cross-chain payload format |
-| [Subagent Rules](docs/SUBAGENT-RULES.md) | Development guidelines — no stubs, no custom serialization |
+| [Subagent Rules](docs/SUBAGENT-RULES.md) | Dev guidelines: no stubs, no custom serialization |
 | [Audit Report](audits/v3/MASTER-AUDIT-V6.md) | 3-round security audit, 58 findings, all fixes documented |
 
 ---
 
 ## The Name
 
-**転生** (*tensei*) means reincarnation in Japanese. In anime and manga, *isekai tensei* stories follow characters who die and are reborn in another world — carrying memories of their past life.
+転生 (*tensei*) means reincarnation in Japanese. In anime and manga, *isekai tensei* stories follow characters who die and are reborn in another world, carrying memories of their past life.
 
-That's exactly what happens here. Your NFT dies on one chain and is reborn on another, carrying its full history — its provenance, its art, its identity — into a new life on Solana.
+That is exactly what happens here. Your NFT dies on one chain and is reborn on another, carrying its full history, its provenance, its art, its identity, into a new life on Solana.
 
-**イカ** (*ika*) means squid. Because [IKA Network](https://ika.xyz) is the cryptographic backbone that makes trustless cross-chain signing possible.
+イカ (*ika*) means squid. Because [IKA Network](https://ika.xyz) is the cryptographic backbone that makes trustless cross-chain signing possible.
 
 🦑
 
