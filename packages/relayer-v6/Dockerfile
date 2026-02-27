@@ -35,8 +35,7 @@ COPY --from=builder /app/package.json ./package.json
 # Copy environment file template
 COPY .env.example ./.env
 
-# Copy relayer keypair (should be mounted as volume in production)
-COPY relayer-keypair.json ./relayer-keypair.json 2>/dev/null || true
+# Keypairs will be mounted as volumes in production
 
 # Create data directory for SQLite
 RUN mkdir -p /app/data
