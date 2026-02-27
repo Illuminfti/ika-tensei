@@ -37,7 +37,7 @@ import { SealSigner } from './seal-signer.js';
 import { VAAIngester } from './vaa-ingester.js';
 import { HealthServer } from './health.js';
 import { logger } from './logger.js';
-import { initDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed } from './db.js';
+import { initDb, getDb, createSession, getSession, getSessionByDeposit, updateSession, updateSessionByDeposit, isPaymentTxUsed, expireOldSessions, atomicStatusTransition } from './db.js';
 import { ChainVerifier } from './chain-verifier.js';
 import { MetadataHandler } from './metadata-handler.js';
 import { SuiTxQueue } from './sui-tx-queue.js';
@@ -73,6 +73,7 @@ export class Relayer {
   private readonly app: express.Application;
   private httpServer?: Server;
   private _isRunning = false;
+  private readonly intervals: ReturnType<typeof setInterval>[] = [];
 
   // New v8 services (initialized lazily in start())
   private treasuryManager?: TreasuryManager;
@@ -116,12 +117,18 @@ export class Relayer {
     } else {
       this.app.use(cors());
     }
-    this.app.use(express.json());
+    this.app.use(express.json({ limit: '10kb' }));
 
     // API key middleware for admin/internal endpoints
     const apiKey = config.apiKey;
+    if (!apiKey) {
+      logger.warn('RELAYER_API_KEY is not set — admin endpoints will reject all requests');
+    }
     const requireApiKey: express.RequestHandler = (req, res, next) => {
-      if (!apiKey) { next(); return; }
+      if (!apiKey) {
+        res.status(401).json({ error: 'Unauthorized — API key not configured' });
+        return;
+      }
       const provided = req.headers['x-api-key'] || req.query.apiKey;
       if (provided !== apiKey) {
         res.status(401).json({ error: 'Unauthorized — invalid or missing API key' });
@@ -166,6 +173,9 @@ export class Relayer {
       'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia',
     ]);
 
+    // Per-wallet rate limiting: max 5 active sessions per wallet
+    const MAX_ACTIVE_SESSIONS_PER_WALLET = 5;
+
     /**
      * POST /api/seal/start
      */
@@ -193,6 +203,15 @@ export class Relayer {
           return;
         }
 
+        // Per-wallet rate limit: prevent resource exhaustion via mass session creation
+        const activeCount = (getDb().prepare(
+          `SELECT COUNT(*) as c FROM sessions WHERE solana_wallet = ? AND status NOT IN ('complete', 'error')`
+        ).get(solanaWallet) as { c: number }).c;
+        if (activeCount >= MAX_ACTIVE_SESSIONS_PER_WALLET) {
+          res.status(429).json({ error: 'Too many active sessions for this wallet' });
+          return;
+        }
+
         const config = getConfig();
         const sessionId = randomUUID();
 
@@ -215,7 +234,7 @@ export class Relayer {
       } catch (err) {
         logger.error({ err }, 'Failed to start seal session');
         res.status(500).json({
-          error: err instanceof Error ? err.message : 'Internal error',
+          error: 'Failed to start seal session',
         });
       }
     });
@@ -251,6 +270,7 @@ export class Relayer {
 
         const config = getConfig();
 
+        // Validate payment sender matches session wallet
         const verification = await this.solanaSubmitter.verifyPayment(
           paymentTxSignature,
           session.solanaWallet,
@@ -263,11 +283,16 @@ export class Relayer {
           return;
         }
 
-        updateSession(sessionId, {
-          status: 'payment_confirmed',
+        // Atomic transition: awaiting_payment → payment_confirmed
+        // If another concurrent request already transitioned, this returns false
+        const claimed = atomicStatusTransition(sessionId, 'awaiting_payment', 'payment_confirmed', {
           payment_tx_sig: paymentTxSignature,
           payment_verified: Date.now(),
         });
+        if (!claimed) {
+          res.status(409).json({ error: 'Payment already confirmed (concurrent request)' });
+          return;
+        }
 
         logger.info(
           { sessionId, paymentTxSignature, lamports: verification.actualLamports },
@@ -295,9 +320,11 @@ export class Relayer {
         });
       } catch (err) {
         logger.error({ err }, 'Failed to confirm payment');
-        res.status(500).json({
-          error: err instanceof Error ? err.message : 'Internal error',
-        });
+        const msg = err instanceof Error ? err.message : '';
+        // Only expose validation errors, not internal details
+        const safeMsg = msg.includes('not found') || msg.includes('Invalid') || msg.includes('already')
+          ? msg : 'Failed to confirm payment';
+        res.status(500).json({ error: safeMsg });
       }
     });
 
@@ -327,7 +354,7 @@ export class Relayer {
         }
 
         if (session.status !== 'waiting_deposit') {
-          res.status(409).json({ error: `Session status is '${session.status}', expected 'waiting_deposit'` });
+          res.status(409).json({ error: `Session not ready for deposit confirmation` });
           return;
         }
 
@@ -336,13 +363,17 @@ export class Relayer {
           return;
         }
 
-        // Store deposit info
-        updateSession(sessionId, {
-          status: 'verifying_deposit',
+        // Atomic transition: waiting_deposit → verifying_deposit
+        // Prevents two concurrent confirm-deposit calls from both proceeding
+        const claimed = atomicStatusTransition(sessionId, 'waiting_deposit', 'verifying_deposit', {
           nft_contract: nftContract,
           token_id: tokenId,
           deposit_tx_hash: txHash,
         });
+        if (!claimed) {
+          res.status(409).json({ error: 'Deposit already being processed (concurrent request)' });
+          return;
+        }
 
         // Respond immediately — processing continues async
         res.json({ status: 'processing', message: 'Verifying deposit and processing metadata' });
@@ -354,9 +385,10 @@ export class Relayer {
         });
       } catch (err) {
         logger.error({ err }, 'Failed to confirm deposit');
-        res.status(500).json({
-          error: err instanceof Error ? err.message : 'Internal error',
-        });
+        const msg = err instanceof Error ? err.message : '';
+        const safeMsg = msg.includes('not found') || msg.includes('Invalid') || msg.includes('already')
+          ? msg : 'Failed to confirm deposit';
+        res.status(500).json({ error: safeMsg });
       }
     });
 
@@ -370,15 +402,14 @@ export class Relayer {
         return;
       }
 
+      // Only expose user-facing fields, not internal IDs or pubkeys
       res.json({
         sessionId: session.sessionId,
-        dwalletId: session.dwalletId,
         status: session.status,
         depositAddress: session.depositAddress,
         sourceChain: session.sourceChain,
         nftContract: session.nftContract,
         tokenId: session.tokenId,
-        tokenUri: session.tokenUri,
         rebornNFT: session.rebornNFT,
         error: session.error,
       });
@@ -399,7 +430,7 @@ export class Relayer {
           sui: balances.sui.toString(),
         });
       } catch (err) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Internal error' });
+        res.status(500).json({ error: 'Internal error' });
       }
     });
 
@@ -469,25 +500,31 @@ export class Relayer {
     this._isRunning = true;
     logger.info('Relayer is running');
 
-    // Periodic maintenance
-    setInterval(() => {
+    // Periodic maintenance (store refs for graceful shutdown)
+    this.intervals.push(setInterval(() => {
       this.checkConnections().catch((err) => {
         logger.error({ err }, 'Connection check failed');
       });
-    }, 30_000);
+    }, 30_000));
 
-    setInterval(() => {
+    this.intervals.push(setInterval(() => {
       this.treasuryManager?.ensureMinimumBalances().catch((err) => {
         logger.error({ err }, 'Treasury maintenance failed');
       });
-    }, 60_000);
+    }, 60_000));
 
-    setInterval(() => {
+    this.intervals.push(setInterval(() => {
       const config = getConfig();
       this.presignPool?.ensureMinimumAvailable(config.presignPoolMinAvailable).catch((err) => {
         logger.error({ err }, 'Presign pool maintenance failed');
       });
-    }, 30_000);
+    }, 30_000));
+
+    // Expire stale sessions (1 hour old, check every 5 minutes)
+    this.intervals.push(setInterval(() => {
+      const expired = expireOldSessions(3600);
+      if (expired > 0) logger.info({ expired }, 'Expired stale sessions');
+    }, 5 * 60_000));
   }
 
   /**
@@ -577,6 +614,11 @@ export class Relayer {
 
   async stop(): Promise<void> {
     logger.info('Stopping relayer…');
+    // Clear all background intervals first
+    for (const interval of this.intervals) {
+      clearInterval(interval);
+    }
+    this.intervals.length = 0;
     this.vaaIngester?.stop();
     await this.sealSignedListener.unsubscribeFromEvents();
     await this.sealPendingListener.unsubscribeFromEvents();
@@ -790,6 +832,12 @@ export class Relayer {
       throw new Error('Session missing required deposit fields');
     }
 
+    // Idempotency: if session already advanced past verifying_deposit, skip
+    if (updatedSession.status !== 'verifying_deposit') {
+      logger.warn({ sessionId, status: updatedSession.status }, 'processDeposit called but session already advanced — skipping');
+      return;
+    }
+
     // 1. Verify NFT deposit on source chain
     logger.info({ sessionId, sourceChain: updatedSession.sourceChain }, 'Verifying NFT deposit on source chain');
     const verifyResult = await this.chainVerifier.verifyDeposit(updatedSession.sourceChain, {
@@ -831,7 +879,17 @@ export class Relayer {
     updateSession(sessionId, { token_uri: tokenUri });
     logger.info({ sessionId, tokenUri }, 'Metadata uploaded to Arweave');
 
-    // 3. Create centralized seal on Sui (emits SealPending → existing signing flow)
+    // 3. Re-verify NFT ownership (TOCTOU protection — NFT could have been moved since initial check)
+    const reVerify = await this.chainVerifier.verifyDeposit(updatedSession.sourceChain, {
+      nftContract: updatedSession.nftContract!,
+      tokenId: updatedSession.tokenId!,
+      depositAddress: updatedSession.depositAddress!,
+    });
+    if (!reVerify.verified) {
+      throw new Error(`Re-verification failed (TOCTOU): ${reVerify.error}`);
+    }
+
+    // 4. Create centralized seal on Sui (emits SealPending → existing signing flow)
     updateSession(sessionId, { status: 'creating_seal' });
     await this.createCentralizedSeal(updatedSession, tokenUri);
 
@@ -967,7 +1025,14 @@ export class Relayer {
     if (['base', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'bsc', 'avalanche',
          'base-sepolia', 'ethereum-sepolia', 'arbitrum-sepolia', 'optimism-sepolia'].includes(chain)) {
       // EVM: uint256 → 32 bytes big-endian
-      const hex = BigInt(tokenId).toString(16).padStart(64, '0');
+      let val: bigint;
+      try {
+        val = BigInt(tokenId);
+      } catch {
+        throw new Error(`Invalid token ID (not a number): ${tokenId.slice(0, 32)}`);
+      }
+      if (val < 0n || val >= 2n ** 256n) throw new Error('Token ID out of uint256 range');
+      const hex = val.toString(16).padStart(64, '0');
       return hexToBytes(hex);
     }
 

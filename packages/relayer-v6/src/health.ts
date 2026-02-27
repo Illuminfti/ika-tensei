@@ -44,7 +44,7 @@ export class HealthServer {
 
       // Set CORS headers
       res.setHeader('Content-Type', 'application/json');
-      
+
       // Determine overall status
       if (!this.status.suiConnected || !this.status.solanaConnected) {
         this.status.status = 'down';
@@ -54,8 +54,12 @@ export class HealthServer {
         this.status.status = 'healthy';
       }
 
+      // Return minimal info — don't leak internal counters to unauthenticated callers
       res.writeHead(200);
-      res.end(JSON.stringify(this.status));
+      res.end(JSON.stringify({
+        status: this.status.status,
+        timestamp: this.status.timestamp,
+      }));
     });
 
     this.server.listen(config.healthPort, () => {

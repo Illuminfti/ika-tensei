@@ -99,8 +99,8 @@ const PROPOSALS: Proposal[] = [
   },
   {
     id: 4,
-    title: "Emergency: Pause Sui Sealing",
-    description: "Temporary pause on Sui source chain sealing due to RPC instability. Resume after network stabilizes.",
+    title: "Emergency: Pause Base Sealing",
+    description: "Temporary pause on Base source chain sealing due to RPC instability. Resume after network stabilizes.",
     proposer: "SecurityCouncil",
     status: "defeated",
     votesFor: 890,
@@ -178,7 +178,7 @@ const QUESTS: Quest[] = [
 const TOP_MEMBERS: GuildMember[] = [
   { rank: 1, name: "SolArchon", title: "Guild Master", nfts: 47, votes: 47, questsCompleted: 12, joinDate: "Day 1", class: "summoner" },
   { rank: 2, name: "EthExile", title: "Chain Walker", nfts: 35, votes: 35, questsCompleted: 9, joinDate: "Day 1", class: "warrior" },
-  { rank: 3, name: "SuiSage", title: "Void Mage", nfts: 28, votes: 28, questsCompleted: 8, joinDate: "Day 3", class: "mage" },
+  { rank: 3, name: "ChainSage", title: "Void Mage", nfts: 28, votes: 28, questsCompleted: 8, joinDate: "Day 3", class: "mage" },
   { rank: 4, name: "NFTomancer", title: "Seal Keeper", nfts: 22, votes: 22, questsCompleted: 7, joinDate: "Day 5", class: "rogue" },
   { rank: 5, name: "PixelPriest", title: "Healer", nfts: 19, votes: 19, questsCompleted: 11, joinDate: "Day 2", class: "healer" },
   { rank: 6, name: "ChainBreaker", title: "Adventurer", nfts: 15, votes: 15, questsCompleted: 5, joinDate: "Day 8", class: "warrior" },

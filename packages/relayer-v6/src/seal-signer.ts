@@ -101,12 +101,8 @@ export class SealSigner {
           continue;
         }
 
-        // For other errors, return presign to pool and rethrow
-        if (presign.status === 'ALLOCATED') {
-          presign.status = 'AVAILABLE';
-          presign.allocatedAt = undefined;
-          presign.allocatedFor = undefined;
-        }
+        // For other errors, rethrow. The allocated presign will be auto-released
+        // back to AVAILABLE after the 5-minute allocation TTL expires in the DB.
         throw err;
       }
     }

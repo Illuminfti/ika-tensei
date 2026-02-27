@@ -301,6 +301,7 @@ module ikatensei::orchestrator {
 
     public fun process_vaa(
         state: &mut OrchestratorState,
+        _cap: &OrchestratorAdminCap,
         wormhole_state: &WormholeState,
         registry: &DWalletRegistry,
         vaa_bytes: vector<u8>,
@@ -496,6 +497,9 @@ module ikatensei::orchestrator {
         // Validate minting pubkey is set (32 bytes for Ed25519)
         assert!(vector::length(&minting_authority.minting_pubkey) == 32, E_MINTING_PUBKEY_NOT_SET);
 
+        // One-use dWallet check — prevents reusing a deposit address
+        assert!(!table::contains(&state.used_dwallets, deposit_address), E_DWALLET_ALREADY_USED);
+
         // Prevent duplicate bridging: same (source_chain, nft_contract, token_id) can only be sealed once
         let mut nft_key = vector::empty<u8>();
         vector::push_back(&mut nft_key, ((source_chain >> 8) as u8));
@@ -588,7 +592,9 @@ module ikatensei::orchestrator {
         state.total_processed = state.total_processed + 1;
 
         // ── Step 4: Mark deposit dWallet as permanently used ──
-        table::add(&mut state.used_dwallets, pending.deposit_address, true);
+        if (!table::contains(&state.used_dwallets, pending.deposit_address)) {
+            table::add(&mut state.used_dwallets, pending.deposit_address, true);
+        };
         // Only mark in registry if the deposit address has a registry record
         // (centralized seals bypass the dWallet registry)
         if (dwallet_registry::has_record(registry, &pending.deposit_address)) {

@@ -118,8 +118,11 @@ pub struct InitRebornCollection<'info> {
     #[account(init, payer = payer, space = 8 + RebornCollection::INIT_SPACE,
               seeds = [constants::COLLECTION_SEED, &source_chain.to_le_bytes(), &nft_contract], bump)]
     pub collection: Box<Account<'info, RebornCollection>>,
-    #[account(mut)]
+    /// Payer — must be admin to prevent front-running of collection initialization
+    #[account(mut, constraint = payer.key() == config.admin @ ErrorCode::Unauthorized)]
     pub payer: Signer<'info>,
+    #[account(seeds = [constants::MINT_CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, MintConfig>,
     pub system_program: Program<'info, System>,
 }
 
@@ -137,8 +140,8 @@ pub struct InitRebornCollection<'info> {
     token_id: Vec<u8>,
 )]
 pub struct MintReborn<'info> {
-    /// Payer for the transaction (can be relayer or user)
-    #[account(mut)]
+    /// Payer for the transaction — must be the admin (relayer) to prevent front-running
+    #[account(mut, constraint = payer.key() == config.admin @ ErrorCode::Unauthorized)]
     pub payer: Signer<'info>,
 
     /// Receiver of the reborn NFT.
@@ -484,13 +487,13 @@ pub mod ika_tensei_reborn {
         if is_new_collection {
             let payer_key = ctx.accounts.payer.key();
 
-            // Configure royalties: split between DAO treasury and relayer (platform fee)
+            // Configure royalties: 6.9% total (690 bps), split 72% DAO (~5%) / 28% team (~1.9%)
             let royalties_plugin = PluginAuthorityPair {
                 plugin: Plugin::Royalties(Royalties {
                     basis_points: royalty_basis_points,
                     creators: vec![
-                        Creator { address: dao_treasury, percentage: 50 },
-                        Creator { address: payer_key, percentage: 50 },
+                        Creator { address: dao_treasury, percentage: 72 },
+                        Creator { address: payer_key, percentage: 28 },
                     ],
                     rule_set: RuleSet::None,
                 }),

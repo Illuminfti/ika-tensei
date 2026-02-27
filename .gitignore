@@ -10,6 +10,8 @@ out/
 
 # Environment
 .env
+.env.*
+!.env.example
 *.keystore
 *.pem
 *.secret

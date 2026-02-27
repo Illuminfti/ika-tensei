@@ -337,6 +337,7 @@ export class VAAIngester {
       target: `${config.suiPackageId}::orchestrator::process_vaa`,
       arguments: [
         tx.object(config.suiOrchestratorStateId),
+        tx.object(config.suiAdminCapId), // AdminCap — required after audit fix
         tx.object(config.wormholeStateObjectId),
         tx.object(config.suiRegistryObjectId),
         tx.pure.vector('u8', Array.from(vaaBytes)),

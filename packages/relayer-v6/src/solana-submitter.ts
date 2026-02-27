@@ -278,6 +278,14 @@ export class SolanaSubmitter {
         return { verified: false, error: `Transaction failed: ${JSON.stringify(tx.meta.err)}` };
       }
 
+      // Reject payments older than 10 minutes to prevent replay of stale transactions
+      if (tx.blockTime) {
+        const age = Math.floor(Date.now() / 1000) - tx.blockTime;
+        if (age > 600) {
+          return { verified: false, error: 'Payment transaction too old (>10 minutes)' };
+        }
+      }
+
       // Search for a system program transfer instruction matching our criteria
       const instructions = tx.transaction.message.instructions;
       for (const ix of instructions) {
@@ -517,6 +525,7 @@ export class SolanaSubmitter {
         keys: [
           { pubkey: collectionPda,            isSigner: false, isWritable: true  }, // collection
           { pubkey: relayerKeypair.publicKey,  isSigner: true,  isWritable: true  }, // payer
+          { pubkey: mintConfigPda,            isSigner: false, isWritable: false }, // config (MintConfig PDA for admin check)
           { pubkey: SystemProgram.programId,   isSigner: false, isWritable: false }, // system_program
         ],
         data: encodeInitRebornCollectionArgs(sourceChain, nftContract),

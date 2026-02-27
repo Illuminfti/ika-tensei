@@ -61,10 +61,16 @@ export class ChainVerifier {
 
     switch (chain) {
       case 'base':
+      case 'base-sepolia':
       case 'ethereum':
+      case 'ethereum-sepolia':
       case 'polygon':
       case 'arbitrum':
+      case 'arbitrum-sepolia':
       case 'optimism':
+      case 'optimism-sepolia':
+      case 'bsc':
+      case 'avalanche':
         return this.verifyEvm(chain, params);
       case 'sui':
         return this.verifySui(params);
@@ -83,11 +89,17 @@ export class ChainVerifier {
   private getEvmRpcUrl(chain: string): string {
     const config = getConfig();
     switch (chain) {
-      case 'ethereum': return config.ethereumRpcUrl || config.baseRpcUrl;
+      case 'ethereum':
+      case 'ethereum-sepolia': return config.ethereumRpcUrl || config.baseRpcUrl;
       case 'polygon': return config.polygonRpcUrl || config.baseRpcUrl;
-      case 'arbitrum': return config.arbitrumRpcUrl || config.baseRpcUrl;
-      case 'optimism': return config.optimismRpcUrl || config.baseRpcUrl;
+      case 'arbitrum':
+      case 'arbitrum-sepolia': return config.arbitrumRpcUrl || config.baseRpcUrl;
+      case 'optimism':
+      case 'optimism-sepolia': return config.optimismRpcUrl || config.baseRpcUrl;
+      case 'bsc': return config.baseRpcUrl; // TODO: add bscRpcUrl
+      case 'avalanche': return config.baseRpcUrl; // TODO: add avalancheRpcUrl
       case 'base':
+      case 'base-sepolia':
       default: return config.baseRpcUrl;
     }
   }

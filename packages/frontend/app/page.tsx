@@ -825,7 +825,7 @@ export default function Home() {
             {
               icon: <PortalIcon size={32} />,
               title: "Any Chain",
-              desc: "Ethereum, Solana, Sui, Aptos, Base, Arbitrum, NEAR, and 11 more. If it has NFTs, we can seal it.",
+              desc: "Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, and more EVM chains. If it has NFTs, we can seal it.",
               accent: "#a855f7",
               symbol: "🌀",
               japanese: "次元",
@@ -1037,41 +1037,6 @@ export default function Home() {
           </div>
 
           {/* Divider */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-sigil-border/40" />
-            <span className="font-pixel text-[8px] text-faded-spirit">+</span>
-            <div className="flex-1 h-px bg-sigil-border/40" />
-          </div>
-
-          {/* Non-EVM chains - larger */}
-          <div className="flex flex-wrap justify-center gap-4 mb-8">
-            {[
-              { name: "Sui", color: "#6fb8ff" },
-              { name: "Aptos", color: "#00d4c2" },
-              { name: "NEAR", color: "#00c08b" },
-              { name: "Solana", color: "#9945ff" },
-            ].map((chain, i) => (
-              <motion.div
-                key={chain.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4 + i * 0.1 }}
-                className="flex items-center gap-2 px-4 py-3"
-                style={{
-                  background: `${chain.color}10`,
-                  border: `1px solid ${chain.color}44`,
-                }}
-              >
-                <div
-                  className="w-4 h-4 rounded-full"
-                  style={{ background: chain.color, boxShadow: `0 0 8px ${chain.color}66` }}
-                />
-                <span className="font-pixel text-[10px]" style={{ color: chain.color }}>{chain.name}</span>
-              </motion.div>
-            ))}
-          </div>
-
           {/* Destination */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}

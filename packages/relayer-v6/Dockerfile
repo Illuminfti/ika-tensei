@@ -38,14 +38,20 @@ COPY .env.example ./.env
 # Copy relayer keypair (should be mounted as volume in production)
 COPY relayer-keypair.json ./relayer-keypair.json 2>/dev/null || true
 
+# Create data directory for SQLite
+RUN mkdir -p /app/data
+
 # Set ownership
 RUN chown -R relayer:relayer /app
 
 # Switch to non-root user
 USER relayer
 
-# Expose health check port
-EXPOSE 8080
+# Expose API port + health check port
+EXPOSE 3001 8080
+
+# Volume for persistent data (SQLite DB)
+VOLUME ["/app/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

@@ -174,6 +174,44 @@ export function updateSession(sessionId: string, fields: Partial<SessionRow>): v
   getDb().prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_id = ?`).run(...values);
 }
 
+/**
+ * Atomically transition session status with a WHERE guard.
+ * Returns true if the update matched (status was expectedStatus), false if race lost.
+ * This prevents TOCTOU: two concurrent requests both checking status then both updating.
+ */
+export function atomicStatusTransition(
+  sessionId: string,
+  expectedStatus: string,
+  newStatus: string,
+  extraFields?: Partial<SessionRow>,
+): boolean {
+  const sets: string[] = ['status = ?'];
+  const values: unknown[] = [newStatus];
+
+  if (extraFields) {
+    if (extraFields.payment_tx_sig !== undefined) { sets.push('payment_tx_sig = ?'); values.push(extraFields.payment_tx_sig); }
+    if (extraFields.payment_verified !== undefined) { sets.push('payment_verified = ?'); values.push(extraFields.payment_verified); }
+    if (extraFields.nft_contract !== undefined) { sets.push('nft_contract = ?'); values.push(extraFields.nft_contract); }
+    if (extraFields.token_id !== undefined) { sets.push('token_id = ?'); values.push(extraFields.token_id); }
+    if (extraFields.deposit_tx_hash !== undefined) { sets.push('deposit_tx_hash = ?'); values.push(extraFields.deposit_tx_hash); }
+    if (extraFields.dwallet_id !== undefined) { sets.push('dwallet_id = ?'); values.push(extraFields.dwallet_id); }
+    if (extraFields.deposit_address !== undefined) { sets.push('deposit_address = ?'); values.push(extraFields.deposit_address); }
+    if (extraFields.dwallet_pubkey !== undefined) { sets.push('dwallet_pubkey = ?'); values.push(extraFields.dwallet_pubkey); }
+    if (extraFields.error !== undefined) { sets.push('error = ?'); values.push(extraFields.error); }
+  }
+
+  sets.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(sessionId);
+  values.push(expectedStatus);
+
+  const result = getDb().prepare(
+    `UPDATE sessions SET ${sets.join(', ')} WHERE session_id = ? AND status = ?`
+  ).run(...values);
+
+  return result.changes > 0;
+}
+
 export function updateSessionByDeposit(depositAddress: string, status: string, error?: string): void {
   // Normalize: try with and without 0x prefix to match DB format
   const variants = [depositAddress];
@@ -243,6 +281,21 @@ function rowToSession(row: SessionRow): SealSession {
   }
   if (row.error) session.error = row.error;
   return session;
+}
+
+// ─── Session Expiration ─────────────────────────────────────────────────────
+
+/** Expire stale sessions older than maxAgeSeconds that are still in intermediate states. */
+export function expireOldSessions(maxAgeSeconds: number): number {
+  const cutoff = Date.now() - (maxAgeSeconds * 1000);
+  const result = getDb().prepare(`
+    UPDATE sessions SET status = 'error', error = 'Session expired', updated_at = ?
+    WHERE status IN ('awaiting_payment', 'payment_confirmed', 'creating_dwallet',
+                     'waiting_deposit', 'verifying_deposit', 'uploading_metadata',
+                     'creating_seal', 'signing', 'minting')
+    AND created_at < ?
+  `).run(Date.now(), cutoff);
+  return result.changes;
 }
 
 // ─── Presigns ──────────────────────────────────────────────────────────────

@@ -29,10 +29,16 @@ function isSafeUrl(url: string): boolean {
     // Block private/internal hostnames
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return false;
     if (hostname === '::1' || hostname === '[::1]') return false;
+    // Block IPv4 private ranges
     if (hostname.startsWith('10.') || hostname.startsWith('192.168.')) return false;
     if (hostname.startsWith('172.') && /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)) return false;
+    // Block cloud metadata endpoints
     if (hostname === '169.254.169.254' || hostname.startsWith('169.254.')) return false;
-    if (hostname.endsWith('.internal') || hostname.endsWith('.local')) return false;
+    // Block IPv6 private/link-local (fc00::/7, fe80::/10)
+    if (hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe8')) return false;
+    if (hostname.startsWith('[fc') || hostname.startsWith('[fd') || hostname.startsWith('[fe8')) return false;
+    // Block internal TLDs
+    if (hostname.endsWith('.internal') || hostname.endsWith('.local') || hostname.endsWith('.localhost')) return false;
     return true;
   } catch {
     return false;
@@ -208,7 +214,13 @@ export class MetadataHandler {
         });
 
         if (!response.ok) continue;
-        return await response.json() as RawMetadata;
+
+        // Limit metadata JSON size to 1 MB to prevent memory exhaustion
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength, 10) > 1_048_576) continue;
+        const text = await response.text();
+        if (text.length > 1_048_576) continue;
+        return JSON.parse(text) as RawMetadata;
       } catch {
         // Try next gateway
       }

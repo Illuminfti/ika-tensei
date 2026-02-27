@@ -6,6 +6,8 @@ dist/
 !package.json
 !tsconfig.json
 .env
+.env.*
+!.env.example
 
 # SQLite database
 *.db

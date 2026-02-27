@@ -1,53 +1,45 @@
-// Contract addresses
+// ─── Contract Addresses (Testnet) ──────────────────────────────────────────────
+
 export const CONTRACTS = {
   sui: {
-    package: "0x22a886a6e93e385216b24e0bddee3c8b4df6ef2c86db45ee7ddb9b4e5a3a5f42",
-    registry: "0x22a886a6e93e385216b24e0bddee3c8b4df6ef2c86db45ee7ddb9b4e5a3a5f42",
+    package:
+      "0x3f7407c823149a6923e25314546b973ea95bec788958b0c1d6cb78b1896fe177",
+    originalPackage:
+      "0x97840fdad11094201bdcc7298b0caa3627bc9822ec388e4b309ffa2dd7373811",
   },
   solana: {
-    program: "mbEQvaiUYdc65Qz4rd67oBY1LbSCBq1Da8Y1MciwtPa",
+    program: "2bW2SFSuiBMCef2xNk892uVfSTqjkRGmv6jD9PHKqzW4",
+    coreVoter: "E5thJCWofTMbmyhUhCai3hZiruFtYmmscDio6GwFCGaW",
   },
-  ethereum: {
-    deposit: "0x0000000000000000000000000000000000000000",
+  baseSepolia: {
+    sealInitiator: "0xC3f5B155ce06c7cBC470B4e8603AB00a65f1fDc7",
+    testNft: "0x993C47d2a7cBf2575076c239d03adcf4480dA141",
+  },
+  ethereumSepolia: {
+    sealInitiator: "0x986458C2f51e52342C1ca28E55D9bc64789D5075",
+    testNft: "0xC3f5B155ce06c7cBC470B4e8603AB00a65f1fDc7",
   },
 } as const;
 
-// Wormhole chain IDs (canonical)
-export const WORMHOLE_CHAIN_IDS = {
-  ETHEREUM: 2,
-  BSC: 4,
-  POLYGON: 5,
-  AVALANCHE: 6,
-  FANTOM: 10,
-  CELO: 14,
-  NEAR: 15,
-  MOONBEAM: 16,
-  SUI: 21,
-  APTOS: 22,
-  ARBITRUM: 23,
-  OPTIMISM: 24,
-  GNOSIS: 25,
-  BASE: 30,
-  SCROLL: 34,
-  BLAST: 36,
-  LINEA: 38,
-  SOLANA: 1,
-} as const;
+// ─── Backend API ──────────────────────────────────────────────────────────────
 
-// Backend API
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "";
 
-// Explorer URLs
+// ─── Explorer URLs (Testnet) ────────────────────────────────────────────────
+
 export const EXPLORERS = {
   ethereum: "https://sepolia.etherscan.io",
+  base: "https://sepolia.basescan.org",
   solana: "https://explorer.solana.com/?cluster=devnet",
-  sui: "https://suiscan.xyz/testnet",
 } as const;
 
-// Dynamic.xyz environment ID
-export const DYNAMIC_ENV_ID = process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID || "";
+// ─── Dynamic.xyz ──────────────────────────────────────────────────────────────
 
-// ─── Supported chains for deposit ─────────────────────────────────────────────
+export const DYNAMIC_ENV_ID =
+  process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID || "";
+
+// ─── Supported Chains ─────────────────────────────────────────────────────────
 
 export interface SupportedChain {
   id: string;
@@ -55,217 +47,54 @@ export interface SupportedChain {
   abbreviation: string;
   color: string;
   textColor: string;
-  chainType: "evm" | "solana" | "sui" | "aptos" | "near";
+  chainType: "evm";
   wormholeChainId: number;
   category: "evm" | "other";
   explorerUrl: string;
+  /** Whether this chain is testnet-ready (has contracts deployed + relayer support) */
+  testnetReady: boolean;
+  /** Testnet faucet URL for native tokens */
+  faucetUrl?: string;
+  /** Test NFT contract address (for the faucet page) */
+  testNftContract?: string;
 }
 
 export const SUPPORTED_CHAINS: SupportedChain[] = [
-  // ── EVM Chains (secp256k1 — one address works on all) ──
+  // ── EVM Chains ──
   {
-    id: "ethereum",
-    name: "Ethereum",
-    abbreviation: "ETH",
-    color: "#627eea",
-    textColor: "#ffffff",
-    chainType: "evm",
-    wormholeChainId: 2,
-    category: "evm",
-    explorerUrl: "https://etherscan.io",
-  },
-  {
-    id: "polygon",
-    name: "Polygon",
-    abbreviation: "POL",
-    color: "#8247e5",
-    textColor: "#ffffff",
-    chainType: "evm",
-    wormholeChainId: 5,
-    category: "evm",
-    explorerUrl: "https://polygonscan.com",
-  },
-  {
-    id: "arbitrum",
-    name: "Arbitrum",
-    abbreviation: "ARB",
-    color: "#2d374b",
-    textColor: "#28a0f0",
-    chainType: "evm",
-    wormholeChainId: 23,
-    category: "evm",
-    explorerUrl: "https://arbiscan.io",
-  },
-  {
-    id: "base",
-    name: "Base",
+    id: "base-sepolia",
+    name: "Base Sepolia",
     abbreviation: "BASE",
     color: "#0052ff",
     textColor: "#ffffff",
     chainType: "evm",
-    wormholeChainId: 30,
+    wormholeChainId: 10004,
     category: "evm",
-    explorerUrl: "https://basescan.org",
+    explorerUrl: "https://sepolia.basescan.org",
+    testnetReady: true,
+    faucetUrl: "https://www.alchemy.com/faucets/base-sepolia",
+    testNftContract: CONTRACTS.baseSepolia.testNft,
   },
   {
-    id: "optimism",
-    name: "Optimism",
-    abbreviation: "OP",
-    color: "#ff0420",
+    id: "ethereum-sepolia",
+    name: "Ethereum Sepolia",
+    abbreviation: "ETH",
+    color: "#627eea",
     textColor: "#ffffff",
     chainType: "evm",
-    wormholeChainId: 24,
+    wormholeChainId: 10002,
     category: "evm",
-    explorerUrl: "https://optimistic.etherscan.io",
-  },
-  {
-    id: "bsc",
-    name: "BNB Chain",
-    abbreviation: "BNB",
-    color: "#f0b90b",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 4,
-    category: "evm",
-    explorerUrl: "https://bscscan.com",
-  },
-  {
-    id: "avalanche",
-    name: "Avalanche",
-    abbreviation: "AVAX",
-    color: "#e84142",
-    textColor: "#ffffff",
-    chainType: "evm",
-    wormholeChainId: 6,
-    category: "evm",
-    explorerUrl: "https://snowtrace.io",
-  },
-  {
-    id: "fantom",
-    name: "Fantom",
-    abbreviation: "FTM",
-    color: "#1969ff",
-    textColor: "#ffffff",
-    chainType: "evm",
-    wormholeChainId: 10,
-    category: "evm",
-    explorerUrl: "https://ftmscan.com",
-  },
-  {
-    id: "moonbeam",
-    name: "Moonbeam",
-    abbreviation: "GLMR",
-    color: "#53cbc9",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 16,
-    category: "evm",
-    explorerUrl: "https://moonscan.io",
-  },
-  {
-    id: "celo",
-    name: "Celo",
-    abbreviation: "CELO",
-    color: "#35d07f",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 14,
-    category: "evm",
-    explorerUrl: "https://celoscan.io",
-  },
-  {
-    id: "scroll",
-    name: "Scroll",
-    abbreviation: "SCR",
-    color: "#c39b78",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 34,
-    category: "evm",
-    explorerUrl: "https://scrollscan.com",
-  },
-  {
-    id: "blast",
-    name: "Blast",
-    abbreviation: "BLAST",
-    color: "#fcfc03",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 36,
-    category: "evm",
-    explorerUrl: "https://blastscan.io",
-  },
-  {
-    id: "linea",
-    name: "Linea",
-    abbreviation: "LINEA",
-    color: "#61dfff",
-    textColor: "#000000",
-    chainType: "evm",
-    wormholeChainId: 38,
-    category: "evm",
-    explorerUrl: "https://lineascan.build",
-  },
-  {
-    id: "gnosis",
-    name: "Gnosis",
-    abbreviation: "GNO",
-    color: "#048a81",
-    textColor: "#ffffff",
-    chainType: "evm",
-    wormholeChainId: 25,
-    category: "evm",
-    explorerUrl: "https://gnosisscan.io",
-  },
-  // ── Non-EVM Chains (Ed25519) ──
-  {
-    id: "sui",
-    name: "Sui",
-    abbreviation: "SUI",
-    color: "#6fb8ff",
-    textColor: "#000000",
-    chainType: "sui",
-    wormholeChainId: 21,
-    category: "other",
-    explorerUrl: "https://suiexplorer.com",
-  },
-  {
-    id: "aptos",
-    name: "Aptos",
-    abbreviation: "APT",
-    color: "#00d4c2",
-    textColor: "#000000",
-    chainType: "aptos",
-    wormholeChainId: 22,
-    category: "other",
-    explorerUrl: "https://explorer.aptoslabs.com",
-  },
-  {
-    id: "near",
-    name: "NEAR",
-    abbreviation: "NEAR",
-    color: "#00c08b",
-    textColor: "#000000",
-    chainType: "near",
-    wormholeChainId: 15,
-    category: "other",
-    explorerUrl: "https://nearblocks.io",
-  },
-  {
-    id: "solana",
-    name: "Solana",
-    abbreviation: "SOL",
-    color: "#9945ff",
-    textColor: "#ffffff",
-    chainType: "solana",
-    wormholeChainId: 1,
-    category: "other",
-    explorerUrl: "https://explorer.solana.com",
+    explorerUrl: "https://sepolia.etherscan.io",
+    testnetReady: true,
+    faucetUrl: "https://www.alchemy.com/faucets/ethereum-sepolia",
+    testNftContract: CONTRACTS.ethereumSepolia.testNft,
   },
 ];
 
 export const EVM_CHAINS = SUPPORTED_CHAINS.filter((c) => c.category === "evm");
-export const OTHER_CHAINS = SUPPORTED_CHAINS.filter((c) => c.category === "other");
+
+// Only chains that are testnet-ready
+export const TESTNET_CHAINS = SUPPORTED_CHAINS.filter((c) => c.testnetReady);
 
 export function getChainById(id: string): SupportedChain | undefined {
   return SUPPORTED_CHAINS.find((c) => c.id === id);

@@ -1,120 +1,52 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
-
-// Using ika-mascot-v2.png directly
+import Link from "next/link";
+import { useWalletStore } from "@/stores/wallet";
+import { getRebornNfts } from "@/lib/api";
+import { DialogueBox } from "@/components/ui/DialogueBox";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface Wallet {
-  id: string;
-  chain: "ETH" | "SOL" | "SUI";
-  address: string;
-  connected: boolean;
-}
-
-interface PendingSeal {
-  id: number;
+interface RebornNFT {
+  mint: string;
   name: string;
-  chain: "ETH" | "SOL" | "SUI";
-  progress: number;
-  status: string;
-}
-
-interface CompletedReincarnation {
-  id: number;
-  name: string;
-  newName: string;
-  date: string;
-  tx: string;
-  explorer: string;
-}
-
-interface Transaction {
-  id: number;
-  date: string;
-  action: string;
-  type: "reincarnation" | "seal" | "wallet" | "guild" | "trade";
-  explorer: string | null;
-}
-
-interface Achievement {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  earned: boolean;
-  earnedDate?: string;
+  image: string;
+  originalChain: string;
+  originalContract: string;
+  originalTokenId: string;
+  sealHash: string;
+  rebornDate: string;
 }
 
 // ============================================================================
-// MOCK DATA
+// RANK SYSTEM
 // ============================================================================
 
-const ACHIEVEMENTS: Achievement[] = [
-  { id: "first_seal", name: "First Seal", description: "Completed your first seal", icon: "🏅", earned: true, earnedDate: "Feb 8, 2026" },
-  { id: "multi_chain", name: "Multi-Chain Master", description: "Connected wallets on 3 chains", icon: "⛓️", earned: true, earnedDate: "Feb 10, 2026" },
-  { id: "guild_veteran", name: "Guild Veteran", description: "Joined a guild", icon: "🏰", earned: false },
-  { id: "soul_surgeon", name: "Soul Surgeon", description: "Reincarnated 10 NFTs", icon: "🗡️", earned: false },
-  { id: "collector", name: "Arcane Collector", description: "Sealed 50 NFTs", icon: "📜", earned: false },
-  { id: "ancient_one", name: "Ancient One", description: "Held a seal for 30 days", icon: "🔮", earned: false },
-];
-
-const CONNECTED_WALLETS: Wallet[] = [
-  { id: "eth", chain: "ETH", address: "0x742d35Cc6634C0532925a3b844Bc9e7595f7a5E2", connected: true },
-  { id: "sol", chain: "SOL", address: "FKab9x8v9YzP3nq2xL5kP7mN4pQ6rT8uV0wX1yZ3", connected: true },
-  { id: "sui", chain: "SUI", address: "0x8f7...3a1b", connected: false },
-];
-
-const PENDING_SEALS: PendingSeal[] = [
-  { id: 1, name: "Bored Ape #8842", chain: "ETH", progress: 65, status: "Sealing in vault..." },
-  { id: 2, name: "Degen #0127", chain: "SOL", progress: 30, status: "Summoning..." },
-];
-
-const COMPLETED_REINCARNATIONS: CompletedReincarnation[] = [
-  { id: 1, name: "Cosmic Jelly #001", newName: "Cosmic Jelly (Sol)", date: "Feb 15, 2026", tx: "5xK7m...nP2q", explorer: "solscan.io/tx/5xK7m" },
-  { id: 2, name: "Pixel Squid #042", newName: "Squid Lord (Sol)", date: "Feb 12, 2026", tx: "3aB9c...mL4k", explorer: "solscan.io/tx/3aB9c" },
-  { id: 3, name: "Void Walker #777", newName: "Void Walker (Sol)", date: "Feb 10, 2026", tx: "8pQ2r...tY6z", explorer: "solscan.io/tx/8pQ2r" },
-  { id: 4, name: "Ghost Spirit #888", newName: "Ghost King (Sol)", date: "Feb 8, 2026", tx: "1mN4s...wX9a", explorer: "solscan.io/tx/1mN4s" },
-];
-
-const TRANSACTION_HISTORY: Transaction[] = [
-  { id: 1, date: "Feb 15, 2026", action: "Reincarnation Complete", type: "reincarnation", explorer: "solscan.io/tx/5xK7m" },
-  { id: 2, date: "Feb 14, 2026", action: "Seal Initiated", type: "seal", explorer: "etherscan.io/tx/0xabcd" },
-  { id: 3, date: "Feb 12, 2026", action: "Reincarnation Complete", type: "reincarnation", explorer: "solscan.io/tx/3aB9c" },
-  { id: 4, date: "Feb 11, 2026", action: "Wallet Connected", type: "wallet", explorer: null },
-  { id: 5, date: "Feb 10, 2026", action: "Reincarnation Complete", type: "reincarnation", explorer: "solscan.io/tx/8pQ2r" },
-  { id: 6, date: "Feb 9, 2026", action: "Guild Joined", type: "guild", explorer: null },
-  { id: 7, date: "Feb 8, 2026", action: "Trade Executed", type: "trade", explorer: "solscan.io/tx/9kR8p" },
-];
-
-const SETTINGS = [
-  { id: "sound", label: "Sound Effects", default: true, icon: "🔊" },
-  { id: "music", label: "Ambient Music", default: false, icon: "🎵" },
-  { id: "scanlines", label: "CRT Scanlines", default: true, icon: "📺" },
-  { id: "motion", label: "Reduced Motion", default: false, icon: "✨" },
-  { id: "particles", label: "Particle Effects", default: true, icon: "✦" },
-  { id: "haptics", label: "Haptic Feedback", default: false, icon: "⚡" },
-];
-
-// Guild Rank Configuration
 const RANK_CONFIG = {
-  novice: { title: "Novice", icon: "🌱", color: "text-spectral-green", minVotes: 0, maxVotes: 2 },
-  apprentice: { title: "Apprentice", icon: "🔥", color: "text-ritual-gold", minVotes: 3, maxVotes: 5 },
-  adept: { title: "Adept", icon: "⚡", color: "text-soul-cyan", minVotes: 6, maxVotes: 10 },
-  master: { title: "Master", icon: "👑", color: "text-blood-pink", minVotes: 11, maxVotes: 20 },
-  grandmaster: { title: "Grandmaster", icon: "💎", color: "text-cursed-violet-bright", minVotes: 21, maxVotes: 999 },
+  wanderer: { title: "Wanderer", icon: "🌱", color: "text-faded-spirit", minReborn: 0 },
+  initiate: { title: "Initiate", icon: "🔥", color: "text-ritual-gold", minReborn: 1 },
+  adept: { title: "Adept", icon: "⚡", color: "text-soul-cyan", minReborn: 5 },
+  master: { title: "Master", icon: "👑", color: "text-blood-pink", minReborn: 10 },
+  grandmaster: { title: "Grandmaster", icon: "💎", color: "text-cursed-violet-bright", minReborn: 25 },
 };
 
+function getRank(rebornCount: number): keyof typeof RANK_CONFIG {
+  if (rebornCount >= 25) return "grandmaster";
+  if (rebornCount >= 10) return "master";
+  if (rebornCount >= 5) return "adept";
+  if (rebornCount >= 1) return "initiate";
+  return "wanderer";
+}
+
 // ============================================================================
-// RESEARCH-BASED COMPONENTS
+// UI COMPONENTS
 // ============================================================================
 
-// Character Frame (D&D style)
 const CharacterFrame = ({ children }: { children: React.ReactNode }) => (
   <div className="relative inline-block">
     <div className="absolute -inset-3 bg-gradient-to-br from-ritual-gold via-blood-pink to-ritual-gold rounded-lg opacity-80" />
@@ -129,9 +61,8 @@ const CharacterFrame = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-// XP Bar from research
 const XPBar = ({ current, max, level }: { current: number; max: number; level: number }) => {
-  const percentage = (current / max) * 100;
+  const percentage = Math.min((current / max) * 100, 100);
   return (
     <div className="w-full">
       <div className="flex justify-between items-center mb-1">
@@ -150,97 +81,16 @@ const XPBar = ({ current, max, level }: { current: number; max: number; level: n
   );
 };
 
-// Chain Sigil
-const ChainSigil = ({ chain }: { chain: string }) => {
-  const sigils: Record<string, string> = { ETH: "⬡", SOL: "◎", SUI: "❂" };
-  const colors: Record<string, string> = { ETH: "text-purple-400", SOL: "text-pink-400", SUI: "text-cyan-400" };
-  return <span className={`text-lg ${colors[chain] || "text-ghost-white"}`}>{sigils[chain] || "◈"}</span>;
-};
-
-// Action Type Icons
-const ActionIcon = ({ type }: { type: Transaction["type"] }) => {
-  const icons: Record<Transaction["type"], string> = {
-    reincarnation: "👻",
-    seal: "⛤",
-    wallet: "⬡",
-    guild: "🏰",
-    trade: "⚖️",
-  };
-  return <span className="text-sm">{icons[type]}</span>;
-};
-
-// Animated Ritual Circle
-const RitualCircle = ({ progress, chain }: { progress: number; chain: string }) => {
-  const circumference = 2 * Math.PI * 18;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
-  
+const RankBadge = ({ rank }: { rank: keyof typeof RANK_CONFIG }) => {
+  const config = RANK_CONFIG[rank];
   return (
-    <div className="relative w-10 h-10">
-      <svg className="w-10 h-10 transform -rotate-90">
-        <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" strokeWidth="2" className="text-ritual-dark" />
-        <motion.circle
-          cx="20" cy="20" r="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset }}
-          transition={{ duration: 1.5 }}
-          className={chain === "ETH" ? "text-purple-500" : chain === "SOL" ? "text-pink-500" : "text-cyan-500"}
-        />
-        <motion.circle
-          cx="20" cy="20" r="12" fill="none" stroke="currentColor" strokeWidth="1"
-          className="text-ritual-gold"
-          animate={{ opacity: [0.3, 0.8, 0.3] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <ChainSigil chain={chain} />
-      </div>
-    </div>
+    <motion.div whileHover={{ scale: 1.1 }} className={`inline-flex items-center gap-1 px-2 py-1 ${config.color} bg-void-purple/50 border border-current/30`}>
+      <span className="text-sm">{config.icon}</span>
+      <span className="font-pixel text-[9px]">{config.title}</span>
+    </motion.div>
   );
 };
 
-// Pixel Toggle
-const PixelToggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
-  <button
-    onClick={onChange}
-    className={`relative w-12 h-6 border-2 transition-all duration-200 ${checked ? "border-blood-pink bg-blood-pink/20" : "border-faded-spirit bg-ritual-dark/50"}`}
-  >
-    <div className="absolute top-0.5 left-0.5 w-2 h-2 bg-ritual-gold" />
-    <div className="absolute top-0.5 right-0.5 w-2 h-2 bg-ritual-gold" />
-    <div className="absolute bottom-0.5 left-0.5 w-2 h-2 bg-ritual-gold" />
-    <div className="absolute bottom-0.5 right-0.5 w-2 h-2 bg-ritual-gold" />
-    <motion.div
-      animate={{ x: checked ? 22 : 2 }}
-      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      className={`absolute top-1 w-4 h-4 border-2 ${checked ? "border-soul-cyan bg-soul-cyan" : "border-faded-spirit bg-faded-spirit/30"}`}
-    />
-  </button>
-);
-
-// Achievement Badge
-const AchievementBadge = ({ achievement, delay }: { achievement: Achievement; delay: number }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.8 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ delay, duration: 0.4 }}
-    className={`relative p-3 border-2 text-center cursor-pointer transition-all duration-300 ${
-      achievement.earned ? "border-ritual-gold bg-ritual-gold/10 hover:bg-ritual-gold/20" : "border-faded-spirit/30 bg-ritual-dark/30 opacity-50"
-    }`}
-  >
-    <div className="absolute top-0 left-0 w-1 h-1 bg-ritual-gold" />
-    <div className="absolute top-0 right-0 w-1 h-1 bg-ritual-gold" />
-    <div className="absolute bottom-0 left-0 w-1 h-1 bg-ritual-gold" />
-    <div className="absolute bottom-0 right-0 w-1 h-1 bg-ritual-gold" />
-    <div className="text-2xl mb-1">{achievement.icon}</div>
-    <div className="font-pixel text-[7px] text-ghost-white mb-1">{achievement.name}</div>
-    <div className="font-silk text-[6px] text-faded-spirit">{achievement.description}</div>
-    {achievement.earned && achievement.earnedDate && (
-      <div className="font-pixel text-[5px] text-ritual-gold mt-1">✓ {achievement.earnedDate}</div>
-    )}
-  </motion.div>
-);
-
-// Section Title
 const SectionTitle = ({ children, icon }: { children: React.ReactNode; icon: string }) => (
   <h2 className="font-pixel text-[10px] text-ritual-gold mb-4 flex items-center gap-2">
     <span className="text-ritual-gold/50">{icon}</span>
@@ -249,7 +99,6 @@ const SectionTitle = ({ children, icon }: { children: React.ReactNode; icon: str
   </h2>
 );
 
-// Section Container
 const SectionContainer = ({ children, delay = 0, title, icon }: { children: React.ReactNode; delay?: number; title: string; icon: string }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
@@ -266,8 +115,15 @@ const SectionContainer = ({ children, delay = 0, title, icon }: { children: Reac
   </motion.div>
 );
 
-// Journal Entry (ancient book style)
-const JournalEntry = ({ entry }: { entry: CompletedReincarnation }) => (
+function truncateAddress(addr: string, n = 6) {
+  return addr.length > n * 2 + 3 ? `${addr.slice(0, n)}...${addr.slice(-n)}` : addr;
+}
+
+// ============================================================================
+// JOURNAL ENTRY (for reborn NFTs)
+// ============================================================================
+
+const JournalEntry = ({ nft }: { nft: RebornNFT }) => (
   <motion.div
     initial={{ opacity: 0, x: -10 }}
     animate={{ opacity: 1, x: 0 }}
@@ -275,16 +131,32 @@ const JournalEntry = ({ entry }: { entry: CompletedReincarnation }) => (
   >
     <div className="absolute inset-0 bg-gradient-to-r from-ritual-gold/5 to-transparent pointer-events-none" />
     <div className="flex justify-between items-start gap-2">
-      <div>
-        <div className="font-pixel text-[8px] text-soul-cyan mb-1">↗ {entry.newName}</div>
-        <div className="font-silk text-[7px] text-faded-spirit">← Was: {entry.name}</div>
-        <div className="font-pixel text-[6px] text-ritual-gold/60 mt-1">✦ {entry.date}</div>
+      <div className="flex items-center gap-3">
+        {/* NFT thumbnail */}
+        <div className="w-10 h-10 border border-ritual-gold/30 overflow-hidden flex-shrink-0">
+          {nft.image ? (
+            <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-void-purple/50 flex items-center justify-center">
+              <span className="text-[8px] text-faded-spirit">?</span>
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="font-pixel text-[8px] text-soul-cyan mb-1">{nft.name}</div>
+          <div className="font-silk text-[7px] text-faded-spirit">
+            {nft.originalChain} #{nft.originalTokenId}
+          </div>
+          <div className="font-pixel text-[6px] text-ritual-gold/60 mt-1">
+            {nft.rebornDate ? new Date(nft.rebornDate).toLocaleDateString() : ""}
+          </div>
+        </div>
       </div>
       <a
-        href={`https://${entry.explorer}`}
+        href={`https://solscan.io/token/${nft.mint}?cluster=devnet`}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-pixel text-[6px] text-blood-pink hover:text-blood-pink/70 border border-blood-pink/30 px-2 py-1 hover:bg-blood-pink/10 transition-colors"
+        className="font-pixel text-[6px] text-blood-pink hover:text-blood-pink/70 border border-blood-pink/30 px-2 py-1 hover:bg-blood-pink/10 transition-colors flex-shrink-0"
       >
         [View]
       </a>
@@ -292,69 +164,100 @@ const JournalEntry = ({ entry }: { entry: CompletedReincarnation }) => (
   </motion.div>
 );
 
-// Quest Entry
-const QuestEntry = ({ quest }: { quest: Transaction }) => (
-  <div className="flex items-center justify-between py-2 border-b border-ritual-gold/10 last:border-0">
-    <div className="flex items-center gap-3">
-      <ActionIcon type={quest.type} />
-      <div>
-        <div className="font-silk text-[9px] text-ghost-white">{quest.action}</div>
-        <div className="font-pixel text-[6px] text-faded-spirit">{quest.date}</div>
-      </div>
-    </div>
-    {quest.explorer ? (
-      <a href={`https://${quest.explorer}`} target="_blank" rel="noopener noreferrer" className="font-pixel text-[6px] text-soul-cyan hover:underline">
-        [Link]
-      </a>
-    ) : (
-      <span className="font-pixel text-[6px] text-faded-spirit">—</span>
-    )}
-  </div>
-);
+// ============================================================================
+// CONNECT PROMPT
+// ============================================================================
 
-// Rank Badge
-const RankBadge = ({ rank }: { rank: keyof typeof RANK_CONFIG }) => {
-  const config = RANK_CONFIG[rank];
+function ConnectPrompt() {
   return (
-    <motion.div whileHover={{ scale: 1.1 }} className={`inline-flex items-center gap-1 px-2 py-1 ${config.color} bg-void-purple/50 border border-current/30`}>
-      <span className="text-sm">{config.icon}</span>
-      <span className="font-pixel text-[9px]">{config.title}</span>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="text-center py-24"
+    >
+      <div className="relative inline-block mb-8">
+        <div className="absolute inset-0 blur-3xl opacity-20 bg-void-indigo" />
+        <motion.div
+          animate={{ y: [0, -10, 0], opacity: [0.3, 0.5, 0.3] }}
+          transition={{ duration: 4, repeat: Infinity }}
+        >
+          <Image
+            src="/art/ika-mascot-v2.png"
+            alt="Ika"
+            width={140}
+            height={140}
+            className="pixelated relative z-10"
+          />
+        </motion.div>
+      </div>
+
+      <DialogueBox
+        speaker="Ika"
+        portrait="neutral"
+        text="Connect your Solana wallet to view your profile..."
+      />
     </motion.div>
   );
-};
+}
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 export default function ProfilePage() {
-  const [settings, setSettings] = useState<Record<string, boolean>>(
-    SETTINGS.reduce((acc, s) => ({ ...acc, [s.id]: s.default }), {})
-  );
+  const { connected, publicKey } = useWalletStore();
+  const [nfts, setNfts] = useState<RebornNFT[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleSetting = (id: string) => {
-    setSettings((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  // Fetch reborn NFTs when wallet connects
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setNfts([]);
+      return;
+    }
 
-  const disconnectWallet = (id: string) => {
-    console.log("Disconnecting wallet:", id);
-  };
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-  const earnedAchievements = ACHIEVEMENTS.filter(a => a.earned).length;
+    getRebornNfts(publicKey)
+      .then((data) => {
+        if (!cancelled) setNfts(data.nfts);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  // User stats
-  const userStats = {
-    name: "Squid Sage",
-    title: "Sorcerer",
-    subtitle: "Initiate of the Deep Arts • Seeker of Lost Souls",
-    level: 12,
-    xp: 2450,
-    xpToNext: 5000,
-    seals: 8,
-    souls: 12,
-    rank: 247,
-    rankType: "adept" as keyof typeof RANK_CONFIG,
-  };
+    return () => { cancelled = true; };
+  }, [connected, publicKey]);
+
+  // Derived stats
+  const stats = useMemo(() => {
+    const chains = new Set(nfts.map(n => n.originalChain)).size;
+    const collections = new Set(nfts.map(n => n.originalContract)).size;
+    return {
+      rebornCount: nfts.length,
+      chains,
+      collections,
+      rank: getRank(nfts.length),
+      level: Math.max(1, nfts.length),
+      xp: nfts.length * 100,
+      xpToNext: Math.max(nfts.length + 1, 5) * 100,
+    };
+  }, [nfts]);
+
+  // Not connected
+  if (!connected) {
+    return (
+      <div className="min-h-screen py-8 px-4 max-w-4xl mx-auto">
+        <ConnectPrompt />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen py-8 px-4 max-w-4xl mx-auto">
@@ -364,9 +267,9 @@ export default function ProfilePage() {
       </div>
 
       <div className="relative z-10">
-        {/* ========================================================================= */}
-        {/* PROFILE HEADER - Character Sheet Style */}
-        {/* ========================================================================= */}
+        {/* ================================================================= */}
+        {/* PROFILE HEADER */}
+        {/* ================================================================= */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -384,236 +287,173 @@ export default function ProfilePage() {
             {/* Character Info */}
             <div className="flex-1 text-center md:text-left">
               <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
-                <h1 className="font-pixel text-lg text-ghost-white">{userStats.name}</h1>
-                <RankBadge rank={userStats.rankType} />
+                <h1 className="font-pixel text-lg text-ghost-white">
+                  {publicKey ? truncateAddress(publicKey, 4) : "Unknown"}
+                </h1>
+                <RankBadge rank={stats.rank} />
               </div>
-              
+
               <p className="font-silk text-[9px] text-faded-spirit mb-3">
-                {userStats.subtitle}
+                Solana Wallet Connected
               </p>
 
               {/* XP Bar */}
               <div className="max-w-xs">
-                <XPBar current={userStats.xp} max={userStats.xpToNext} level={userStats.level} />
+                <XPBar current={stats.xp} max={stats.xpToNext} level={stats.level} />
               </div>
 
               {/* Stats row */}
               <div className="flex justify-center md:justify-start gap-4 mt-3 font-pixel text-[7px]">
                 <div className="text-faded-spirit">
-                  <span className="text-soul-cyan">SEALS:</span> {userStats.seals}
+                  <span className="text-soul-cyan">REBORN:</span> {stats.rebornCount}
                 </div>
                 <div className="text-faded-spirit">
-                  <span className="text-blood-pink">SOULS:</span> {userStats.souls}
+                  <span className="text-blood-pink">CHAINS:</span> {stats.chains}
                 </div>
                 <div className="text-faded-spirit">
-                  <span className="text-ritual-gold">RANK:</span> #{userStats.rank}
+                  <span className="text-ritual-gold">COLLECTIONS:</span> {stats.collections}
                 </div>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* ========================================================================= */}
-        {/* ACHIEVEMENT BADGES */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.05} title="Achievements" icon="★">
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-            {ACHIEVEMENTS.map((achievement, index) => (
-              <AchievementBadge key={achievement.id} achievement={achievement} delay={0.1 + index * 0.05} />
-            ))}
-          </div>
-          <div className="mt-3 text-center">
-            <span className="font-pixel text-[7px] text-faded-spirit">
-              {earnedAchievements}/{ACHIEVEMENTS.length} Unlocked
-            </span>
-          </div>
+        {/* ================================================================= */}
+        {/* SOUL BOND - Connected Wallet */}
+        {/* ================================================================= */}
+        <SectionContainer delay={0.1} title="Soul Bond" icon="⚔">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.15 }}
+            className="flex items-center justify-between p-3 border border-ritual-gold/30 bg-ritual-gold/5"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 flex items-center justify-center border border-soul-cyan bg-soul-cyan/10">
+                <span className="text-lg text-pink-400">◎</span>
+              </div>
+              <div>
+                <div className="font-pixel text-[8px] text-ghost-white flex items-center gap-2">
+                  SOL
+                  <span className="text-[7px] text-soul-cyan">● Bound</span>
+                </div>
+                <div className="font-silk text-[7px] text-faded-spirit">
+                  {publicKey ? truncateAddress(publicKey, 8) : "—"}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (publicKey) {
+                  navigator.clipboard.writeText(publicKey);
+                }
+              }}
+              className="font-pixel text-[6px] px-2 py-1 border border-soul-cyan/50 text-soul-cyan hover:bg-soul-cyan/10 transition-colors"
+            >
+              [Copy]
+            </button>
+          </motion.div>
         </SectionContainer>
 
-        {/* ========================================================================= */}
-        {/* SOUL BONDS - Connected Wallets */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.1} title="Soul Bonds" icon="⚔">
-          <div className="space-y-2">
-            {CONNECTED_WALLETS.map((wallet, index) => (
+        {/* ================================================================= */}
+        {/* JOURNAL OF SOULS - Reborn NFTs */}
+        {/* ================================================================= */}
+        <SectionContainer delay={0.2} title="Journal of Souls" icon="📖">
+          {loading ? (
+            <div className="text-center py-8">
               <motion.div
-                key={wallet.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.15 + index * 0.05 }}
-                className={`flex items-center justify-between p-3 border ${
-                  wallet.connected ? "border-ritual-gold/30 bg-ritual-gold/5" : "border-faded-spirit/20 bg-ritual-dark/30"
-                }`}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="inline-block text-ritual-gold text-lg mb-2"
               >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 flex items-center justify-center border ${
-                    wallet.connected ? "border-soul-cyan bg-soul-cyan/10" : "border-faded-spirit/30"
-                  }`}>
-                    <ChainSigil chain={wallet.chain} />
-                  </div>
-                  <div>
-                    <div className="font-pixel text-[8px] text-ghost-white flex items-center gap-2">
-                      {wallet.chain}
-                      {wallet.connected && <span className="text-[7px] text-soul-cyan">● Bound</span>}
-                    </div>
-                    <div className="font-silk text-[7px] text-faded-spirit">
-                      {wallet.address.slice(0, 8)}...{wallet.address.slice(-4)}
-                    </div>
-                  </div>
-                </div>
-                {wallet.connected ? (
-                  <button
-                    onClick={() => disconnectWallet(wallet.id)}
-                    className="font-pixel text-[6px] px-2 py-1 border border-blood-pink/50 text-blood-pink hover:bg-blood-pink/10 transition-colors"
+                ✦
+              </motion.div>
+              <p className="font-silk text-[9px] text-faded-spirit">Consulting the archives...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-6">
+              <p className="font-silk text-[9px] text-blood-pink">{error}</p>
+            </div>
+          ) : nfts.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="font-silk text-[9px] text-faded-spirit mb-3">
+                No reborn souls recorded yet. Begin your first ritual.
+              </p>
+              <Link
+                href="/seal"
+                className="font-pixel text-[8px] text-blood-pink hover:text-ghost-white transition-colors"
+                style={{ textShadow: "0 0 8px rgba(220,20,60,0.5)" }}
+              >
+                → Begin the Seal Ritual ←
+              </Link>
+            </div>
+          ) : (
+            <div className="relative">
+              {/* Book spine effect */}
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-ritual-gold/30 via-ritual-gold/10 to-ritual-gold/30" />
+
+              <div className="pl-4 space-y-2">
+                {nfts.map((nft, index) => (
+                  <motion.div
+                    key={nft.mint}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.25 + index * 0.05 }}
                   >
-                    [Unbind]
-                  </button>
-                ) : (
-                  <button className="font-pixel text-[6px] px-2 py-1 border border-soul-cyan/50 text-soul-cyan hover:bg-soul-cyan/10 transition-colors">
-                    [Bind]
-                  </button>
-                )}
-              </motion.div>
-            ))}
-          </div>
+                    <JournalEntry nft={nft} />
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="mt-4 text-center">
+                <span className="font-pixel text-[6px] text-faded-spirit">
+                  — ✦ {nfts.length} soul{nfts.length !== 1 ? "s" : ""} recorded ✦ —
+                </span>
+              </div>
+            </div>
+          )}
         </SectionContainer>
 
-        {/* ========================================================================= */}
-        {/* ACTIVE RITUALS - Pending Seals */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.2} title="Active Rituals" icon="⛤">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {PENDING_SEALS.map((seal, index) => (
+        {/* ================================================================= */}
+        {/* QUICK ACTIONS */}
+        {/* ================================================================= */}
+        <SectionContainer delay={0.3} title="Quick Actions" icon="⚙">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Link href="/seal">
               <motion.div
-                key={seal.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.25 + index * 0.1 }}
-                className="relative p-4 border border-ritual-gold/20 bg-ritual-dark/50"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="p-4 border border-blood-pink/30 bg-blood-pink/5 text-center cursor-pointer hover:bg-blood-pink/10 transition-colors"
               >
-                <div className="absolute -right-2 -top-2">
-                  <RitualCircle progress={seal.progress} chain={seal.chain} />
-                </div>
-
-                <div className="pr-12">
-                  <div className="font-pixel text-[8px] text-ghost-white mb-1">{seal.name}</div>
-                  <div className="font-silk text-[7px] text-faded-spirit mb-2">
-                    Source: <ChainSigil chain={seal.chain} /> {seal.chain}
-                  </div>
-                  
-                  <div className="h-2 bg-ritual-dark border border-faded-spirit/20 mb-1">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${seal.progress}%` }}
-                      transition={{ duration: 1, delay: 0.5 }}
-                      className="h-full bg-gradient-to-r from-purple-600 to-pink-600"
-                    />
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-pixel text-[6px] text-blood-pink">{seal.status}</span>
-                    <span className="font-pixel text-[6px] text-faded-spirit">{seal.progress}%</span>
-                  </div>
-                </div>
-
-                <motion.div
-                  className="absolute bottom-1 left-1/2 -translate-x-1/2 font-pixel text-[7px] text-ritual-gold/30"
-                  animate={{ opacity: [0.3, 0.7, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  ᚠ ᚢ ᚦ ᚨ ᚱ ᚲ
-                </motion.div>
+                <span className="text-lg block mb-1">⛤</span>
+                <span className="font-pixel text-[8px] text-ghost-white">Seal an NFT</span>
+                <p className="font-silk text-[6px] text-faded-spirit mt-1">Begin the ritual</p>
               </motion.div>
-            ))}
-          </div>
-        </SectionContainer>
+            </Link>
 
-        {/* ========================================================================= */}
-        {/* JOURNAL OF SOULS - Completed Reincarnations (Ancient Book Style) */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.3} title="Journal of Souls" icon="📖">
-          <div className="relative">
-            {/* Book spine effect */}
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-ritual-gold/30 via-ritual-gold/10 to-ritual-gold/30" />
-            
-            <div className="pl-4 space-y-2">
-              {COMPLETED_REINCARNATIONS.map((entry, index) => (
-                <motion.div
-                  key={entry.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.35 + index * 0.05 }}
-                >
-                  <JournalEntry entry={entry} />
-                </motion.div>
-              ))}
-            </div>
-
-            <div className="mt-4 text-center">
-              <span className="font-pixel text-[6px] text-faded-spirit">— ✦ Page {Math.floor(Math.random() * 50) + 1} ✦ —</span>
-            </div>
-          </div>
-        </SectionContainer>
-
-        {/* ========================================================================= */}
-        {/* QUEST LOG - Transaction History */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.4} title="Quest Log" icon="⚔">
-          <div className="relative">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-ritual-gold/20">
-              <span className="font-pixel text-[7px] text-faded-spirit w-8">Type</span>
-              <span className="flex-1 font-pixel text-[7px] text-faded-spirit">Quest</span>
-              <span className="font-pixel text-[7px] text-faded-spirit w-16 text-right">Status</span>
-            </div>
-            
-            {TRANSACTION_HISTORY.map((quest, index) => (
+            <Link href="/gallery">
               <motion.div
-                key={quest.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.45 + index * 0.03 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="p-4 border border-soul-cyan/30 bg-soul-cyan/5 text-center cursor-pointer hover:bg-soul-cyan/10 transition-colors"
               >
-                <QuestEntry quest={quest} />
+                <span className="text-lg block mb-1">📖</span>
+                <span className="font-pixel text-[8px] text-ghost-white">View Gallery</span>
+                <p className="font-silk text-[6px] text-faded-spirit mt-1">Browse reborn NFTs</p>
               </motion.div>
-            ))}
+            </Link>
 
-            <div className="mt-4 text-center">
-              <span className="font-pixel text-[6px] text-faded-spirit">
-                ◆ Total Quests: {TRANSACTION_HISTORY.length} ◆
-              </span>
-            </div>
-          </div>
-        </SectionContainer>
-
-        {/* ========================================================================= */}
-        {/* CONFIGURATION GRIMOIRE - Settings */}
-        {/* ========================================================================= */}
-        <SectionContainer delay={0.5} title="Configuration Grimoire" icon="⚙">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {SETTINGS.map((setting, index) => (
+            <Link href="/faucet">
               <motion.div
-                key={setting.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 + index * 0.03 }}
-                className="flex items-center justify-between p-3 border border-ritual-gold/20 bg-ritual-dark/30"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="p-4 border border-ritual-gold/30 bg-ritual-gold/5 text-center cursor-pointer hover:bg-ritual-gold/10 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 flex items-center justify-center border border-faded-spirit/30 bg-ritual-dark">
-                    {setting.icon}
-                  </div>
-                  <span className="font-silk text-[9px] text-ghost-white">{setting.label}</span>
-                </div>
-                <PixelToggle
-                  checked={settings[setting.id]}
-                  onChange={() => toggleSetting(setting.id)}
-                />
+                <span className="text-lg block mb-1">⚔</span>
+                <span className="font-pixel text-[8px] text-ghost-white">Spirit Forge</span>
+                <p className="font-silk text-[6px] text-faded-spirit mt-1">Get testnet tokens</p>
               </motion.div>
-            ))}
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-ritual-gold/20 text-center">
-            <div className="font-pixel text-[7px] text-faded-spirit">
-              🔮 Grimoire of {settings.sound ? "Resonance" : "Silence"} 🔮
-            </div>
+            </Link>
           </div>
         </SectionContainer>
 

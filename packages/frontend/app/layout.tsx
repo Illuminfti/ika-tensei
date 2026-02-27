@@ -10,7 +10,7 @@ import { EasterEggs } from "@/components/ui/EasterEggs";
 export const metadata: Metadata = {
   title: "イカ転生 | Ika Tensei - NFT Reincarnation Protocol",
   description: "Seal your NFTs from any chain. Reborn on Solana. Join the Adventurer's Guild.",
-  keywords: ["NFT", "cross-chain", "Solana", "Ethereum", "Sui", "reincarnation", "bridge"],
+  keywords: ["NFT", "cross-chain", "Solana", "Ethereum", "Base", "EVM", "reincarnation", "bridge"],
   authors: [{ name: "Ika Tensei Team", url: "https://github.com/Illuminfti/ika-tensei" }],
   openGraph: {
     title: "イカ転生 | Ika Tensei - NFT Reincarnation Protocol",

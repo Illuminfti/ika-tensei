@@ -13,6 +13,7 @@ import { ChainSelector } from "@/components/ui/ChainSelector";
 import { DepositAddress } from "@/components/ui/DepositAddress";
 import { SolanaConnectInner, DevModeConnect } from "@/components/wallet/SolanaConnect";
 import Image from "next/image";
+import type { SealStatusValue } from "@/lib/api";
 
 // ─── Blood Pact Modal ──────────────────────────────────────────────────────────
 
@@ -38,31 +39,30 @@ function BloodPactModal({ onConfirm, onCancel }: BloodPactModalProps) {
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-lg"
       >
-        {/* Blood pact border effect */}
         <motion.div
           className="absolute -inset-2 rounded-lg"
           style={{
-            background: 'linear-gradient(45deg, #dc143c, #8b0000, #dc143c, #8b0000)',
-            backgroundSize: '400% 400%',
+            background:
+              "linear-gradient(45deg, #dc143c, #8b0000, #dc143c, #8b0000)",
+            backgroundSize: "400% 400%",
           }}
           animate={{
-            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+            backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"],
           }}
           transition={{ duration: 3, repeat: Infinity }}
         />
-        
-        {/* Inner dark content */}
-        <div 
+        <div
           className="relative bg-void-purple p-6 m-0.5 rounded-lg"
-          style={{
-            boxShadow: 'inset 0 0 50px rgba(220,20,60,0.2)',
-          }}
+          style={{ boxShadow: "inset 0 0 50px rgba(220,20,60,0.2)" }}
         >
-          {/* Header */}
           <div className="text-center mb-6">
             <motion.div
-              animate={{ 
-                textShadow: ['0 0 10px #dc143c', '0 0 20px #dc143c', '0 0 10px #dc143c'],
+              animate={{
+                textShadow: [
+                  "0 0 10px #dc143c",
+                  "0 0 20px #dc143c",
+                  "0 0 10px #dc143c",
+                ],
               }}
               transition={{ duration: 2, repeat: Infinity }}
               className="font-pixel text-xl text-blood-pink mb-2"
@@ -73,26 +73,18 @@ function BloodPactModal({ onConfirm, onCancel }: BloodPactModalProps) {
               The eternal binding awaits...
             </p>
           </div>
-          
-          {/* Warning text */}
           <div className="bg-blood-pink/10 p-4 rounded mb-6 border border-blood-pink/20">
             <p className="font-silk text-sm text-faded-spirit text-center">
-              By confirming, your soul shall be bound to the eternal chain. 
-              This pact cannot be undone. The spirits bear witness...
+              By confirming, your soul shall be bound to the eternal chain. This
+              pact cannot be undone. The spirits bear witness...
             </p>
           </div>
-          
-          {/* Buttons */}
           <div className="flex gap-4 justify-center">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={onCancel}
-              className="
-                px-6 py-3 font-pixel text-xs 
-                border-2 border-void-purple/50 text-faded-spirit
-                hover:border-faded-spirit transition-colors
-              "
+              className="px-6 py-3 font-pixel text-xs border-2 border-void-purple/50 text-faded-spirit hover:border-faded-spirit transition-colors"
             >
               I REFUSE
             </motion.button>
@@ -100,27 +92,18 @@ function BloodPactModal({ onConfirm, onCancel }: BloodPactModalProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={onConfirm}
-              className="
-                px-6 py-3 font-pixel text-xs
-                bg-blood-pink text-white border-2 border-blood-pink
-                hover:bg-red-700 hover:border-red-700
-                transition-colors relative overflow-hidden
-              "
-              style={{
-                boxShadow: '0 0 20px rgba(220,20,60,0.5)',
-              }}
+              className="px-6 py-3 font-pixel text-xs bg-blood-pink text-white border-2 border-blood-pink hover:bg-red-700 hover:border-red-700 transition-colors relative overflow-hidden"
+              style={{ boxShadow: "0 0 20px rgba(220,20,60,0.5)" }}
             >
               <motion.span
                 className="absolute inset-0 bg-white/20"
-                initial={{ x: '-100%' }}
-                whileHover={{ x: '100%' }}
+                initial={{ x: "-100%" }}
+                whileHover={{ x: "100%" }}
                 transition={{ duration: 0.5 }}
               />
               I ACCEPT THE PACT
             </motion.button>
           </div>
-          
-          {/* Bottom sigil */}
           <div className="text-center mt-6 text-blood-pink/50">
             ☠︎ THE IKA TENSEI ☠︎
           </div>
@@ -132,73 +115,69 @@ function BloodPactModal({ onConfirm, onCancel }: BloodPactModalProps) {
 
 // ─── Runic Progress Indicator ─────────────────────────────────────────────────
 
-interface RunicProgressProps {
-  currentStep: number;
-}
-
-const RUNE_GLYPHS = ['ᚠ', 'ᚢ', 'ᚦ', 'ᚨ', 'ᚱ'];
-const RITUAL_STEPS = [
-  "Gathering energy...",
-  "Weaving spell...",
-  "Binding to chain...",
-  "Minting on Solana...",
+const RUNE_GLYPHS = ["ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᚲ"];
+const RITUAL_STEPS_LABELS = [
+  "Verifying...",
+  "Uploading...",
+  "Sealing...",
+  "Signing...",
+  "Minting...",
 ];
 
-function RunicProgress({ currentStep }: RunicProgressProps) {
+function RunicProgress({ currentStep }: { currentStep: number }) {
   return (
     <div className="flex justify-between items-center max-w-md mx-auto mt-6">
-      {RITUAL_STEPS.map((label, index) => {
+      {RITUAL_STEPS_LABELS.map((label, index) => {
         const isActive = index <= currentStep;
         const isCurrent = index === currentStep;
-        
         return (
           <div key={index} className="flex flex-col items-center relative">
-            {/* Connector line */}
-            {index < RITUAL_STEPS.length - 1 && (
-              <div 
+            {index < RITUAL_STEPS_LABELS.length - 1 && (
+              <div
                 className="absolute top-3 left-1/2 w-full h-0.5 -translate-x-0"
                 style={{
-                  backgroundColor: isActive ? '#dc143c' : '#2a1a1a',
-                  boxShadow: isActive ? '0 0 10px rgba(220,20,60,0.5)' : 'none',
-                  width: '200%',
+                  backgroundColor: isActive ? "#dc143c" : "#2a1a1a",
+                  boxShadow: isActive
+                    ? "0 0 10px rgba(220,20,60,0.5)"
+                    : "none",
+                  width: "200%",
                   zIndex: -1,
                 }}
               />
             )}
-            
-            {/* Rune */}
             <motion.div
-              className={`
-                w-10 h-10 rounded-full flex items-center justify-center
-                border-2 transition-all duration-500
-                ${isActive 
-                  ? 'border-blood-pink bg-blood-pink/20' 
-                  : 'border-void-purple/30 bg-void-purple/20'
-                }
-              `}
-              animate={isCurrent ? {
-                boxShadow: ['0 0 10px #dc143c', '0 0 25px #dc143c', '0 0 10px #dc143c'],
-              } : {}}
+              className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${
+                isActive
+                  ? "border-blood-pink bg-blood-pink/20"
+                  : "border-void-purple/30 bg-void-purple/20"
+              }`}
+              animate={
+                isCurrent
+                  ? {
+                      boxShadow: [
+                        "0 0 10px #dc143c",
+                        "0 0 25px #dc143c",
+                        "0 0 10px #dc143c",
+                      ],
+                    }
+                  : {}
+              }
               transition={{ duration: 1, repeat: Infinity }}
             >
-              <span 
+              <span
                 className="text-lg"
                 style={{
-                  color: isActive ? '#ffd700' : '#4a2c2c',
-                  textShadow: isActive ? '0 0 10px #ffd700' : 'none',
+                  color: isActive ? "#ffd700" : "#4a2c2c",
+                  textShadow: isActive ? "0 0 10px #ffd700" : "none",
                 }}
               >
                 {RUNE_GLYPHS[index]}
               </span>
             </motion.div>
-            
-            {/* Label */}
-            <span 
-              className={`
-                font-silk text-[8px] mt-2 text-center max-w-20
-                transition-colors duration-300
-                ${isActive ? 'text-faded-spirit' : 'text-void-purple/50'}
-              `}
+            <span
+              className={`font-silk text-[8px] mt-2 text-center max-w-20 transition-colors duration-300 ${
+                isActive ? "text-faded-spirit" : "text-void-purple/50"
+              }`}
             >
               {label}
             </span>
@@ -209,55 +188,30 @@ function RunicProgress({ currentStep }: RunicProgressProps) {
   );
 }
 
-// ─── Chain Aura Component ────────────────────────────────────────────────────
-
-interface ChainAuraProps {
-  chainId: string | null;
-}
-
-function ChainAura({ chainId }: ChainAuraProps) {
-  const auraColor = useMemo(() => {
-    switch (chainId) {
-      case 'ethereum': return { primary: '#ffd700', secondary: '#ffaa00', name: 'Ethereum' };
-      case 'solana': return { primary: '#00ffff', secondary: '#00ccff', name: 'Solana' };
-      case 'sui': return { primary: '#a855f7', secondary: '#8b5cf6', name: 'Sui' };
-      default: return null;
-    }
-  }, [chainId]);
-
-  if (!auraColor) return null;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex items-center gap-2 mt-3"
-    >
-      <motion.div
-        className="w-3 h-3 rounded-full"
-        style={{ backgroundColor: auraColor.primary }}
-        animate={{
-          boxShadow: [
-            `0 0 4px ${auraColor.primary}`,
-            `0 0 12px ${auraColor.primary}`,
-            `0 0 4px ${auraColor.primary}`,
-          ],
-        }}
-        transition={{ duration: 1.5, repeat: Infinity }}
-      />
-      <span 
-        className="font-pixel text-[10px]"
-        style={{ color: auraColor.primary, textShadow: `0 0 8px ${auraColor.secondary}` }}
-      >
-        {auraColor.name} Realm
-      </span>
-    </motion.div>
-  );
-}
-
 // ─── Step breadcrumb ──────────────────────────────────────────────────────────
 
-const STEPS = ["Connect", "Select Chain", "Deposit", "Summoning", "Complete"] as const;
+const STEPS = [
+  "Connect",
+  "Chain",
+  "Pay",
+  "Deposit",
+  "Confirm",
+  "Summoning",
+  "Complete",
+] as const;
+
+function stepToIndex(step: string): number {
+  switch (step) {
+    case "connect": return 0;
+    case "select_chain": return 1;
+    case "payment": return 2;
+    case "deposit": return 3;
+    case "confirm_deposit": return 4;
+    case "waiting": return 5;
+    case "complete": return 6;
+    default: return 0;
+  }
+}
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -269,7 +223,11 @@ function StepIndicator({ current }: { current: number }) {
           <div key={label} className="flex items-center gap-1">
             <div className="flex flex-col items-center gap-1">
               <motion.div
-                animate={active ? { boxShadow: ["0 0 4px #ffd700", "0 0 12px #ffd700", "0 0 4px #ffd700"] } : {}}
+                animate={
+                  active
+                    ? { boxShadow: ["0 0 4px #ffd700", "0 0 12px #ffd700", "0 0 4px #ffd700"] }
+                    : {}
+                }
                 transition={{ duration: 1.5, repeat: Infinity }}
                 className="w-4 h-4 flex items-center justify-center"
                 style={{
@@ -277,9 +235,7 @@ function StepIndicator({ current }: { current: number }) {
                   border: `2px solid ${done ? "#00ff88" : active ? "#ffd700" : "#3a2850"}`,
                 }}
               >
-                {done && (
-                  <span style={{ fontSize: 8, color: "#000" }}>✓</span>
-                )}
+                {done && <span style={{ fontSize: 8, color: "#000" }}>✓</span>}
               </motion.div>
               <span
                 className="font-pixel hidden md:block"
@@ -294,7 +250,7 @@ function StepIndicator({ current }: { current: number }) {
             </div>
             {i < STEPS.length - 1 && (
               <div
-                className="w-6 md:w-8 h-px mb-4"
+                className="w-4 md:w-6 h-px mb-4"
                 style={{ background: i < current ? "#00ff88" : "#3a2850" }}
               />
             )}
@@ -303,19 +259,6 @@ function StepIndicator({ current }: { current: number }) {
       })}
     </div>
   );
-}
-
-// ─── Step index map ───────────────────────────────────────────────────────────
-
-function stepToIndex(step: string): number {
-  switch (step) {
-    case "connect": return 0;
-    case "select_chain": return 1;
-    case "deposit": return 2;
-    case "waiting": return 3;
-    case "complete": return 4;
-    default: return 0;
-  }
 }
 
 // ─── Panel wrapper ────────────────────────────────────────────────────────────
@@ -386,23 +329,6 @@ function SelectChainStep({
 
       <ChainSelector selected={selectedChain} onSelect={onSelect} />
 
-      {/* Chain-specific aura */}
-      <ChainAura chainId={selectedChain} />
-
-      {/* Fee estimate */}
-      {selectedChain && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="mt-3 text-center"
-        >
-          <span className="font-pixel text-[10px] text-faded-spirit">
-            ◎ Estimated fee: ~0.01 SOL + source chain gas
-          </span>
-        </motion.div>
-      )}
-
-      {/* Error display */}
       {error && (
         <motion.div
           initial={{ opacity: 0, y: -4 }}
@@ -413,22 +339,7 @@ function SelectChainStep({
             border: "1px solid rgba(255, 68, 68, 0.3)",
           }}
         >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-demon-red text-sm">❌</span>
-              <span className="font-pixel text-[11px] text-demon-red">{error}</span>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                onBack();
-              }}
-              className="font-pixel text-[10px] px-3 py-1 bg-demon-red/20 border border-demon-red/50 text-demon-red hover:bg-demon-red/30"
-            >
-              Try Again
-            </motion.button>
-          </div>
+          <span className="font-pixel text-[11px] text-demon-red">{error}</span>
         </motion.div>
       )}
 
@@ -441,7 +352,6 @@ function SelectChainStep({
         >
           ← Back
         </motion.button>
-
         <motion.button
           whileHover={selectedChain && !isLoading ? { scale: 1.05 } : {}}
           whileTap={selectedChain && !isLoading ? { scale: 0.95 } : {}}
@@ -451,14 +361,111 @@ function SelectChainStep({
             !selectedChain || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
           }`}
         >
-          {isLoading ? "⏳ Preparing..." : "Get Deposit Address →"}
+          {isLoading ? "⏳ Preparing..." : "Continue to Payment →"}
         </motion.button>
       </div>
     </Panel>
   );
 }
 
-// ─── Step 3: Show Deposit Address ─────────────────────────────────────────────
+// ─── Step 3: Payment ──────────────────────────────────────────────────────────
+
+function PaymentStep({
+  paymentAddress,
+  feeAmountLamports,
+  isLoading,
+  error,
+  onConfirmPayment,
+  onBack,
+}: {
+  paymentAddress: string;
+  feeAmountLamports: number;
+  isLoading: boolean;
+  error: string | null;
+  onConfirmPayment: (txSig: string) => void;
+  onBack: () => void;
+}) {
+  const [txSignature, setTxSignature] = useState("");
+  const feeSol = (feeAmountLamports / 1e9).toFixed(4);
+
+  return (
+    <Panel>
+      <DialogueBox
+        speaker="Ika"
+        portrait="neutral"
+        text={`The ritual requires an offering of ${feeSol} SOL. Send the payment, then paste your transaction signature.`}
+        variant="normal"
+      />
+
+      <div className="mt-5 space-y-4">
+        <div className="text-center p-4 border border-ritual-gold/30 bg-ritual-gold/5">
+          <p className="font-pixel text-[10px] text-faded-spirit mb-2">Ritual Fee</p>
+          <p
+            className="font-pixel text-2xl text-ritual-gold"
+            style={{ textShadow: "0 0 12px #ffd70066" }}
+          >
+            ◎ {feeSol} SOL
+          </p>
+          <p className="font-mono text-[9px] text-faded-spirit mt-2">
+            ({feeAmountLamports.toLocaleString()} lamports)
+          </p>
+        </div>
+
+        <div className="p-3 bg-black/30 border border-sigil-border">
+          <p className="font-pixel text-[9px] text-faded-spirit mb-1">
+            Send SOL to this address:
+          </p>
+          <p className="font-mono text-[11px] text-ghost-white break-all select-all">
+            {paymentAddress}
+          </p>
+        </div>
+
+        <div>
+          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+            Paste your payment transaction signature:
+          </label>
+          <input
+            type="text"
+            value={txSignature}
+            onChange={(e) => setTxSignature(e.target.value)}
+            placeholder="e.g. 5xJ7k9..."
+            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+          />
+        </div>
+
+        {error && (
+          <div className="p-2 border border-demon-red/30 bg-demon-red/10">
+            <span className="font-pixel text-[10px] text-demon-red">{error}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-3 justify-between mt-6">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onBack}
+          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+        >
+          ← Back
+        </motion.button>
+        <motion.button
+          whileHover={txSignature.length > 10 && !isLoading ? { scale: 1.05 } : {}}
+          whileTap={txSignature.length > 10 && !isLoading ? { scale: 0.95 } : {}}
+          onClick={() => onConfirmPayment(txSignature.trim())}
+          disabled={txSignature.length < 10 || isLoading}
+          className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
+            txSignature.length < 10 || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
+          }`}
+        >
+          {isLoading ? "⏳ Verifying..." : "Confirm Payment →"}
+        </motion.button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Step 4: Show Deposit Address ─────────────────────────────────────────────
 
 function DepositStep({
   address,
@@ -472,7 +479,6 @@ function DepositStep({
   onBack: () => void;
 }) {
   const chain = getChainById(chainId);
-
   if (!chain) return null;
 
   return (
@@ -486,11 +492,7 @@ function DepositStep({
         />
       </div>
 
-      <DepositAddress
-        address={address}
-        chain={chain}
-        onConfirmSent={onConfirmSent}
-      />
+      <DepositAddress address={address} chain={chain} onConfirmSent={onConfirmSent} />
 
       <div className="mt-4 flex">
         <motion.button
@@ -506,7 +508,113 @@ function DepositStep({
   );
 }
 
-// ─── Step 4: Waiting (Summoning Circle + Status) ──────────────────────────────
+// ─── Step 5: Confirm Deposit ──────────────────────────────────────────────────
+
+function ConfirmDepositStep({
+  chainId,
+  isLoading,
+  error,
+  onConfirm,
+  onBack,
+}: {
+  chainId: string;
+  isLoading: boolean;
+  error: string | null;
+  onConfirm: (nftContract: string, tokenId: string, txHash?: string) => void;
+  onBack: () => void;
+}) {
+  const [nftContract, setNftContract] = useState("");
+  const [tokenId, setTokenId] = useState("");
+  const [txHash, setTxHash] = useState("");
+  const chain = getChainById(chainId);
+
+  const contractPlaceholder = "0x993C47d2a7cBf2575076c239d03adcf4480dA141";
+  const tokenIdPlaceholder = "1";
+
+  const canSubmit = nftContract.length > 2 && tokenId.length > 0;
+
+  return (
+    <Panel>
+      <DialogueBox
+        speaker="Ika"
+        portrait="neutral"
+        text="Tell me about the NFT you deposited so I can verify it on-chain..."
+        variant="system"
+      />
+
+      <div className="mt-5 space-y-4">
+        <div>
+          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+            NFT Contract Address
+          </label>
+          <input
+            type="text"
+            value={nftContract}
+            onChange={(e) => setNftContract(e.target.value)}
+            placeholder={contractPlaceholder}
+            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+            Token ID
+          </label>
+          <input
+            type="text"
+            value={tokenId}
+            onChange={(e) => setTokenId(e.target.value)}
+            placeholder={tokenIdPlaceholder}
+            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="font-pixel text-[9px] text-faded-spirit block mb-2">
+            Transaction Hash <span className="text-faded-spirit/40">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={txHash}
+            onChange={(e) => setTxHash(e.target.value)}
+            placeholder="Optional — speeds up verification"
+            className="w-full bg-void-purple border-2 border-sigil-border p-3 font-mono text-[11px] text-ghost-white placeholder:text-faded-spirit/30 focus:border-ritual-gold focus:outline-none"
+          />
+        </div>
+
+        {error && (
+          <div className="p-2 border border-demon-red/30 bg-demon-red/10">
+            <span className="font-pixel text-[10px] text-demon-red">{error}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-3 justify-between mt-6">
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onBack}
+          className="nes-btn is-dark font-pixel text-[10px] !py-2 !px-4"
+        >
+          ← Back
+        </motion.button>
+        <motion.button
+          whileHover={canSubmit && !isLoading ? { scale: 1.05 } : {}}
+          whileTap={canSubmit && !isLoading ? { scale: 0.95 } : {}}
+          onClick={() => onConfirm(nftContract.trim(), tokenId.trim(), txHash.trim() || undefined)}
+          disabled={!canSubmit || isLoading}
+          className={`nes-btn font-pixel text-[10px] !py-2 !px-6 ${
+            !canSubmit || isLoading ? "opacity-50 cursor-not-allowed" : "is-primary"
+          }`}
+        >
+          {isLoading ? "⏳ Verifying..." : "Begin the Ritual →"}
+        </motion.button>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── Step 6: Waiting ──────────────────────────────────────────────────────────
 
 function WaitingStep({
   sealStatus,
@@ -520,26 +628,22 @@ function WaitingStep({
   onSimulate?: () => void;
 }) {
   const currentStatusIdx = sealStatus
-    ? STATUS_ORDER.indexOf(sealStatus as (typeof STATUS_ORDER)[number])
+    ? STATUS_ORDER.indexOf(sealStatus as SealStatusValue)
     : 0;
 
-  // Circle phase based on status
   const circlePhase =
     sealStatus === "complete"
       ? "overload"
-      : sealStatus === "minting" || sealStatus === "uploading"
-      ? "active"
-      : sealStatus === "detected" || sealStatus === "fetching_metadata"
-      ? "charging"
-      : "idle";
+      : sealStatus === "minting" || sealStatus === "signing"
+        ? "active"
+        : sealStatus === "uploading_metadata" || sealStatus === "creating_seal"
+          ? "charging"
+          : "idle";
 
-  // Calculate ritual progress
   const ritualStep = useMemo(() => {
     if (!sealStatus) return 0;
-    if (sealStatus === "detected" || sealStatus === "fetching_metadata") return 0;
-    if (sealStatus === "uploading" || sealStatus === "minting") return 1;
-    if (sealStatus === "complete") return 3;
-    return 0;
+    const idx = STATUS_ORDER.indexOf(sealStatus as SealStatusValue);
+    return Math.max(0, idx);
   }, [sealStatus]);
 
   return (
@@ -548,12 +652,10 @@ function WaitingStep({
         ✦ The Summoning Is In Progress ✦
       </h2>
 
-      {/* Summoning circle - left side, larger */}
       <div className="flex justify-center mb-6">
         <SummoningCircle phase={circlePhase} size={280} />
       </div>
 
-      {/* Current status text */}
       <div className="mb-6 mt-6">
         <DialogueBox
           speaker="Ritual"
@@ -561,18 +663,15 @@ function WaitingStep({
           variant="system"
           text={
             sealStatus
-              ? STATUS_LABELS[sealStatus as keyof typeof STATUS_LABELS] ??
-                "Processing..."
-              : "Waiting for your NFT to arrive at the deposit address..."
+              ? (STATUS_LABELS[sealStatus as keyof typeof STATUS_LABELS] ?? "Processing...")
+              : "Verifying your NFT deposit on the source chain..."
           }
         />
       </div>
 
-      {/* Runic progress visualization */}
       <RunicProgress currentStep={ritualStep} />
 
-      {/* Status step progression */}
-      <div className="space-y-2 mb-6">
+      <div className="space-y-2 mb-6 mt-4">
         {STATUS_ORDER.filter((s) => s !== "error").map((status, i) => {
           const done = i < currentStatusIdx;
           const active = i === currentStatusIdx;
@@ -581,31 +680,17 @@ function WaitingStep({
               <motion.div
                 animate={
                   active
-                    ? {
-                        boxShadow: [
-                          "0 0 4px #ffd700",
-                          "0 0 12px #ffd700",
-                          "0 0 4px #ffd700",
-                        ],
-                      }
+                    ? { boxShadow: ["0 0 4px #ffd700", "0 0 12px #ffd700", "0 0 4px #ffd700"] }
                     : {}
                 }
                 transition={{ duration: 1.5, repeat: Infinity }}
                 className="w-4 h-4 flex-shrink-0 flex items-center justify-center"
                 style={{
-                  background: done
-                    ? "#00ff88"
-                    : active
-                    ? "#ffd70033"
-                    : "transparent",
-                  border: `2px solid ${
-                    done ? "#00ff88" : active ? "#ffd700" : "#3a2850"
-                  }`,
+                  background: done ? "#00ff88" : active ? "#ffd70033" : "transparent",
+                  border: `2px solid ${done ? "#00ff88" : active ? "#ffd700" : "#3a2850"}`,
                 }}
               >
-                {done && (
-                  <span style={{ fontSize: 8, color: "#000" }}>✓</span>
-                )}
+                {done && <span style={{ fontSize: 8, color: "#000" }}>✓</span>}
                 {active && (
                   <motion.div
                     animate={{ opacity: [1, 0.3, 1] }}
@@ -618,11 +703,7 @@ function WaitingStep({
               <span
                 className="font-pixel text-[9px]"
                 style={{
-                  color: done
-                    ? "#00ff88"
-                    : active
-                    ? "#ffd700"
-                    : "rgba(200,190,220,0.3)",
+                  color: done ? "#00ff88" : active ? "#ffd700" : "rgba(200,190,220,0.3)",
                 }}
               >
                 {STATUS_LABELS[status]}
@@ -632,7 +713,6 @@ function WaitingStep({
         })}
       </div>
 
-      {/* Deposit address reminder */}
       {depositAddress && chainId && (
         <div
           className="p-3 text-center"
@@ -647,7 +727,6 @@ function WaitingStep({
         </div>
       )}
 
-      {/* Demo: Simulate full flow */}
       {onSimulate && (
         <button
           onClick={onSimulate}
@@ -660,7 +739,7 @@ function WaitingStep({
   );
 }
 
-// ─── Step 5: Complete ─────────────────────────────────────────────────────────
+// ─── Step 7: Complete ─────────────────────────────────────────────────────────
 
 function CompleteStep({
   rebornNFT,
@@ -673,7 +752,6 @@ function CompleteStep({
 }) {
   const chain = chainId ? getChainById(chainId) : null;
 
-  // Screen shake effect on mount
   const [shake, setShake] = useState(false);
   useEffect(() => {
     setShake(true);
@@ -681,7 +759,6 @@ function CompleteStep({
     return () => clearTimeout(timer);
   }, []);
 
-  // Sparkle particles
   const particles = Array.from({ length: 16 }, (_, i) => ({
     color: ["#00ff88", "#ffd700", "#ff3366", "#9945ff"][i % 4],
     left: `${(i * 6.25 + Math.random() * 5) % 100}%`,
@@ -691,20 +768,21 @@ function CompleteStep({
 
   return (
     <Panel>
-      {/* Screen shake overlay */}
       <motion.div
-        animate={shake ? {
-          x: [0, -8, 8, -8, 8, -4, 4, 0],
-          y: [0, 4, -4, 6, -6, 3, -3, 0],
-        } : {}}
+        animate={
+          shake
+            ? { x: [0, -8, 8, -8, 8, -4, 4, 0], y: [0, 4, -4, 6, -6, 3, -3, 0] }
+            : {}
+        }
         transition={{ duration: 0.5 }}
         className="fixed inset-0 pointer-events-none z-50"
         style={{
-          background: shake ? 'radial-gradient(circle, transparent 30%, rgba(255,215,0,0.1) 60%, rgba(255,215,0,0.3) 100%)' : 'transparent',
+          background: shake
+            ? "radial-gradient(circle, transparent 30%, rgba(255,215,0,0.1) 60%, rgba(255,215,0,0.3) 100%)"
+            : "transparent",
         }}
       />
 
-      {/* Confetti */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         {particles.map((p, i) => (
           <motion.div
@@ -738,10 +816,7 @@ function CompleteStep({
       </motion.h2>
 
       <div className="flex justify-center mb-6">
-        <motion.div
-          animate={{ y: [0, -10, 0] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
+        <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }}>
           <Image src="/art/ika-mascot-v2.png" alt="Ika" width={80} height={80} className="pixelated" />
         </motion.div>
       </div>
@@ -757,7 +832,6 @@ function CompleteStep({
         }
       />
 
-      {/* Reborn NFT card */}
       {rebornNFT && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -774,20 +848,15 @@ function CompleteStep({
               style={{ imageRendering: "pixelated" }}
             />
           )}
-
           <h3
             className="font-pixel text-center text-sm text-ritual-gold mb-1"
             style={{ textShadow: "0 0 8px #ffd700" }}
           >
             {rebornNFT.name}
           </h3>
-
-          {/* Mint address */}
           <p className="font-mono text-[9px] text-faded-spirit text-center break-all mb-4">
             {rebornNFT.mint}
           </p>
-
-          {/* Explorer links */}
           <div className="flex gap-3 justify-center flex-wrap">
             <a
               href={`https://explorer.solana.com/address/${rebornNFT.mint}?cluster=devnet`}
@@ -805,28 +874,17 @@ function CompleteStep({
             >
               Magic Eden
             </a>
-            <a
-              href={`https://www.tensor.trade/item/${rebornNFT.mint}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="nes-btn is-dark font-pixel text-[9px] !py-2 !px-3"
-            >
-              Tensor
-            </a>
           </div>
         </motion.div>
       )}
 
-      {/* Source chain seal info */}
       {chain && (
         <p className="font-silk text-xs text-faded-spirit text-center mt-4">
           Original NFT permanently sealed on{" "}
-          <span style={{ color: chain.color }}>{chain.name}</span> via IKA
-          dWallet
+          <span style={{ color: chain.color }}>{chain.name}</span> via IKA dWallet
         </p>
       )}
 
-      {/* Seal another */}
       <div className="flex justify-center mt-8">
         <motion.button
           whileHover={{ scale: 1.05 }}
@@ -847,8 +905,8 @@ export default function SealPage() {
   const { connected, publicKey, connect } = useWalletStore();
   const flow = useSealFlow();
   const [showBloodPact, setShowBloodPact] = useState(false);
+  const [pendingChain, setPendingChain] = useState<string | null>(null);
 
-  // When wallet connects, advance the flow step
   const handleWalletConnect = (pk: string) => {
     connect(pk);
     if (flow.step === "connect") {
@@ -856,26 +914,22 @@ export default function SealPage() {
     }
   };
 
-  // Handle blood pact confirmation
   const handleConfirmSeal = () => {
     setShowBloodPact(false);
-    if (flow.sourceChain && publicKey) {
-      flow.selectChain(flow.sourceChain, publicKey);
+    const chain = pendingChain || flow.sourceChain;
+    if (chain && publicKey) {
+      flow.selectChain(chain, publicKey);
     }
   };
 
-  // If wallet is already connected and flow is on "connect" step, auto-advance
-  // (handles page refresh with persisted wallet)
   const effectiveStep =
     connected && flow.step === "connect" ? "select_chain" : flow.step;
-
   const stepIndex = stepToIndex(effectiveStep);
 
   return (
     <div className="min-h-screen bg-void-purple relative overflow-hidden">
       <BackgroundAtmosphere mood="mystical" />
 
-      {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -892,14 +946,12 @@ export default function SealPage() {
         </p>
       </motion.header>
 
-      {/* Step indicator */}
       <div className="relative z-10 px-4 mb-6">
         <div className="max-w-2xl mx-auto">
           <StepIndicator current={stepIndex} />
         </div>
       </div>
 
-      {/* Main content */}
       <div className="relative z-10 max-w-2xl mx-auto px-4 pb-16">
         <AnimatePresence mode="wait">
           {effectiveStep === "connect" && (
@@ -909,13 +961,25 @@ export default function SealPage() {
           {effectiveStep === "select_chain" && (
             <SelectChainStep
               key="select_chain"
-              selectedChain={flow.sourceChain}
-              onSelect={(id) => flow.selectChain(id, publicKey ?? "")}
-              onConfirm={() => {
-                setShowBloodPact(true);
+              selectedChain={pendingChain ?? flow.sourceChain}
+              onSelect={(id) => {
+                setPendingChain(id);
               }}
+              onConfirm={() => setShowBloodPact(true)}
               isLoading={flow.isLoading}
               error={flow.error}
+              onBack={flow.goBack}
+            />
+          )}
+
+          {effectiveStep === "payment" && flow.paymentAddress && flow.feeAmountLamports && (
+            <PaymentStep
+              key="payment"
+              paymentAddress={flow.paymentAddress}
+              feeAmountLamports={flow.feeAmountLamports}
+              isLoading={flow.isLoading}
+              error={flow.error}
+              onConfirmPayment={flow.confirmPayment}
               onBack={flow.goBack}
             />
           )}
@@ -925,7 +989,18 @@ export default function SealPage() {
               key="deposit"
               address={flow.depositAddress}
               chainId={flow.sourceChain!}
-              onConfirmSent={flow.startWaiting}
+              onConfirmSent={flow.goToConfirmDeposit}
+              onBack={flow.goBack}
+            />
+          )}
+
+          {effectiveStep === "confirm_deposit" && (
+            <ConfirmDepositStep
+              key="confirm_deposit"
+              chainId={flow.sourceChain!}
+              isLoading={flow.isLoading}
+              error={flow.error}
+              onConfirm={flow.confirmDeposit}
               onBack={flow.goBack}
             />
           )}
@@ -950,7 +1025,6 @@ export default function SealPage() {
           )}
         </AnimatePresence>
 
-        {/* Blood Pact Modal */}
         <AnimatePresence>
           {showBloodPact && (
             <BloodPactModal
@@ -960,7 +1034,6 @@ export default function SealPage() {
           )}
         </AnimatePresence>
 
-        {/* Back to home */}
         <div className="text-center mt-8">
           <Link
             href="/"

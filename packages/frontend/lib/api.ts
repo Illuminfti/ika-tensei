@@ -1,30 +1,6 @@
 import { API_BASE } from "./constants";
 
-// ─── Legacy Types (kept for compatibility) ─────────────────────────────────────
-
-export interface SealRequest {
-  sourceChain: string;
-  contractAddress?: string;
-  tokenId?: string;
-  depositorAddress?: string;
-  solanaRecipient: string;
-}
-
-export interface SealResponse {
-  sealHash: string;
-  status: "pending" | "sealing" | "signing" | "minting" | "complete" | "error";
-  step: number;
-  txHashes: {
-    deposit?: string;
-    seal?: string;
-    sign?: string;
-    mint?: string;
-  };
-  rebornMint?: string;
-  error?: string;
-}
-
-// ─── v4 Deposit-Address Flow Types ────────────────────────────────────────────
+// ─── v8 API Types (session-based, multi-step) ────────────────────────────────
 
 export interface StartSealRequest {
   solanaWallet: string;
@@ -32,22 +8,56 @@ export interface StartSealRequest {
 }
 
 export interface StartSealResponse {
+  sessionId: string;
+  paymentAddress: string;
+  feeAmountLamports: number;
+}
+
+export interface ConfirmPaymentRequest {
+  sessionId: string;
+  paymentTxSignature: string;
+}
+
+export interface ConfirmPaymentResponse {
   dwalletId: string;
   depositAddress: string;
 }
 
+export interface ConfirmDepositRequest {
+  sessionId: string;
+  nftContract: string;
+  tokenId: string;
+  txHash?: string;
+}
+
+export interface ConfirmDepositResponse {
+  status: string;
+  message: string;
+}
+
+/** Status values matching the relayer's SealStatusValue type */
 export type SealStatusValue =
+  | "awaiting_payment"
+  | "payment_confirmed"
+  | "creating_dwallet"
   | "waiting_deposit"
-  | "detected"
-  | "fetching_metadata"
-  | "uploading"
+  | "verifying_deposit"
+  | "uploading_metadata"
+  | "creating_seal"
+  | "signing"
   | "minting"
   | "complete"
   | "error";
 
 export interface SealStatusResponse {
-  dwalletId: string;
+  sessionId: string;
+  dwalletId?: string;
   status: SealStatusValue;
+  depositAddress?: string;
+  sourceChain?: string;
+  nftContract?: string;
+  tokenId?: string;
+  tokenUri?: string;
   rebornNFT?: {
     mint: string;
     name: string;
@@ -64,17 +74,17 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || `API error: ${res.status}`);
+    const error = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(error.error || error.message || `API error: ${res.status}`);
   }
   return res.json();
 }
 
-// ─── v4 API: Deposit-Address Flow ─────────────────────────────────────────────
+// ─── v8 API: Session-Based Seal Flow ─────────────────────────────────────────
 
 /**
- * Create a new seal session — returns a dWallet-derived deposit address
- * for the selected source chain.
+ * Step 1: Create a seal session — returns payment details.
+ * User must send SOL to paymentAddress before proceeding.
  */
 export async function startSeal(
   solanaWallet: string,
@@ -87,40 +97,53 @@ export async function startSeal(
 }
 
 /**
- * Poll the status of a seal in progress.
+ * Step 2: Confirm SOL payment — triggers dWallet creation.
+ * Returns the deposit address for the user's NFT.
  */
-export async function getSealStatus(dwalletId: string): Promise<SealStatusResponse> {
-  return fetchApi<SealStatusResponse>(`/api/seal/${dwalletId}/status`);
-}
-
-// ─── Legacy / v3 API ──────────────────────────────────────────────────────────
-
-/** @deprecated Use startSeal + getSealStatus */
-export async function initiateSeal(request: SealRequest): Promise<SealResponse> {
-  return fetchApi<SealResponse>("/api/seal", {
+export async function confirmPayment(
+  sessionId: string,
+  paymentTxSignature: string
+): Promise<ConfirmPaymentResponse> {
+  return fetchApi<ConfirmPaymentResponse>("/api/seal/confirm-payment", {
     method: "POST",
-    body: JSON.stringify(request),
+    body: JSON.stringify({
+      sessionId,
+      paymentTxSignature,
+    } satisfies ConfirmPaymentRequest),
   });
 }
 
-/** @deprecated Use getSealStatus(dwalletId) */
-export async function getSealStatusLegacy(sealHash: string): Promise<SealResponse> {
-  return fetchApi<SealResponse>(`/api/seal/${sealHash}`);
+/**
+ * Step 3: Confirm NFT deposit — triggers relayer verification + processing.
+ * Returns immediately; processing continues async on the server.
+ */
+export async function confirmDeposit(
+  sessionId: string,
+  nftContract: string,
+  tokenId: string,
+  txHash?: string
+): Promise<ConfirmDepositResponse> {
+  return fetchApi<ConfirmDepositResponse>("/api/seal/confirm-deposit", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId,
+      nftContract,
+      tokenId,
+      txHash,
+    } satisfies ConfirmDepositRequest),
+  });
+}
+
+/**
+ * Poll the status of a seal session.
+ */
+export async function getSealStatus(
+  sessionId: string
+): Promise<SealStatusResponse> {
+  return fetchApi<SealStatusResponse>(`/api/seal/${sessionId}/status`);
 }
 
 // ─── Other endpoints ──────────────────────────────────────────────────────────
-
-export async function getUserNfts(chain: string, address: string) {
-  return fetchApi<{
-    nfts: Array<{
-      id: string;
-      name: string;
-      image: string;
-      contractAddress: string;
-      tokenId: string;
-    }>;
-  }>(`/api/nfts?chain=${chain}&address=${address}`);
-}
 
 export async function getRebornNfts(solanaAddress: string) {
   return fetchApi<{
@@ -134,7 +157,7 @@ export async function getRebornNfts(solanaAddress: string) {
       sealHash: string;
       rebornDate: string;
     }>;
-  }>(`/api/reborn?address=${solanaAddress}`);
+  }>(`/api/reborn?address=${encodeURIComponent(solanaAddress)}`);
 }
 
 export async function getProposals() {
@@ -164,5 +187,7 @@ export async function castVote(
 }
 
 export async function getStats() {
-  return fetchApi<{ sealed: number; reborn: number; chains: number }>("/api/stats");
+  return fetchApi<{ sealed: number; reborn: number; chains: number }>(
+    "/api/stats"
+  );
 }

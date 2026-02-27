@@ -9,6 +9,7 @@ import { ConnectButton } from "@/components/wallet/ConnectButton";
 
 const NAV_LINKS = [
   { href: "/seal", label: "Seal" },
+  { href: "/faucet", label: "Faucet" },
   { href: "/gallery", label: "Gallery" },
   { href: "/guild", label: "Guild" },
   { href: "/profile", label: "Profile" },
@@ -130,61 +131,6 @@ function MobileNavLink({
   );
 }
 
-// Animated wallet indicator with pulse when connected
-function WalletIndicator() {
-  const [isConnected, setIsConnected] = useState(false);
-  const [address, setAddress] = useState("");
-
-  // Check for wallet connection (simplified - in real app would use wallet adapter)
-  useEffect(() => {
-    // This would normally check the wallet state
-    const checkWallet = () => {
-      // Placeholder for wallet state check
-      if (typeof window !== "undefined") {
-        // Check for wallet in localStorage or state
-        const stored = localStorage.getItem("walletConnected");
-        if (stored) {
-          setIsConnected(true);
-          setAddress(stored);
-        }
-      }
-    };
-    checkWallet();
-  }, []);
-
-  if (isConnected) {
-    return (
-      <motion.div
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full"
-        style={{
-          background: "linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(124, 58, 237, 0.3))",
-          border: "1px solid rgba(167, 139, 250, 0.4)",
-          boxShadow: "0 0 15px rgba(167, 139, 250, 0.3)",
-        }}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-      >
-        {/* Pulsing indicator */}
-        <motion.div
-          className="w-2 h-2 rounded-full bg-soul-cyan"
-          animate={{
-            boxShadow: ["0 0 4px #00ccff", "0 0 8px #00ccff", "0 0 12px #00ccff", "0 0 4px #00ccff"],
-          }}
-          transition={{
-            duration: 1.5,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
-        <span className="font-silk text-xs text-soul-cyan">
-          {address ? `${address.slice(0, 4)}...${address.slice(-4)}` : "Connected"}
-        </span>
-      </motion.div>
-    );
-  }
-
-  return null;
-}
 
 export function NavigationBar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -262,9 +208,8 @@ export function NavigationBar() {
             ))}
           </div>
 
-          {/* Right: Connect Button (Desktop) + Wallet Indicator + Hamburger (Mobile) */}
+          {/* Right: Connect Button (Desktop) + Hamburger (Mobile) */}
           <div className="hidden md:flex items-center gap-3">
-            <WalletIndicator />
             <ConnectButton />
           </div>
           <button
