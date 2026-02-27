@@ -92,23 +92,54 @@ The current implementation uses a **centralized relayer** for speed and reliabil
 
 The **Adventurer's Guild** gives resurrected collections a community-owned treasury and governance layer built on [Realms](https://realms.today) (SPL Governance).
 
+Realms is battle-tested DAO infrastructure used by hundreds of Solana DAOs. It handles proposals, voting, treasury management, and access control out of the box. We chose it because we wanted governance that works on day one, not a half-baked custom system that takes months to build and audit.
+
+### One Collection, One Realm
+
+Every time a new collection is reborn through Ika Tensei, the protocol automatically creates a dedicated Realm for that collection on Solana. No manual setup. No governance bootstrapping. The moment the first NFT from a collection gets reborn, the community infrastructure is live.
+
+Each Realm includes:
+- **A NativeTreasury** that accumulates royalties from trading
+- **A Governance** with configurable vote thresholds (60% yes to pass, 3-day voting period)
+- **Council seats** for protocol-level governance (emergency actions, parameter changes)
+- **Community voting** powered by NFT ownership (see below)
+
+### NFT-Weighted Voting with ika-core-voter
+
+Standard Realms uses token-based voting. That does not work for NFT communities because there is no fungible token to distribute. We built a custom voter weight plugin (`ika-core-voter`) that lets reborn NFT holders vote directly with their NFTs.
+
+How it works:
+1. When a collection's Realm is created, the protocol deploys a **Registrar** that maps the Metaplex Core collection address to a vote weight (1 NFT = 1 vote)
+2. Before voting, a holder calls `update_voter_weight_record` and passes their Core asset accounts as remaining accounts
+3. The program verifies each asset on-chain: correct Metaplex Core program owner, AssetV1 key type, voter ownership, and collection membership
+4. Duplicate assets are rejected. Vote weight expires after the current slot to force re-verification on every vote (no stale weights)
+5. The resulting `VoterWeightRecord` is passed to Realms when casting a vote
+
+This means voting power is always live. If you sell your reborn NFT, you lose your vote. If you buy more, your weight increases. No staking, no lockups, no delegation complexity.
+
 ### How Royalties Flow
 
 Every reborn NFT collection is minted with Metaplex Core royalties baked in at the protocol level: **6.9% total on all trades**, split automatically:
 
-- **72% → DAO Treasury** (~5%) - Controlled by the guild through Realms proposals and votes
-- **28% → Protocol** (~1.9%) - Funds protocol development and relayer operations
+- **72% → DAO Treasury** (~5%) flows to the collection's Realm NativeTreasury
+- **28% → Protocol** (~1.9%) funds protocol development and relayer operations
 
-Each reborn collection gets its own Realm on Solana. Guild members (reborn NFT holders) can view the treasury balance, create proposals for how to spend funds, and vote on them through the Council tab in the app.
+The treasury address is deterministic. It is derived from the collection name before the first mint even happens, so royalties route correctly from the very first trade. The PDA derivation is: `realm_name → realm PDA → governance PDA → native_treasury PDA`.
 
 ### What the Treasury Funds
 
-- Gas subsidies for new resurrections
-- Marketing and community growth for reborn collections
-- Protocol development and infrastructure
-- Whatever the guild members vote for
+Guild members create proposals through Realms to decide how treasury funds get spent:
 
-The point: when a collection gets reborn through Ika Tensei, it gets more than new life on Solana. It gets a funded community with real governance through Realms. The original holders had nothing. No devs, no treasury, no roadmap. Now they have all three.
+- Gas subsidies for new resurrections in the same collection
+- Marketing and community growth
+- Bounties for collection-specific tooling or integrations
+- Literally anything the community votes for
+
+### Why This Matters
+
+Most NFT bridges give you a wrapped token on the other side. That is it. You get the asset, maybe the art, and nothing else.
+
+Ika Tensei gives you a funded community. When a dead collection gets reborn, the holders don't just get their art back on Solana. They get a treasury that grows with every trade, governance to decide how it is spent, and a voting system that works with the NFTs they already hold. The original collection had none of this. The devs left, the treasury was empty (if it existed), and the community had no way to coordinate. Now they do.
 
 ---
 
