@@ -111,7 +111,7 @@ export class MetadataHandler {
       depositAddress: string;
       sourceChainId: number;
     },
-  ): Promise<string> {
+  ): Promise<{ metadataUri: string; imageUrl: string }> {
     // 1. Fetch raw metadata from source
     const raw = await this.fetchSourceMetadata(sourceChain, verifyResult);
 
@@ -131,22 +131,21 @@ export class MetadataHandler {
 
     // 3. Transform to Metaplex standard
     const metadata = this.transformToMetaplex(raw, nftName, collectionName, receiverWallet, provenance);
+    const originalImage = metadata.image || verifyResult.imageUrl || '';
 
-    // 3. Upload to Arweave (or fallback if Irys not configured)
+    // 4. Upload to Arweave (or fallback if Irys not configured)
     const config = getConfig();
     if (!config.irysPrivateKey) {
-      // No Irys configured — use source tokenURI directly
-      // Note: Solana program has 512-byte limit on token_uri, so data URIs won't work
       logger.warn('IRYS_PRIVATE_KEY not set — skipping Arweave upload, using source tokenURI');
       if (verifyResult.tokenUri) {
-        return verifyResult.tokenUri;
+        return { metadataUri: verifyResult.tokenUri, imageUrl: originalImage };
       }
-      // No source URI available — use image URL or empty placeholder
-      return metadata.image || 'https://arweave.net/placeholder';
+      return { metadataUri: metadata.image || 'https://arweave.net/placeholder', imageUrl: originalImage };
     }
 
     const metadataUri = await this.uploadToArweave(metadata);
-    return metadataUri;
+    // After uploadToArweave, metadata.image has been replaced with the Arweave image URL
+    return { metadataUri, imageUrl: metadata.image || originalImage };
   }
 
   /**

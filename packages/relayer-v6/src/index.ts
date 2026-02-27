@@ -1158,11 +1158,17 @@ export class Relayer {
         // Store reborn NFT data in session
         if (session && result.assetAddress) {
           const rebornName = session.nftName || processedSeal.collectionName;
+          // reborn_image may already be set (Arweave image URL from metadata upload)
+          // Only fall back to tokenUri if it wasn't set earlier
+          const existingRow = getDb()
+            .prepare("SELECT reborn_image FROM sessions WHERE session_id = ?")
+            .get(session.sessionId) as { reborn_image: string | null } | undefined;
+          const rebornImage = existingRow?.reborn_image || session.tokenUri || processedSeal.tokenUri;
           updateSession(session.sessionId, {
             status: "complete",
             reborn_mint: result.assetAddress,
             reborn_name: rebornName,
-            reborn_image: session.tokenUri || processedSeal.tokenUri,
+            reborn_image: rebornImage,
           });
         } else {
           this.updateSessionStatus(depositAddressHex, "complete");
@@ -1356,7 +1362,7 @@ export class Relayer {
       collection_name: collectionName,
     });
 
-    const tokenUri = await this.metadataHandler.processAndUpload(
+    const { metadataUri: tokenUri, imageUrl: rebornImageUrl } = await this.metadataHandler.processAndUpload(
       updatedSession.sourceChain,
       verifyResult,
       nftName,
@@ -1370,8 +1376,8 @@ export class Relayer {
       },
     );
 
-    updateSession(sessionId, { token_uri: tokenUri });
-    logger.info({ sessionId, tokenUri }, "Metadata uploaded to Arweave");
+    updateSession(sessionId, { token_uri: tokenUri, reborn_image: rebornImageUrl });
+    logger.info({ sessionId, tokenUri, rebornImageUrl }, "Metadata uploaded to Arweave");
 
     // 3. Re-verify NFT ownership (TOCTOU protection — NFT could have been moved since initial check)
     const reVerify = await this.chainVerifier.verifyDeposit(

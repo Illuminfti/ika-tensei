@@ -98,6 +98,52 @@ function FloatingParticles() {
 }
 
 // ============================================================================
+// RESOLVE IMAGE — fetch actual image URL from Arweave/Irys metadata JSON
+// ============================================================================
+
+const imageCache = new Map<string, string>();
+
+function useResolvedImage(url: string | undefined) {
+  const [resolved, setResolved] = useState<string | undefined>(url);
+
+  useEffect(() => {
+    if (!url) return;
+
+    // Already a direct image (not Irys/Arweave metadata JSON)
+    const isMetadataUrl =
+      (url.includes("irys.xyz/") || url.includes("arweave.net/")) &&
+      !url.includes(".png") && !url.includes(".jpg") && !url.includes(".gif") && !url.includes(".webp") && !url.includes(".svg");
+
+    if (!isMetadataUrl) {
+      setResolved(url);
+      return;
+    }
+
+    if (imageCache.has(url)) {
+      setResolved(imageCache.get(url));
+      return;
+    }
+
+    let cancelled = false;
+    fetch(url)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!cancelled && json.image) {
+          imageCache.set(url, json.image);
+          setResolved(json.image);
+        }
+      })
+      .catch(() => {
+        // Keep original URL as fallback
+      });
+
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return resolved;
+}
+
+// ============================================================================
 // CARD
 // ============================================================================
 
@@ -105,6 +151,7 @@ function TarotCard({ nft, index, onClick }: { nft: RebornNFT; index: number; onC
   const chainDisplay = getChainDisplay(nft.originalChain);
   const [c1, c2] = hashToColors(nft.sealHash || nft.mint);
   const [isHovered, setIsHovered] = useState(false);
+  const imageUrl = useResolvedImage(nft.image);
 
   return (
     <motion.div
@@ -170,9 +217,9 @@ function TarotCard({ nft, index, onClick }: { nft: RebornNFT; index: number; onC
 
           {/* NFT image or fallback */}
           <div className="absolute inset-0 flex items-center justify-center">
-            {nft.image ? (
+            {imageUrl ? (
               <motion.img
-                src={nft.image}
+                src={imageUrl}
                 alt={nft.name}
                 className="w-full h-full object-cover"
                 style={{ opacity: isHovered ? 0.9 : 0.7 }}
@@ -323,6 +370,7 @@ function StatsBar({ nfts }: { nfts: RebornNFT[] }) {
 function DetailModal({ nft, onClose }: { nft: RebornNFT; onClose: () => void }) {
   const chainDisplay = getChainDisplay(nft.originalChain);
   const [c1, c2] = hashToColors(nft.sealHash || nft.mint);
+  const imageUrl = useResolvedImage(nft.image);
 
   const handleShare = () => {
     const text = `✦ ${nft.name} has been reborn on Solana!\n\nSealed from ${nft.originalChain} → Reborn via @IkaTensei\n\n#IkaTensei #NFTReborn`;
@@ -365,8 +413,8 @@ function DetailModal({ nft, onClose }: { nft: RebornNFT; onClose: () => void }) 
         {/* Image area */}
         <div className="relative h-56" style={{ background: `linear-gradient(135deg, ${c1}20, ${c2}15)` }}>
           <div className="absolute inset-0 flex items-center justify-center">
-            {nft.image ? (
-              <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" />
+            {imageUrl ? (
+              <img src={imageUrl} alt={nft.name} className="w-full h-full object-cover" />
             ) : (
               <motion.div
                 animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
@@ -556,8 +604,8 @@ export default function GalleryPage() {
 
       {/* Hero header */}
       <div className="relative overflow-hidden pb-10 pt-16">
-        <div className="absolute inset-0">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-8 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-8">
             <SummoningCircle size={600} phase="idle" />
           </div>
           <div
