@@ -96,7 +96,7 @@ No backend. No admin keys. No custodian. Just math.
 
 ## The Guild
 
-The **Adventurer's Guild** gives resurrected collections a community-owned treasury and governance layer built on SPL Governance.
+The **Adventurer's Guild** gives resurrected collections a community-owned treasury and governance layer built on [Realms](https://realms.today) (SPL Governance).
 
 ### How Royalties Flow
 
@@ -105,7 +105,7 @@ Every reborn NFT collection is minted with Metaplex Core royalties baked in at t
 - **72% → DAO Treasury** (~5%) - Controlled by the guild, managed through proposals and votes
 - **28% → Protocol** (~1.9%) - Funds protocol development and relayer operations
 
-The treasury is a real SPL Governance vault on Solana. Guild members (reborn NFT holders) can view the treasury balance, create proposals for how to spend funds, and vote on them through the Council tab in the app.
+The treasury is a real Realms DAO on Solana. Each reborn collection gets its own Realm. Guild members (reborn NFT holders) can view the treasury balance, create proposals for how to spend funds, and vote on them through the Council tab in the app.
 
 ### What the Treasury Funds
 
@@ -114,7 +114,7 @@ The treasury is a real SPL Governance vault on Solana. Guild members (reborn NFT
 - Protocol development and infrastructure
 - Whatever the guild members vote for
 
-The point: when a collection gets reborn through Ika Tensei, it gets more than new life on Solana. It gets a funded community with real governance. The original holders had nothing - no devs, no treasury, no roadmap. Now they have all three.
+The point: when a collection gets reborn through Ika Tensei, it gets more than new life on Solana. It gets a funded community with real governance through Realms. The original holders had nothing. No devs, no treasury, no roadmap. Now they have all three.
 
 ---
 
