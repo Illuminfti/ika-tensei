@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
-import { TEST_NFT_PACKAGE_ID, MINT_COUNTER_ID } from "@/lib/constants";
+import { POPKINS_PACKAGE_ID, POPKINS_MINT_COUNTER_ID } from "@/lib/constants";
 
-export function SuiMintTab() {
+export function PopkinsMintTab() {
   const account = useCurrentAccount();
   const { mutateAsync: signAndExecute, isPending } = useSignAndExecuteTransaction();
   const [result, setResult] = useState<{ digest: string } | null>(null);
@@ -16,16 +16,16 @@ export function SuiMintTab() {
     setError(null);
     setResult(null);
 
-    if (!MINT_COUNTER_ID) {
-      setError("MintCounter object ID not configured. Set NEXT_PUBLIC_MINT_COUNTER_ID env var.");
+    if (!POPKINS_MINT_COUNTER_ID) {
+      setError("Popkins MintCounter not configured. Set NEXT_PUBLIC_POPKINS_MINT_COUNTER_ID env var.");
       return;
     }
 
     try {
       const tx = new Transaction();
       tx.moveCall({
-        target: `${TEST_NFT_PACKAGE_ID}::test_nft::mint_free`,
-        arguments: [tx.object(MINT_COUNTER_ID)],
+        target: `${POPKINS_PACKAGE_ID}::popkins_nft::mint_free`,
+        arguments: [tx.object(POPKINS_MINT_COUNTER_ID)],
       });
 
       const res = await signAndExecute({ transaction: tx });
@@ -44,9 +44,9 @@ export function SuiMintTab() {
 
       {!account ? (
         <div className="text-center py-8">
-          <div className="text-4xl mb-4">🔗</div>
+          <div className="text-4xl mb-4">🦕</div>
           <p className="font-silk text-sm text-faded-spirit">
-            Connect your Sui wallet to mint
+            Connect your Sui wallet to mint Popkins
           </p>
           <p className="font-silk text-[10px] text-faded-spirit/50 mt-2">
             Sui Wallet, Suiet, Ethos, Nightly
@@ -64,18 +64,18 @@ export function SuiMintTab() {
 
           {/* NFT preview */}
           <div className="text-center py-4">
-            <div
-              className="w-32 h-32 mx-auto mb-3 border-2 border-ritual-gold/30 flex items-center justify-center"
-              style={{
-                background: "linear-gradient(135deg, #1a0a2e, #0d0a1a)",
-                boxShadow: "0 0 20px rgba(255, 215, 0, 0.1)",
-              }}
-            >
-              <span className="font-pixel text-ritual-gold text-xs">IKA TEST</span>
-            </div>
-            <p className="font-pixel text-[10px] text-ghost-white">Ika Test NFT (Sui)</p>
+            <img
+              src="https://storage.claynosaurz.com/popkins/images/0x222a20bd7142d4e06d458c1b08da9a06c23241d8f9f09d57f2849ba9c4ecca3a"
+              alt="Popkins"
+              className="w-32 h-32 mx-auto mb-3 border-2 border-[#00b894]/30 rounded-lg object-cover"
+              style={{ boxShadow: "0 0 20px rgba(0, 184, 148, 0.15)" }}
+            />
+            <p className="font-pixel text-[10px] text-ghost-white">Popkins NFT (Sui)</p>
             <p className="font-silk text-[9px] text-faded-spirit">
-              A test artifact for the seal ritual
+              Mischievous critters with random traits
+            </p>
+            <p className="font-silk text-[8px] text-faded-spirit/50 mt-1">
+              Species &middot; Mutation &middot; Skin &middot; Color &middot; Background &middot; Shape
             </p>
           </div>
 
@@ -85,7 +85,7 @@ export function SuiMintTab() {
               <p className="font-silk text-[10px] text-ritual-gold">NFT Contract (use in seal):</p>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(`${TEST_NFT_PACKAGE_ID}::test_nft::TestNFT`);
+                  navigator.clipboard.writeText(`${POPKINS_PACKAGE_ID}::popkins_nft::Popkins`);
                 }}
                 className="font-silk text-[9px] text-faded-spirit hover:text-soul-cyan transition-colors"
               >
@@ -93,7 +93,7 @@ export function SuiMintTab() {
               </button>
             </div>
             <p className="font-mono text-[9px] text-soul-cyan break-all select-all">
-              {TEST_NFT_PACKAGE_ID}::test_nft::TestNFT
+              {POPKINS_PACKAGE_ID}::popkins_nft::Popkins
             </p>
           </div>
 
@@ -104,10 +104,10 @@ export function SuiMintTab() {
             className={`w-full py-3 px-6 font-pixel text-sm border-2 transition-all ${
               isPending
                 ? "border-sigil-border text-faded-spirit/50 cursor-wait"
-                : "border-soul-cyan text-soul-cyan hover:bg-soul-cyan/10 hover:shadow-[0_0_20px_rgba(0,204,255,0.2)]"
+                : "border-[#00b894] text-[#00b894] hover:bg-[#00b894]/10 hover:shadow-[0_0_20px_rgba(0,184,148,0.2)]"
             }`}
           >
-            {isPending ? "FORGING..." : "MINT TEST NFT"}
+            {isPending ? "HATCHING..." : "MINT POPKINS"}
           </button>
 
           {/* Error */}
@@ -121,7 +121,7 @@ export function SuiMintTab() {
           {result && (
             <div className="p-4 border border-spectral-green/30 bg-spectral-green/10 rounded space-y-2">
               <p className="font-pixel text-xs text-spectral-green text-center">
-                NFT MINTED!
+                POPKINS HATCHED!
               </p>
               <div>
                 <p className="font-silk text-[10px] text-faded-spirit">Transaction:</p>

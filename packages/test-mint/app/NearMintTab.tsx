@@ -157,6 +157,24 @@ export function NearMintTab() {
             </p>
           </div>
 
+          {/* NFT Contract (for seal flow) */}
+          <div className="bg-black/30 rounded p-3 border border-ritual-gold/20">
+            <div className="flex items-center justify-between mb-1">
+              <p className="font-silk text-[10px] text-ritual-gold">NFT Contract (use in seal):</p>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(NEAR_TEST_NFT_CONTRACT);
+                }}
+                className="font-silk text-[9px] text-faded-spirit hover:text-[#00c1de] transition-colors"
+              >
+                copy
+              </button>
+            </div>
+            <p className="font-mono text-[9px] text-[#00c1de] break-all select-all">
+              {NEAR_TEST_NFT_CONTRACT}
+            </p>
+          </div>
+
           {/* Mint button */}
           <button
             onClick={handleMint}

@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { SuiMintTab } from "./SuiMintTab";
 import { NearMintTab } from "./NearMintTab";
+import { PopkinsMintTab } from "./PopkinsMintTab";
 
-type Chain = "sui" | "near";
+type Chain = "sui" | "near" | "popkins";
 
 const CHAINS: { id: Chain; name: string; color: string }[] = [
   { id: "sui", name: "SUI", color: "#4da2ff" },
+  { id: "popkins", name: "POPKINS", color: "#00b894" },
   { id: "near", name: "NEAR", color: "#00c1de" },
 ];
 
@@ -65,18 +67,20 @@ export default function MintPage() {
           className="border-2 border-sigil-border bg-card-purple/90 p-6"
           style={{ boxShadow: "0 0 30px rgba(77, 162, 255, 0.1)" }}
         >
-          {activeChain === "sui" ? <SuiMintTab /> : <NearMintTab />}
+          {activeChain === "sui" && <SuiMintTab />}
+          {activeChain === "popkins" && <PopkinsMintTab />}
+          {activeChain === "near" && <NearMintTab />}
         </div>
 
         {/* Footer */}
         <div className="text-center mt-6 space-y-2">
           <a
-            href={activeChain === "sui" ? "https://faucet.sui.io" : "https://near-faucet.io"}
+            href={activeChain === "near" ? "https://near-faucet.io" : "https://faucet.sui.io"}
             target="_blank"
             rel="noopener noreferrer"
             className="font-silk text-[10px] text-soul-cyan/70 hover:text-soul-cyan block"
           >
-            Need {activeChain === "sui" ? "SUI" : "NEAR"}? Get testnet tokens here &rarr;
+            Need {activeChain === "near" ? "NEAR" : "SUI"}? Get testnet tokens here &rarr;
           </a>
           <a
             href="https://ikatensei.xyz"
